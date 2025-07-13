@@ -5,162 +5,302 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>咖啡杯測記錄</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
         body {
-            font-family: Arial, sans-serif;
-            max-width: 700px;
-            margin: auto;
-            padding: 20px;
             background-color: #f8f9fa;
         }
 
-        input[type='range'] {
-            width: 100%;
+        .container {
+            max-width: 800px;
         }
 
-        button {
-            padding: 10px;
-            margin-top: 10px;
-            width: 100%;
-            border: none;
-            border-radius: 5px;
-            background-color: #007bff;
-            color: white;
-            cursor: pointer;
-            font-size: 16px;
-        }
-
-        button:hover {
-            background-color: #0056b3;
-        }
-
-        pre {
-            background: #f4f4f4;
-            padding: 10px;
-            white-space: pre-wrap;
-            border-radius: 5px;
-        }
-
-        .section {
-            border: 1px solid #ddd;
-            padding: 15px;
-            margin-bottom: 15px;
-            border-radius: 8px;
-            background: white;
-            box-shadow: 0px 2px 5px rgba(0, 0, 0, 0.1);
+        .card {
+            margin-bottom: 1.5rem;
         }
 
         .slider-label {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 10px;
         }
 
-        .checkbox-group {
-            display: flex;
-            flex-direction: column;
-            gap: 5px;
+        .flavor-tag {
+            display: inline-block;
+            padding: 0.4em 0.8em;
+            font-size: 0.875em;
+            font-weight: 500;
+            line-height: 1;
+            text-align: center;
+            white-space: nowrap;
+            vertical-align: baseline;
+            border-radius: 50rem;
+            /* Capsule shape */
+            cursor: pointer;
+            margin: 0.2rem;
+            transition: color 0.15s ease-in-out, background-color 0.15s ease-in-out, border-color 0.15s ease-in-out;
+            border: 1px solid #0d6efd;
+            /* Blue for primary tags */
+            color: #0d6efd;
+            background-color: transparent;
         }
 
-        .sub-checkbox-group {
-            margin-left: 20px;
-            /* 讓次級選項縮排 */
-            display: flex;
-            flex-direction: column;
-            gap: 5px;
-            font-size: 14px;
-            color: #555;
+        .flavor-tag.selected {
+            color: #fff;
+            background-color: #0d6efd;
         }
 
-
-        h2,
-        h3,
-        h4 {
-            color: #333;
+        /* Style for sub-tags (secondary) */
+        .flavor-tag[data-parent-l1] {
+            border-color: #198754;
+            /* Green for sub-tags */
+            color: #198754;
         }
 
-        label {
-            font-weight: bold;
-            display: block;
-            margin-bottom: 5px;
+        .flavor-tag[data-parent-l1].selected {
+            color: #fff;
+            background-color: #198754;
         }
 
-        textarea {
+        /* Style for sub-sub-tags (tertiary) */
+        .flavor-tag[data-parent-l2] {
+            border-color: #fd7e14;
+            /* Orange for tertiary tags */
+            color: #fd7e14;
+        }
+
+        .flavor-tag[data-parent-l2].selected {
+            color: #fff;
+            background-color: #fd7e14;
+        }
+
+        .flavor-table {
             width: 100%;
-            max-width: 100%;
-            /* 確保不會超出父容器 */
-            height: 100px;
-            padding: 10px;
-            border-radius: 5px;
-            border: 1px solid #ccc;
-            box-sizing: border-box;
-            /* 讓寬度包含 padding，不會影響總寬度 */
-            resize: vertical;
-            /* 允許垂直調整，但不允許水平調整 */
+            border-collapse: collapse;
+        }
+
+        .flavor-table th,
+        .flavor-table td {
+            border: 1px solid #dee2e6;
+            padding: 0.5rem;
+            vertical-align: top;
+        }
+
+        .flavor-table th {
+            background-color: #f8f9fa;
         }
     </style>
 </head>
 
 <body>
-    <h2>咖啡杯測記錄</h2>
-    <div class="section">
-        <label>咖啡名稱: <input type="text" id="name"></label>
-        <label>產地: <input type="text" id="origin"></label>
-        <label>處理法: <input type="text" id="process"></label>
-        <label>烘焙度: <input type="text" id="roast"></label>
-    </div>
+    <div class="container py-5">
+        <h2 class="mb-4 text-center">咖啡杯測記錄</h2>
 
-    <h3>感官與情感評估</h3>
-    <div id="evaluationFields"></div>
-
-    <div class="section">
-        <h3>整體評價</h3>
-        <div class="slider-label">
-            <span>低</span>
-            <input type="range" id="overall" min="1" max="9" value="5" oninput="updateValue('overall')">
-            <span id="overall_value">5</span>
-            <span>高</span>
+        <div class="card">
+            <div class="card-body">
+                <h3 class="card-title">讀取記錄</h3>
+                <div class="input-group">
+                    <select class="form-select" id="recordList"></select>
+                    <button class="btn btn-outline-secondary" type="button" onclick="loadRecord()">讀取</button>
+                    <button class="btn btn-outline-danger" type="button" onclick="deleteRecord()">刪除</button>
+                </div>
+            </div>
         </div>
 
-        <h3>備註</h3>
-        <textarea id="notes" placeholder="請輸入額外的備註..."
-            style="width: 100%; height: 100px; padding: 10px; border-radius: 5px; border: 1px solid #ccc;"></textarea>
+        <div class="card">
+            <div class="card-body">
+                <h3 class="card-title mb-3">咖啡資訊</h3>
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label for="name" class="form-label">咖啡名稱:</label>
+                        <input type="text" class="form-control" id="name">
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label for="origin" class="form-label">產地:</label>
+                        <input type="text" class="form-control" id="origin">
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label for="process" class="form-label">處理法:</label>
+                        <input type="text" class="form-control" id="process">
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label for="roast" class="form-label">烘焙度:</label>
+                        <input type="text" class="form-control" id="roast">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-body">
+                <h3 class="card-title mb-3">沖煮參數</h3>
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label for="grind" class="form-label">研磨度:</label>
+                        <input type="text" class="form-control" id="grind">
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label for="water_temp" class="form-label">水溫 (°C):</label>
+                        <input type="number" class="form-control" id="water_temp">
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label for="ratio" class="form-label">粉水比:</label>
+                        <input type="text" class="form-control" id="ratio">
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label for="method" class="form-label">沖煮方法:</label>
+                        <input type="text" class="form-control" id="method">
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label for="extraction_time" class="form-label">萃取時間 (s):</label>
+                        <input type="number" class="form-control" id="extraction_time">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <h3 class="mb-3">感官與情感評估</h3>
+        <div class="accordion" id="evaluationAccordion">
+        </div>
+
+        <div class="card">
+            <div class="card-body">
+                <h3 class="card-title mb-3">整體評價</h3>
+                <div class="slider-label mb-2">
+                    <span>低</span>
+                    <span id="overall_value" class="fw-bold">5</span>
+                    <span>高</span>
+                </div>
+                <input type="range" class="form-range" id="overall" min="1" max="9" value="5"
+                    oninput="updateValue('overall')">
+
+                <h3 class="mt-4">瑕疵記錄</h3>
+                <textarea id="defects" class="form-control" placeholder="記錄任何瑕疵，例如過度萃取、雜味等..."
+                    rows="3"></textarea>
+
+                <h3 class="mt-4">備註</h3>
+                <textarea id="notes" class="form-control" placeholder="請輸入額外的備註..." rows="4"></textarea>
+            </div>
+        </div>
+
+        <div class="d-grid gap-2 d-md-flex justify-content-md-end mb-3">
+            <button class="btn btn-info" onclick="saveRecord()">儲存記錄</button>
+            <button class="btn btn-primary" onclick="generateMarkdown()">生成 Markdown</button>
+            <button class="btn btn-success" onclick="copyToClipboard()">複製 Markdown</button>
+        </div>
+
+
+        <div class="card">
+            <div class="card-body">
+                <h3 class="card-title">Markdown 輸出</h3>
+                <pre id="markdownOutput" class="bg-light p-3 rounded"></pre>
+            </div>
+        </div>
     </div>
 
-    <button onclick="generateMarkdown()">生成 Markdown</button>
-    <button onclick="copyToClipboard()" style="background-color: #28a745;">複製 Markdown</button>
-
-    <h3>Markdown 輸出</h3>
-    <pre id="markdownOutput"></pre>
 
     <script>
-        function updateValue(id) {
-            const value = parseFloat(document.getElementById(id).value).toFixed(1);
-            document.getElementById(`${id}_value`).innerText = value;
+        const fieldsIncludeFlavor = ["乾香", "濕香", "風味"];
+        const fieldsFilter = ["尾韻", "酸味", "甜感", "口感", "平衡度"];
+
+        const flavors = [{
+            id: "floral",
+            name: "花香",
+            sub: []
+        },
+        {
+            id: "fruit",
+            name: "果味",
+            sub: [{
+                id: "berry",
+                name: "莓果",
+                sub: ["草莓", "藍莓", "黑莓"]
+            },
+            {
+                id: "dried_fruit",
+                name: "果干",
+                sub: ["葡萄乾", "梅子乾"]
+            },
+            {
+                id: "citrus",
+                name: "柑橘類",
+                sub: ["檸檬", "橘子", "葡萄柚"]
+            }
+            ]
+        },
+        {
+            id: "acid_ferment",
+            name: "酸性 / 發酵味",
+            sub: ["酸性", "發酵味"]
+        },
+        {
+            id: "herbal",
+            name: "草本 / 蔬果",
+            sub: []
+        },
+        {
+            id: "roast",
+            name: "焙烤",
+            sub: ["穀物味", "焦味", "菸草味"]
+        },
+        {
+            id: "nutty_cocoa",
+            name: "堅果 / 可可",
+            sub: ["堅果", "可可"]
+        },
+        {
+            id: "spice",
+            name: "香料",
+            sub: []
+        },
+        {
+            id: "sweet",
+            name: "甜",
+            sub: ["香草 / 香草酸", "焦糖"]
+        },
+        {
+            id: "other",
+            name: "其他",
+            sub: ["化合物", "霉味 / 土味", "紙味"]
         }
+        ];
+
+        function updateValue(id) {
+            const slider = document.getElementById(id);
+            const value = parseFloat(slider.value);
+            const step = parseFloat(slider.step);
+            const displayValue = step < 1 ? value.toFixed(1) : value;
+            document.getElementById(`${id}_value`).innerText = displayValue;
+        }
+
         function generateMarkdown() {
             const name = document.getElementById("name").value;
             const origin = document.getElementById("origin").value;
             const process = document.getElementById("process").value;
             const roast = document.getElementById("roast").value;
+            const grind = document.getElementById("grind").value;
+            const water_temp = document.getElementById("water_temp").value;
+            const ratio = document.getElementById("ratio").value;
+            const method = document.getElementById("method").value;
+            const extraction_time = document.getElementById("extraction_time").value;
+            const defects = document.getElementById("defects").value;
             const notes = document.getElementById("notes").value;
 
-            let markdown = `# 咖啡杯測記錄\n\n- 咖啡名稱: ${name}  \n- 產地: ${origin}  \n- 處理法: ${process}  \n- 烘焙度: ${roast}  \n\n## 感官與情感評估\n`;
+            let markdown = `# 咖啡杯測記錄\n\n## 基本資訊\n- 咖啡名稱: ${name}  \n- 產地: ${origin}  \n- 處理法: ${process}  \n- 烘焙度: ${roast}  \n\n## 沖煮參數\n- 研磨度: ${grind}  \n- 水溫: ${water_temp}°C  \n- 粉水比: ${ratio}  \n- 沖煮方法: ${method}  \n- 萃取時間: ${extraction_time}s  \n\n## 感官與情感評估\n`;
 
             fieldsIncludeFlavor.forEach(field => {
                 let id = field.replace(/ /g, "_");
                 let desc = document.getElementById(`${id}_desc`).value;
                 let emotion = document.getElementById(`${id}_emotion`).value;
                 let note = document.getElementById(`${id}_notes`).value;
-                markdown += `## ${field}\n`;
-                markdown += `- 分數（描述性/情感性）:\n ${desc}/${emotion} \n`;
+                markdown += `### ${field}\n`;
+                markdown += `- 分數（描述性/情感性）: ${desc}/${emotion}\n`;
+                markdown += `- 主要風味:\n`;
 
-                markdown += `- 主要風味\n`;
-                document.querySelectorAll(".checkbox-group input:checked").forEach(checkbox => {
-                    markdown += `- ${checkbox.nextSibling.nodeValue.trim()}  \n`;
+                document.querySelectorAll(`#${id}_flavorList .flavor-tag.selected`).forEach(tag => {
+                    markdown += `  - ${tag.innerText.trim()}\n`;
                 });
-                if (note) markdown += `備註: ${note}  \n`;
+                if (note) markdown += `- 備註: ${note}\n`;
             });
 
             fieldsFilter.forEach(field => {
@@ -168,14 +308,14 @@
                 let desc = document.getElementById(`${id}_desc`).value;
                 let emotion = document.getElementById(`${id}_emotion`).value;
                 let note = document.getElementById(`${id}_notes`).value;
-                markdown += `**${field}（描述性/情感性）**:\n ${desc}/${emotion} \n`;
-                if (note) markdown += `備註: ${note}  \n`;
+                markdown += `### ${field}\n`;
+                markdown += `- 分數（描述性/情感性）: ${desc}/${emotion}\n`;
+                if (note) markdown += `- 備註: ${note}\n`;
             });
 
-
             let overall = document.getElementById("overall").value;
-            markdown += `\n## 整體評價: ${overall}  \n`;
-
+            markdown += `\n## 整體評價: ${overall}\n`;
+            if (defects) markdown += `\n## 瑕疵記錄\n${defects}\n`;
             if (notes) markdown += `\n## 總備註\n${notes}\n`;
 
             document.getElementById("markdownOutput").textContent = markdown;
@@ -183,126 +323,321 @@
 
         function copyToClipboard() {
             const markdownText = document.getElementById("markdownOutput").textContent;
-            navigator.clipboard.writeText(markdownText).then(() => {
-                alert("Markdown 已複製");
-            });
+            navigator.clipboard.writeText(markdownText)
+                .then(() => alert("Markdown 已複製"))
+                .catch(err => alert("複製失敗，請手動複製: " + err));
         }
 
+        function saveRecord() {
+            const recordName = prompt("請為此記錄命名:");
+            if (!recordName) return;
 
+            const record = {
+                name: document.getElementById('name').value,
+                origin: document.getElementById('origin').value,
+                process: document.getElementById('process').value,
+                roast: document.getElementById('roast').value,
+                grind: document.getElementById('grind').value,
+                water_temp: document.getElementById('water_temp').value,
+                ratio: document.getElementById('ratio').value,
+                method: document.getElementById('method').value,
+                extraction_time: document.getElementById('extraction_time').value,
+                defects: document.getElementById('defects').value,
+                notes: document.getElementById('notes').value,
+                overall: document.getElementById('overall').value,
+                evaluations: {},
+                flavors: {}
+            };
 
-        const flavors = [
-            { id: "floral", name: "花香", sub: [] },
-            { id: "fruit", name: "果味", sub: ["莓果", "果干", "柑橘類"] },
-            { id: "acid_ferment", name: "酸性 / 發酵味", sub: ["酸性", "發酵味"] },
-            { id: "herbal", name: "草本 / 蔬果", sub: [] },
-            { id: "roast", name: "焙烤", sub: ["穀物味", "焦味", "菸草味"] },
-            { id: "nutty_cocoa", name: "堅果 / 可可", sub: ["堅果", "可可"] },
-            { id: "spice", name: "香料", sub: [] },
-            { id: "sweet", name: "甜", sub: ["香草 / 香草酸", "焦糖"] },
-            { id: "other", name: "其他", sub: ["化合物", "霉味 / 土味", "紙味"] }
-        ];
+            const allFields = [...fieldsIncludeFlavor, ...fieldsFilter];
+            allFields.forEach(field => {
+                const id = field.replace(/ /g, '_');
+                record.evaluations[id] = {
+                    desc: document.getElementById(`${id}_desc`).value,
+                    emotion: document.getElementById(`${id}_emotion`).value,
+                    notes: document.getElementById(`${id}_notes`).value
+                };
+
+                if (fieldsIncludeFlavor.includes(field)) {
+                    record.flavors[id] = Array.from(document.querySelectorAll(`#${id}_flavorList .flavor-tag.selected`)).map(tag => tag.id);
+                }
+            });
+
+            localStorage.setItem(`coffee_record_${recordName}`, JSON.stringify(record));
+            alert(`記錄 "${recordName}" 已儲存`);
+            updateRecordList();
+        }
 
         function generateFlavorList(containerId) {
-            container = document.getElementById(containerId);
-            flavors.forEach(flavor => {
-                let mainCheckbox = document.createElement("label");
-                mainCheckbox.innerHTML = `<input type="checkbox" id="${flavor.id}"> ${flavor.name}`;
-                container.appendChild(mainCheckbox);
+            const container = document.getElementById(containerId);
+            container.innerHTML = ''; // Clear previous content
 
-                if (flavor.sub.length > 0) {
-                    let subContainer = document.createElement("div");
-                    subContainer.className = "sub-checkbox-group";
-                    flavor.sub.forEach(subFlavor => {
-                        let subCheckbox = document.createElement("label");
-                        subCheckbox.innerHTML = `<input type="checkbox" class="sub-checkbox" data-parent="${flavor.id}"> ${subFlavor}`;
-                        subContainer.appendChild(subCheckbox);
-                    });
-                    container.appendChild(subContainer);
-                }
-            });
-        }
+            let table = document.createElement('table');
+            table.className = 'table table-bordered flavor-table';
+            let thead = table.createTHead();
+            let tbody = table.createTBody();
+            let headerRow = thead.insertRow();
+            headerRow.innerHTML = '<th>主要風味</th><th>次要風味</th><th>詳細風味</th>';
 
-        function generateSlider(id, label) {
-            return `<div class='section'>
-                        <h3>${label}</h3>
-                        <label>描述性:</label>
-                        <div class='slider-label'>
-                            <span> [1] </span>
-                            <input type="range" id="${id}_desc" min="1" max="9" step="0.1" value="5" oninput="updateValue('${id}_desc')">
-                            <span id="${id}_desc_value">5</span>
-                            <span> [9] </span>
-                        </div>
-                        <label>情感性:</label>
-                        <div class='slider-label'>
-                            <span> [1] </span>
-                            <input type="range" id="${id}_emotion" min="1" max="9" step="0.1" value="5" oninput="updateValue('${id}_emotion')">
-                            <span id="${id}_emotion_value">5</span>
-                            <span> [9] </span>
-                        </div>
-                        <div id="${id}_flavorList" class="section checkbox-group"></div>
-                     <label>備註: </label><textarea id="${id}_notes"></textarea>
-                    </div>`;
-        }
+            flavors.forEach(l1_flavor => {
+                const l1_id = `l1-${l1_flavor.id}`;
 
-        function generateSliderFliter(id, label) {
-            return `<div class='section'>
-                        <h3>${label}</h3>
-                        <label>描述性:</label>
-                        <div class='slider-label'>
-                            <span> [1] </span>
-                            <input type="range" id="${id}_desc" min="1" max="9" value="5" step="0.1" oninput="updateValue('${id}_desc')">
-                            <span id="${id}_desc_value">5</span>
-                            <span> [9] </span>
-                        </div>
-                        <label>情感性:</label>
-                        <div class='slider-label'>
-                            <span> [1] </span>
-                            <input type="range" id="${id}_emotion" min="1" max="9" value="5" step="0.1" oninput="updateValue('${id}_emotion')">
-                            <span id="${id}_emotion_value">5</span>
-                            <span> [9] </span>
-                        </div>
-                        <label>備註: </label><textarea id="${id}_notes"></textarea>
-                    </div>`;
-        }
-
-        const fieldsIncludeFlavor = ["乾香", "濕香", "風味"];
-        let content = "";
-        fieldsIncludeFlavor.forEach(field => {
-            let id = field.replace(/ /g, "_");
-            content += generateSlider(id, field);
-            // generateFlavorList(id+"_flavorList")
-        });
-        const fieldsFilter = ["尾韻", "酸味", "甜感", "口感"]
-        fieldsFilter.forEach(field => {
-            let id = field.replace(/ /g, "_");
-            content += generateSliderFliter(id, field);
-        });
-
-        // **這裡才將內容插入 DOM**
-        document.getElementById("evaluationFields").innerHTML = content;
-
-
-        // **現在 DOM 有了，才可以執行 generateFlavorList**
-        fieldsIncludeFlavor.forEach(field => {
-            let id = field.replace(/ /g, "_");
-            content += generateSlider(id, field);
-            generateFlavorList(id+"_flavorList")
-        });
-
-
-        document.querySelectorAll(".sub-checkbox").forEach(checkbox => {
-            checkbox.addEventListener("change", function () {
-                let parentId = this.dataset.parent; // 取得對應的主要 checkbox ID
-                let parentCheckbox = document.getElementById(parentId);
-
-                if (this.checked) {
-                    parentCheckbox.checked = true; // 勾選主要 checkbox
+                if (!l1_flavor.sub || l1_flavor.sub.length === 0) {
+                    let row = tbody.insertRow();
+                    let cell = row.insertCell();
+                    cell.colSpan = 3;
+                    cell.appendChild(createFlavorTag(l1_flavor.name, l1_id));
                 } else {
-                    // 如果所有子選項都取消勾選，則取消主要 checkbox
-                    let siblingsChecked = document.querySelectorAll(`.sub-checkbox[data-parent="${parentId}"]:checked`).length > 0;
-                    parentCheckbox.checked = siblingsChecked;
+                    l1_flavor.sub.forEach((l2_flavor, index) => {
+                        let row = tbody.insertRow();
+
+                        if (index === 0) {
+                            let l1_cell = row.insertCell();
+                            l1_cell.rowSpan = l1_flavor.sub.length;
+                            l1_cell.appendChild(createFlavorTag(l1_flavor.name, l1_id));
+                        }
+
+                        let l2_cell = row.insertCell();
+                        let l3_cell = row.insertCell();
+
+                        if (typeof l2_flavor === 'string') {
+                            const l2_id = `l2-${l1_id}-${l2_flavor.replace(/[\/\s]/g, '')}`;
+                            l2_cell.appendChild(createFlavorTag(l2_flavor, l2_id, l1_id));
+                        } else {
+                            const l2_id = `l2-${l1_id}-${l2_flavor.id}`;
+                            l2_cell.appendChild(createFlavorTag(l2_flavor.name, l2_id, l1_id));
+
+                            if (l2_flavor.sub && l2_flavor.sub.length > 0) {
+                                l2_flavor.sub.forEach(l3_flavor => {
+                                    const l3_id = `l3-${l2_id}-${l3_flavor.replace(/[\/\s]/g, '')}`;
+                                    l3_cell.appendChild(createFlavorTag(l3_flavor, l3_id, l2_id, true));
+                                });
+                            }
+                        }
+                    });
                 }
             });
+
+            container.appendChild(table);
+
+            container.querySelectorAll(".flavor-tag").forEach(tag => {
+                tag.addEventListener("click", function () {
+                    this.classList.toggle('selected');
+                    const l1_id_from_l2 = this.dataset.parentL1;
+                    const l2_id_from_l3 = this.dataset.parentL2;
+
+                    if (l2_id_from_l3) { // Clicked L3
+                        const l2_tag = document.getElementById(l2_id_from_l3);
+                        const l1_tag = document.getElementById(l2_tag.dataset.parentL1);
+                        updateParentState(l2_tag, `.flavor-tag[data-parent-l2="${l2_id_from_l3}"]`);
+                        updateParentState(l1_tag, `.flavor-tag[data-parent-l1="${l1_tag.id}"]`);
+                    } else if (l1_id_from_l2) { // Clicked L2
+                        const l1_tag = document.getElementById(l1_id_from_l2);
+                        updateParentState(l1_tag, `.flavor-tag[data-parent-l1="${l1_id_from_l2}"]`);
+                        if (!this.classList.contains('selected')) {
+                            container.querySelectorAll(`.flavor-tag[data-parent-l2="${this.id}"]`).forEach(ct => ct.classList.remove('selected'));
+                        }
+                    } else { // Clicked L1
+                        if (!this.classList.contains('selected')) {
+                            container.querySelectorAll(`.flavor-tag[data-parent-l1="${this.id}"]`).forEach(ct => {
+                                ct.classList.remove('selected');
+                                container.querySelectorAll(`.flavor-tag[data-parent-l2="${ct.id}"]`).forEach(cct => cct.classList.remove('selected'));
+                            });
+                        }
+                    }
+                });
+            });
+        }
+
+        function updateParentState(parentTag, childrenSelector) {
+            if (!parentTag) return;
+            const siblings = parentTag.closest('table').querySelectorAll(childrenSelector);
+            const siblingsSelected = Array.from(siblings).some(t => t.classList.contains('selected'));
+            if (siblingsSelected) {
+                parentTag.classList.add('selected');
+            } else {
+                parentTag.classList.remove('selected');
+            }
+        }
+
+        function createFlavorTag(name, id, parentId = null, isL3 = false) {
+            let tag = document.createElement('span');
+            tag.className = 'flavor-tag';
+            tag.id = id;
+            tag.innerText = name;
+            if (isL3) {
+                tag.dataset.parentL2 = parentId;
+            } else if (parentId) {
+                tag.dataset.parentL1 = parentId;
+            }
+            return tag;
+        }
+
+        function generateSlider(id, label, parentAccordion) {
+            const collapseId = `collapse_${id}`;
+            const headerId = `heading_${id}`;
+            return `<div class="accordion-item">
+                        <h2 class="accordion-header" id="${headerId}">
+                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#${collapseId}" aria-expanded="false" aria-controls="${collapseId}">
+                                ${label}
+                            </button>
+                        </h2>
+                        <div id="${collapseId}" class="accordion-collapse collapse" aria-labelledby="${headerId}" data-bs-parent="#${parentAccordion}">
+                            <div class="accordion-body">
+                                <label class='form-label'>描述性:</label>
+                                <div class='slider-label mb-2'>
+                                    <span>[1]</span>
+                                    <span id='${id}_desc_value' class='fw-bold'>5</span>
+                                    <span>[9]</span>
+                                </div>
+                                <input type="range" class="form-range" id="${id}_desc" min="1" max="9" step="0.1" value="5" oninput="updateValue('${id}_desc')">
+
+                                <label class='form-label mt-3'>情感性:</label>
+                                <div class='slider-label mb-2'>
+                                    <span>[1]</span>
+                                    <span id='${id}_emotion_value' class='fw-bold'>5</span>
+                                    <span>[9]</span>
+                                </div>
+                                <input type="range" class="form-range" id="${id}_emotion" min="1" max="9" step="0.1" value="5" oninput="updateValue('${id}_emotion')">
+
+                                <div id="${id}_flavorList" class="mt-4"></div>
+                                <label class='form-label mt-3'>備註:</label>
+                                <textarea id="${id}_notes" class='form-control'></textarea>
+                            </div>
+                        </div>
+                    </div>`;
+        }
+
+        function generateSliderFilter(id, label, parentAccordion) {
+            const collapseId = `collapse_${id}`;
+            const headerId = `heading_${id}`;
+            return `<div class="accordion-item">
+                        <h2 class="accordion-header" id="${headerId}">
+                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#${collapseId}" aria-expanded="false" aria-controls="${collapseId}">
+                                ${label}
+                            </button>
+                        </h2>
+                        <div id="${collapseId}" class="accordion-collapse collapse" aria-labelledby="${headerId}" data-bs-parent="#${parentAccordion}">
+                            <div class="accordion-body">
+                                <label class='form-label'>描述性:</label>
+                                <div class='slider-label mb-2'>
+                                    <span>[1]</span>
+                                    <span id='${id}_desc_value' class='fw-bold'>5</span>
+                                    <span>[9]</span>
+                                </div>
+                                <input type="range" class="form-range" id="${id}_desc" min="1" max="9" step="0.1" value="5" oninput="updateValue('${id}_desc')">
+
+                                <label class='form-label mt-3'>情感性:</label>
+                                <div class='slider-label mb-2'>
+                                    <span>[1]</span>
+                                    <span id='${id}_emotion_value' class='fw-bold'>5</span>
+                                    <span>[9]</span>
+                                </div>
+                                <input type="range" class="form-range" id="${id}_emotion" min="1" max="9" step="0.1" value="5" oninput="updateValue('${id}_emotion')">
+                                <label class='form-label mt-3'>備註:</label>
+                                <textarea id="${id}_notes" class='form-control'></textarea>
+                            </div>
+                        </div>
+                    </div>`;
+        }
+
+        function updateRecordList() {
+            const recordList = document.getElementById('recordList');
+            recordList.innerHTML = '';
+            for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                if (key.startsWith('coffee_record_')) {
+                    const recordName = key.replace('coffee_record_', '');
+                    const option = document.createElement('option');
+                    option.value = key;
+                    option.textContent = recordName;
+                    recordList.appendChild(option);
+                }
+            }
+        }
+
+        function loadRecord() {
+            const recordKey = document.getElementById('recordList').value;
+            if (!recordKey) return;
+
+            const record = JSON.parse(localStorage.getItem(recordKey));
+
+            document.getElementById('name').value = record.name;
+            document.getElementById('origin').value = record.origin;
+            document.getElementById('process').value = record.process;
+            document.getElementById('roast').value = record.roast;
+            document.getElementById('grind').value = record.grind;
+            document.getElementById('water_temp').value = record.water_temp;
+            document.getElementById('ratio').value = record.ratio;
+            document.getElementById('method').value = record.method;
+            document.getElementById('extraction_time').value = record.extraction_time;
+            document.getElementById('defects').value = record.defects;
+            document.getElementById('notes').value = record.notes;
+            document.getElementById('overall').value = record.overall;
+            updateValue('overall');
+
+            const allFields = [...fieldsIncludeFlavor, ...fieldsFilter];
+            allFields.forEach(field => {
+                const id = field.replace(/ /g, '_');
+                if (record.evaluations[id]) {
+                    document.getElementById(`${id}_desc`).value = record.evaluations[id].desc;
+                    document.getElementById(`${id}_emotion`).value = record.evaluations[id].emotion;
+                    document.getElementById(`${id}_notes`).value = record.evaluations[id].notes;
+                    updateValue(`${id}_desc`);
+                    updateValue(`${id}_emotion`);
+                }
+            });
+
+            document.querySelectorAll('.flavor-tag').forEach(tag => tag.classList.remove('selected'));
+            fieldsIncludeFlavor.forEach(field => {
+                const id = field.replace(/ /g, '_');
+                if (record.flavors[id]) {
+                    record.flavors[id].forEach(tagId => {
+                        const tag = document.getElementById(tagId);
+                        if (tag) tag.classList.add('selected');
+                    });
+                }
+            });
+            alert("記錄已讀取");
+        }
+
+        function deleteRecord() {
+            const recordList = document.getElementById('recordList');
+            const recordKey = recordList.value;
+            if (!recordKey) return;
+
+            if (confirm(`確定要刪除記錄 "${recordKey.replace('coffee_record_', '')}"嗎？`)) {
+                localStorage.removeItem(recordKey);
+                updateRecordList();
+                alert("記錄已刪除");
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            let content = "";
+            const parentAccordion = "evaluationAccordion";
+
+            fieldsIncludeFlavor.forEach(field => {
+                let id = field.replace(/ /g, "_");
+                content += generateSlider(id, field, parentAccordion);
+            });
+            fieldsFilter.forEach(field => {
+                let id = field.replace(/ /g, "_");
+                content += generateSliderFilter(id, field, parentAccordion);
+            });
+
+            document.getElementById(parentAccordion).innerHTML = content;
+
+            fieldsIncludeFlavor.forEach(field => {
+                let id = field.replace(/ /g, "_");
+                generateFlavorList(id + "_flavorList");
+            });
+            
+            updateRecordList();
+
+            const script = document.createElement('script');
+            script.src = "https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js";
+            document.body.appendChild(script);
         });
     </script>
 </body>
