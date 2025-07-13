@@ -242,10 +242,26 @@
             stars.forEach(star => {
                 star.classList.toggle('selected', star.dataset.value <= value);
             });
+            const id = group.id.replace('_desc_rating', '').replace('_emotion_rating', '');
+            updateEvaluationSummary(id);
         }
 
         function getRating(group) {
             return group.dataset.rating || 0;
+        }
+
+        function updateEvaluationSummary(id) {
+            const descRating = getRating(document.getElementById(`${id}_desc_rating`));
+            const emotionRating = getRating(document.getElementById(`${id}_emotion_rating`));
+            const summaryEl = document.getElementById(`${id}_summary`);
+
+            if (summaryEl) {
+                let summaryText = '';
+                if (descRating > 0 || emotionRating > 0) {
+                    summaryText = `描述: ${descRating} | 情感: ${emotionRating}`;
+                }
+                summaryEl.textContent = summaryText;
+            }
         }
 
         function generateEvaluationItem(id, label) {
@@ -256,6 +272,7 @@
                 <h2 class="accordion-header" id="heading_${id}">
                     <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapse_${id}" aria-expanded="false" aria-controls="collapse_${id}">
                         ${label}
+                        <span id="${id}_summary" class="ms-auto text-muted small pe-3"></span>
                     </button>
                 </h2>
                 <div id="collapse_${id}" class="accordion-collapse collapse" aria-labelledby="heading_${id}" data-bs-parent="#evaluationAccordion">
@@ -462,10 +479,14 @@
             const allFields = [...fieldsIncludeFlavor, ...fieldsFilter];
             allFields.forEach(field => {
                 const id = field.replace(/ /g, '_');
-                if (record.evaluations[id]) {
+                if (record.evaluations && record.evaluations[id]) {
                     setRating(document.getElementById(`${id}_desc_rating`), record.evaluations[id].desc);
                     setRating(document.getElementById(`${id}_emotion_rating`), record.evaluations[id].emotion);
                     document.getElementById(`${id}_notes`).value = record.evaluations[id].notes;
+                } else {
+                    setRating(document.getElementById(`${id}_desc_rating`), 0);
+                    setRating(document.getElementById(`${id}_emotion_rating`), 0);
+                    document.getElementById(`${id}_notes`).value = '';
                 }
             });
 
