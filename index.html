@@ -415,14 +415,14 @@
                         let l2_cell = row.insertCell();
                         let l3_cell = row.insertCell();
                         if (typeof l2 === 'string') {
-                            const l2_id = `l2-${l1_id}-${l2.replace(/[/\s]/g, '')}`;
+                            const l2_id = `l2-${l1_id}-${l2.replace(/[\/\s]/g, '')}`;
                             l2_cell.appendChild(createFlavorTag(l2, l2_id, l1_id));
                         } else {
                             const l2_id = `l2-${l1_id}-${l2.id}`;
                             l2_cell.appendChild(createFlavorTag(l2.name, l2_id, l1_id));
                             if (l2.sub && l2.sub.length > 0) {
                                 l2.sub.forEach(l3 => {
-                                    const l3_id = `l3-${l2_id}-${l3.replace(/[/\s]/g, '')}`;
+                                    const l3_id = `l3-${l2_id}-${l3.replace(/[\/\s]/g, '')}`;
                                     l3_cell.appendChild(createFlavorTag(l3, l3_id, l2_id, true));
                                 });
                             }
@@ -643,6 +643,82 @@
             const value = parseFloat(slider.value);
             document.getElementById(`${id}_value`).innerText = value;
         }
+
+        function generateMarkdown() {
+            const getValue = (id) => document.getElementById(id).value;
+            const getRatingValue = (id) => getRating(document.getElementById(id));
+
+            let md = `# 咖啡杯測報告: ${getValue('name')}\n\n`;
+            md += `## 基本資訊\n`;
+            md += `* **產地:** ${getValue('origin')}\n`;
+            md += `* **處理法:** ${getValue('process')}\n`;
+            md += `* **烘焙度:** ${getValue('roast')}\n\n`;
+
+            md += `## 沖煮參數\n`;
+            md += `* **研磨度:** ${getValue('grind')}\n`;
+            md += `* **水溫:** ${getValue('water_temp')}°C\n`;
+            md += `* **粉水比:** ${getValue('ratio')}\n`;
+            md += `* **沖煮方法:** ${getValue('method')}\n`;
+            md += `* **萃取時間:** ${getValue('extraction_time')}s\n\n`;
+
+            md += `## 感官評估\n`;
+            const allFields = [...fieldsIncludeFlavor, ...fieldsFilter, ...Object.keys(customEvaluationFields)];
+            allFields.forEach(field => {
+                const id = field.replace(/ /g, '_');
+                md += `### ${field}\n`;
+                md += `* **描述性:** ${getRatingValue(id + '_desc_rating')} / 5\n`;
+                md += `* **情感性:** ${getRatingValue(id + '_emotion_rating')} / 5\n`;
+
+                if (customEvaluationFields[field]) {
+                    const options = customEvaluationFields[field];
+                    const primaryKey = Object.keys(options)[0];
+                    const secondaryKey = Object.keys(options)[1];
+                    const primaryValue = document.querySelector(`input[name="${id}_${primaryKey}"]:checked`)?.value || '未選擇';
+                    const secondaryValues = Array.from(document.querySelectorAll(`input[name="${id}_${secondaryKey}"]:checked`)).map(cb => cb.value);
+                    
+                    md += `* **${options[primaryKey].label}:** ${primaryValue}\n`;
+                    if(secondaryValues.length > 0){
+                        md += `* **${options[secondaryKey].label}:** ${secondaryValues.join(', ')}\n`;
+                    }
+                }
+
+                if (fieldsIncludeFlavor.includes(field)) {
+                    const selectedFlavors = Array.from(document.querySelectorAll(`#${id}_flavorList .flavor-tag.selected`)).map(tag => tag.innerText);
+                    if (selectedFlavors.length > 0) {
+                        md += `* **風味描述:** ${selectedFlavors.join(', ')}\n`;
+                    }
+                }
+
+                const notes = getValue(`${id}_notes`);
+                if (notes) {
+                    md += `* **備註:** ${notes}\n`;
+                }
+                md += '\n';
+            });
+
+            md += `## 總結\n`;
+            md += `* **整體評價:** ${getValue('overall')} / 9\n`;
+            const defects = getValue('defects');
+            if (defects) {
+                md += `* **瑕疵記錄:** ${defects}\n`;
+            }
+            const finalNotes = getValue('notes');
+            if (finalNotes) {
+                md += `* **最終備註:** ${finalNotes}\n`;
+            }
+
+            document.getElementById('markdownOutput').textContent = md;
+        }
+
+        function copyToClipboard() {
+            const markdownText = document.getElementById('markdownOutput').textContent;
+            navigator.clipboard.writeText(markdownText).then(() => {
+                alert('Markdown 已複製到剪貼簿！');
+            }, (err) => {
+                alert('複製失敗: ', err);
+            });
+        }
+
 
         document.addEventListener('DOMContentLoaded', () => {
             initializeEvaluationAccordion();
