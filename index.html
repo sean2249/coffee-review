@@ -6,6 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>咖啡杯測記錄</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
     <style>
         body {
             background-color: #f8f9fa;
@@ -19,10 +20,21 @@
             margin-bottom: 1.5rem;
         }
 
-        .slider-label {
+        .rating-group {
             display: flex;
-            justify-content: space-between;
-            align-items: center;
+            gap: 0.5rem; /* Add space between stars */
+        }
+
+        .rating-group .rating-star {
+            font-size: 1.8rem;
+            color: #e0e0e0;
+            cursor: pointer;
+            transition: color 0.2s ease-in-out;
+        }
+
+        .rating-group .rating-star:hover,
+        .rating-group .rating-star.selected {
+            color: #ffc107;
         }
 
         .flavor-tag {
@@ -35,12 +47,10 @@
             white-space: nowrap;
             vertical-align: baseline;
             border-radius: 50rem;
-            /* Capsule shape */
             cursor: pointer;
             margin: 0.2rem;
             transition: color 0.15s ease-in-out, background-color 0.15s ease-in-out, border-color 0.15s ease-in-out;
             border: 1px solid #0d6efd;
-            /* Blue for primary tags */
             color: #0d6efd;
             background-color: transparent;
         }
@@ -50,10 +60,8 @@
             background-color: #0d6efd;
         }
 
-        /* Style for sub-tags (secondary) */
         .flavor-tag[data-parent-l1] {
             border-color: #198754;
-            /* Green for sub-tags */
             color: #198754;
         }
 
@@ -62,10 +70,8 @@
             background-color: #198754;
         }
 
-        /* Style for sub-sub-tags (tertiary) */
         .flavor-tag[data-parent-l2] {
             border-color: #fd7e14;
-            /* Orange for tertiary tags */
             color: #fd7e14;
         }
 
@@ -74,20 +80,17 @@
             background-color: #fd7e14;
         }
 
-        .flavor-table {
-            width: 100%;
-            border-collapse: collapse;
-        }
-
         .flavor-table th,
         .flavor-table td {
             border: 1px solid #dee2e6;
             padding: 0.5rem;
-            vertical-align: top;
+            vertical-align: middle;
         }
 
-        .flavor-table th {
-            background-color: #f8f9fa;
+        .form-label-group {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
         }
     </style>
 </head>
@@ -98,7 +101,7 @@
 
         <div class="card">
             <div class="card-body">
-                <h3 class="card-title">讀取記錄</h3>
+                <h3 class="card-title">記錄管理</h3>
                 <div class="input-group">
                     <select class="form-select" id="recordList"></select>
                     <button class="btn btn-outline-secondary" type="button" onclick="loadRecord()">讀取</button>
@@ -159,26 +162,24 @@
             </div>
         </div>
 
-        <h3 class="mb-3">感官與情感評估</h3>
+        <h3 class="mb-3">感官評估</h3>
         <div class="accordion" id="evaluationAccordion">
         </div>
 
         <div class="card">
             <div class="card-body">
-                <h3 class="card-title mb-3">整體評價</h3>
-                <div class="slider-label mb-2">
-                    <span>低</span>
-                    <span id="overall_value" class="fw-bold">5</span>
-                    <span>高</span>
+                <h3 class="card-title mb-3">總結</h3>
+                <div class="form-label-group">
+                    <label class="form-label">整體評價 (1-9):</label>
+                    <i class="bi bi-info-circle" data-bs-toggle="tooltip" title="綜合所有項目的最終整體印象評分"></i>
                 </div>
-                <input type="range" class="form-range" id="overall" min="1" max="9" value="5"
-                    oninput="updateValue('overall')">
+                <input type="range" class="form-range" id="overall" min="1" max="9" value="5" oninput="updateValue('overall')">
+                <div class="text-center fw-bold" id="overall_value">5</div>
 
-                <h3 class="mt-4">瑕疵記錄</h3>
-                <textarea id="defects" class="form-control" placeholder="記錄任何瑕疵，例如過度萃取、雜味等..."
-                    rows="3"></textarea>
+                <h4 class="mt-4">瑕疵記錄</h4>
+                <textarea id="defects" class="form-control" placeholder="記錄任何瑕疵，例如過度萃取、雜味等..." rows="3"></textarea>
 
-                <h3 class="mt-4">備註</h3>
+                <h4 class="mt-4">備註</h4>
                 <textarea id="notes" class="form-control" placeholder="請輸入額外的備註..." rows="4"></textarea>
             </div>
         </div>
@@ -189,7 +190,6 @@
             <button class="btn btn-success" onclick="copyToClipboard()">複製 Markdown</button>
         </div>
 
-
         <div class="card">
             <div class="card-body">
                 <h3 class="card-title">Markdown 輸出</h3>
@@ -198,134 +198,205 @@
         </div>
     </div>
 
-
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
         const fieldsIncludeFlavor = ["乾香", "濕香", "風味"];
         const fieldsFilter = ["尾韻", "酸味", "甜感", "口感", "平衡度"];
 
-        const flavors = [{
-            id: "floral",
-            name: "花香",
-            sub: []
-        },
-        {
-            id: "fruit",
-            name: "果味",
-            sub: [{
-                id: "berry",
-                name: "莓果",
-                sub: ["草莓", "藍莓", "黑莓"]
-            },
+        const flavors = [
+            { id: "floral", name: "花香類", sub: ["茉莉", "玫瑰", "蘭花", "桂花", "紫羅蘭", "薰衣草"] },
             {
-                id: "dried_fruit",
-                name: "果干",
-                sub: ["葡萄乾", "梅子乾"]
+                id: "fruit", name: "水果類", sub: [
+                    { id: "citrus", name: "柑橘類", sub: ["檸檬", "橘子", "葡萄柚"] },
+                    { id: "berry", name: "莓果類", sub: ["草莓", "藍莓", "黑莓"] },
+                    { id: "stone_fruit", name: "核果類", sub: ["桃子", "杏桃", "櫻桃"] },
+                    { id: "tropical_fruit", name: "熱帶水果", sub: ["鳳梨", "芒果", "百香果"] }
+                ]
             },
+            { id: "sugar", name: "糖香類", sub: ["蜂蜜", "焦糖", "黑糖", "楓糖", "太妃糖"] },
             {
-                id: "citrus",
-                name: "柑橘類",
-                sub: ["檸檬", "橘子", "葡萄柚"]
-            }
-            ]
-        },
-        {
-            id: "acid_ferment",
-            name: "酸性 / 發酵味",
-            sub: ["酸性", "發酵味"]
-        },
-        {
-            id: "herbal",
-            name: "草本 / 蔬果",
-            sub: []
-        },
-        {
-            id: "roast",
-            name: "焙烤",
-            sub: ["穀物味", "焦味", "菸草味"]
-        },
-        {
-            id: "nutty_cocoa",
-            name: "堅果 / 可可",
-            sub: ["堅果", "可可"]
-        },
-        {
-            id: "spice",
-            name: "香料",
-            sub: []
-        },
-        {
-            id: "sweet",
-            name: "甜",
-            sub: ["香草 / 香草酸", "焦糖"]
-        },
-        {
-            id: "other",
-            name: "其他",
-            sub: ["化合物", "霉味 / 土味", "紙味"]
-        }
+                id: "nutty_cocoa", name: "堅果/巧克力類", sub: [
+                    { id: "nut", name: "堅果類", sub: ["杏仁", "核桃", "榛果", "花生", "腰果"] },
+                    { id: "chocolate", name: "巧克力類", sub: ["牛奶巧克力", "黑巧克力", "可可粉"] }
+                ]
+            },
+            { id: "spice", name: "香料類", sub: ["肉桂", "丁香", "胡椒", "薑", "八角"] },
+            { id: "herbal", name: "草本類", sub: ["薄荷", "羅勒", "茶感", "青草", "香草"] },
+            { id: "roast", name: "焙烤", sub: ["穀物味", "焦味", "菸草味"] },
+            { id: "other", name: "其他", sub: ["化合物", "霉味 / 土味", "紙味"] }
         ];
 
-        function updateValue(id) {
-            const slider = document.getElementById(id);
-            const value = parseFloat(slider.value);
-            const step = parseFloat(slider.step);
-            const displayValue = step < 1 ? value.toFixed(1) : value;
-            document.getElementById(`${id}_value`).innerText = displayValue;
+        function createRatingStars(parentElement) {
+            for (let i = 1; i <= 5; i++) {
+                let star = document.createElement('i');
+                star.className = 'bi bi-star-fill rating-star';
+                star.dataset.value = i;
+                star.addEventListener('click', () => setRating(parentElement, i));
+                parentElement.appendChild(star);
+            }
         }
 
-        function generateMarkdown() {
-            const name = document.getElementById("name").value;
-            const origin = document.getElementById("origin").value;
-            const process = document.getElementById("process").value;
-            const roast = document.getElementById("roast").value;
-            const grind = document.getElementById("grind").value;
-            const water_temp = document.getElementById("water_temp").value;
-            const ratio = document.getElementById("ratio").value;
-            const method = document.getElementById("method").value;
-            const extraction_time = document.getElementById("extraction_time").value;
-            const defects = document.getElementById("defects").value;
-            const notes = document.getElementById("notes").value;
+        function setRating(group, value) {
+            group.dataset.rating = value;
+            const stars = group.querySelectorAll('.rating-star');
+            stars.forEach(star => {
+                star.classList.toggle('selected', star.dataset.value <= value);
+            });
+        }
 
-            let markdown = `# 咖啡杯測記錄\n\n## 基本資訊\n- 咖啡名稱: ${name}  \n- 產地: ${origin}  \n- 處理法: ${process}  \n- 烘焙度: ${roast}  \n\n## 沖煮參數\n- 研磨度: ${grind}  \n- 水溫: ${water_temp}°C  \n- 粉水比: ${ratio}  \n- 沖煮方法: ${method}  \n- 萃取時間: ${extraction_time}s  \n\n## 感官與情感評估\n`;
+        function getRating(group) {
+            return group.dataset.rating || 0;
+        }
 
-            fieldsIncludeFlavor.forEach(field => {
-                let id = field.replace(/ /g, "_");
-                let desc = document.getElementById(`${id}_desc`).value;
-                let emotion = document.getElementById(`${id}_emotion`).value;
-                let note = document.getElementById(`${id}_notes`).value;
-                markdown += `### ${field}\n`;
-                markdown += `- 分數（描述性/情感性）: ${desc}/${emotion}\n`;
-                markdown += `- 主要風味:\n`;
+        function generateEvaluationItem(id, label) {
+            const isFlavorItem = fieldsIncludeFlavor.includes(label);
+            const flavorTableHTML = isFlavorItem ? `<div class="table-responsive"><div id="${id}_flavorList" class="mt-4"></div></div>` : '';
 
-                document.querySelectorAll(`#${id}_flavorList .flavor-tag.selected`).forEach(tag => {
-                    markdown += `  - ${tag.innerText.trim()}\n`;
+            return `<div class="accordion-item">
+                <h2 class="accordion-header" id="heading_${id}">
+                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapse_${id}" aria-expanded="false" aria-controls="collapse_${id}">
+                        ${label}
+                    </button>
+                </h2>
+                <div id="collapse_${id}" class="accordion-collapse collapse" aria-labelledby="heading_${id}" data-bs-parent="#evaluationAccordion">
+                    <div class="accordion-body">
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <div class="form-label-group">
+                                    <label class="form-label">描述性:</label>
+                                    <i class="bi bi-info-circle" data-bs-toggle="tooltip" title="客觀評估咖啡風味的強度與豐富性"></i>
+                                </div>
+                                <div id="${id}_desc_rating" class="rating-group"></div>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <div class="form-label-group">
+                                    <label class="form-label">情感性:</label>
+                                    <i class="bi bi-info-circle" data-bs-toggle="tooltip" title="主觀評估個人對此風味的喜愛程度"></i>
+                                </div>
+                                <div id="${id}_emotion_rating" class="rating-group"></div>
+                            </div>
+                        </div>
+                        ${flavorTableHTML}
+                        <label class="form-label mt-3">備註:</label>
+                        <textarea id="${id}_notes" class="form-control"></textarea>
+                    </div>
+                </div>
+            </div>`;
+        }
+
+        function initializeEvaluationAccordion() {
+            const accordion = document.getElementById('evaluationAccordion');
+            const allFields = [...fieldsIncludeFlavor, ...fieldsFilter];
+            accordion.innerHTML = allFields.map(field => generateEvaluationItem(field.replace(/ /g, '_'), field)).join('');
+
+            allFields.forEach(field => {
+                const id = field.replace(/ /g, '_');
+                const descRatingGroup = document.getElementById(`${id}_desc_rating`);
+                const emotionRatingGroup = document.getElementById(`${id}_emotion_rating`);
+                createRatingStars(descRatingGroup);
+                createRatingStars(emotionRatingGroup);
+
+                if (fieldsIncludeFlavor.includes(field)) {
+                    generateFlavorList(`${id}_flavorList`);
+                }
+            });
+        }
+
+        function generateFlavorList(containerId) {
+            const container = document.getElementById(containerId);
+            if (!container) return;
+            container.innerHTML = '';
+
+            let table = document.createElement('table');
+            table.className = 'table table-bordered flavor-table';
+            table.innerHTML = '<thead><tr><th>主要風味</th><th>次要風味</th><th>詳細風味</th></tr></thead>';
+            let tbody = table.createTBody();
+
+            flavors.forEach(l1 => {
+                const l1_id = `l1-${l1.id}`;
+                if (!l1.sub || l1.sub.length === 0) {
+                    let row = tbody.insertRow();
+                    let cell = row.insertCell();
+                    cell.colSpan = 3;
+                    cell.appendChild(createFlavorTag(l1.name, l1_id));
+                } else {
+                    l1.sub.forEach((l2, i) => {
+                        let row = tbody.insertRow();
+                        if (i === 0) {
+                            let cell = row.insertCell();
+                            cell.rowSpan = l1.sub.length;
+                            cell.appendChild(createFlavorTag(l1.name, l1_id));
+                        }
+                        let l2_cell = row.insertCell();
+                        let l3_cell = row.insertCell();
+                        if (typeof l2 === 'string') {
+                            const l2_id = `l2-${l1_id}-${l2.replace(/[/\s]/g, '')}`;
+                            l2_cell.appendChild(createFlavorTag(l2, l2_id, l1_id));
+                        } else {
+                            const l2_id = `l2-${l1_id}-${l2.id}`;
+                            l2_cell.appendChild(createFlavorTag(l2.name, l2_id, l1_id));
+                            if (l2.sub && l2.sub.length > 0) {
+                                l2.sub.forEach(l3 => {
+                                    const l3_id = `l3-${l2_id}-${l3.replace(/[/\s]/g, '')}`;
+                                    l3_cell.appendChild(createFlavorTag(l3, l3_id, l2_id, true));
+                                });
+                            }
+                        }
+                    });
+                }
+            });
+            const tableContainer = document.createElement('div');
+            tableContainer.className = 'table-responsive';
+            tableContainer.appendChild(table);
+            container.appendChild(tableContainer);
+
+            container.querySelectorAll(".flavor-tag").forEach(tag => {
+                tag.addEventListener("click", function () {
+                    this.classList.toggle('selected');
+                    const l1_id_from_l2 = this.dataset.parentL1;
+                    const l2_id_from_l3 = this.dataset.parentL2;
+
+                    if (l2_id_from_l3) {
+                        const l2_tag = document.getElementById(l2_id_from_l3);
+                        const l1_tag = document.getElementById(l2_tag.dataset.parentL1);
+                        updateParentState(l2_tag, `.flavor-tag[data-parent-l2="${l2_id_from_l3}"]`);
+                        updateParentState(l1_tag, `.flavor-tag[data-parent-l1="${l1_tag.id}"]`);
+                    } else if (l1_id_from_l2) {
+                        const l1_tag = document.getElementById(l1_id_from_l2);
+                        updateParentState(l1_tag, `.flavor-tag[data-parent-l1="${l1_id_from_l2}"]`);
+                        if (!this.classList.contains('selected')) {
+                            container.querySelectorAll(`.flavor-tag[data-parent-l2="${this.id}"]`).forEach(ct => ct.classList.remove('selected'));
+                        }
+                    } else {
+                        if (!this.classList.contains('selected')) {
+                            container.querySelectorAll(`.flavor-tag[data-parent-l1="${this.id}"]`).forEach(ct => {
+                                ct.classList.remove('selected');
+                                container.querySelectorAll(`.flavor-tag[data-parent-l2^="l2-${this.id}"]`).forEach(cct => cct.classList.remove('selected'));
+                            });
+                        }
+                    }
                 });
-                if (note) markdown += `- 備註: ${note}\n`;
             });
-
-            fieldsFilter.forEach(field => {
-                let id = field.replace(/ /g, "_");
-                let desc = document.getElementById(`${id}_desc`).value;
-                let emotion = document.getElementById(`${id}_emotion`).value;
-                let note = document.getElementById(`${id}_notes`).value;
-                markdown += `### ${field}\n`;
-                markdown += `- 分數（描述性/情感性）: ${desc}/${emotion}\n`;
-                if (note) markdown += `- 備註: ${note}\n`;
-            });
-
-            let overall = document.getElementById("overall").value;
-            markdown += `\n## 整體評價: ${overall}\n`;
-            if (defects) markdown += `\n## 瑕疵記錄\n${defects}\n`;
-            if (notes) markdown += `\n## 總備註\n${notes}\n`;
-
-            document.getElementById("markdownOutput").textContent = markdown;
         }
 
-        function copyToClipboard() {
-            const markdownText = document.getElementById("markdownOutput").textContent;
-            navigator.clipboard.writeText(markdownText)
-                .then(() => alert("Markdown 已複製"))
-                .catch(err => alert("複製失敗，請手動複製: " + err));
+        function updateParentState(parentTag, childrenSelector) {
+            if (!parentTag) return;
+            const siblings = parentTag.closest('table').querySelectorAll(childrenSelector);
+            const siblingsSelected = Array.from(siblings).some(t => t.classList.contains('selected'));
+            parentTag.classList.toggle('selected', siblingsSelected);
+        }
+
+        function createFlavorTag(name, id, parentId = null, isL3 = false) {
+            let tag = document.createElement('span');
+            tag.className = 'flavor-tag';
+            tag.id = id;
+            tag.innerText = name;
+            if (isL3) {
+                tag.dataset.parentL2 = parentId;
+            } else if (parentId) {
+                tag.dataset.parentL1 = parentId;
+            }
+            return tag;
         }
 
         function saveRecord() {
@@ -353,8 +424,8 @@
             allFields.forEach(field => {
                 const id = field.replace(/ /g, '_');
                 record.evaluations[id] = {
-                    desc: document.getElementById(`${id}_desc`).value,
-                    emotion: document.getElementById(`${id}_emotion`).value,
+                    desc: getRating(document.getElementById(`${id}_desc_rating`)),
+                    emotion: getRating(document.getElementById(`${id}_emotion_rating`)),
                     notes: document.getElementById(`${id}_notes`).value
                 };
 
@@ -366,194 +437,6 @@
             localStorage.setItem(`coffee_record_${recordName}`, JSON.stringify(record));
             alert(`記錄 "${recordName}" 已儲存`);
             updateRecordList();
-        }
-
-        function generateFlavorList(containerId) {
-            const container = document.getElementById(containerId);
-            container.innerHTML = ''; // Clear previous content
-
-            let table = document.createElement('table');
-            table.className = 'table table-bordered flavor-table';
-            let thead = table.createTHead();
-            let tbody = table.createTBody();
-            let headerRow = thead.insertRow();
-            headerRow.innerHTML = '<th>主要風味</th><th>次要風味</th><th>詳細風味</th>';
-
-            flavors.forEach(l1_flavor => {
-                const l1_id = `l1-${l1_flavor.id}`;
-
-                if (!l1_flavor.sub || l1_flavor.sub.length === 0) {
-                    let row = tbody.insertRow();
-                    let cell = row.insertCell();
-                    cell.colSpan = 3;
-                    cell.appendChild(createFlavorTag(l1_flavor.name, l1_id));
-                } else {
-                    l1_flavor.sub.forEach((l2_flavor, index) => {
-                        let row = tbody.insertRow();
-
-                        if (index === 0) {
-                            let l1_cell = row.insertCell();
-                            l1_cell.rowSpan = l1_flavor.sub.length;
-                            l1_cell.appendChild(createFlavorTag(l1_flavor.name, l1_id));
-                        }
-
-                        let l2_cell = row.insertCell();
-                        let l3_cell = row.insertCell();
-
-                        if (typeof l2_flavor === 'string') {
-                            const l2_id = `l2-${l1_id}-${l2_flavor.replace(/[\/\s]/g, '')}`;
-                            l2_cell.appendChild(createFlavorTag(l2_flavor, l2_id, l1_id));
-                        } else {
-                            const l2_id = `l2-${l1_id}-${l2_flavor.id}`;
-                            l2_cell.appendChild(createFlavorTag(l2_flavor.name, l2_id, l1_id));
-
-                            if (l2_flavor.sub && l2_flavor.sub.length > 0) {
-                                l2_flavor.sub.forEach(l3_flavor => {
-                                    const l3_id = `l3-${l2_id}-${l3_flavor.replace(/[\/\s]/g, '')}`;
-                                    l3_cell.appendChild(createFlavorTag(l3_flavor, l3_id, l2_id, true));
-                                });
-                            }
-                        }
-                    });
-                }
-            });
-
-            container.appendChild(table);
-
-            container.querySelectorAll(".flavor-tag").forEach(tag => {
-                tag.addEventListener("click", function () {
-                    this.classList.toggle('selected');
-                    const l1_id_from_l2 = this.dataset.parentL1;
-                    const l2_id_from_l3 = this.dataset.parentL2;
-
-                    if (l2_id_from_l3) { // Clicked L3
-                        const l2_tag = document.getElementById(l2_id_from_l3);
-                        const l1_tag = document.getElementById(l2_tag.dataset.parentL1);
-                        updateParentState(l2_tag, `.flavor-tag[data-parent-l2="${l2_id_from_l3}"]`);
-                        updateParentState(l1_tag, `.flavor-tag[data-parent-l1="${l1_tag.id}"]`);
-                    } else if (l1_id_from_l2) { // Clicked L2
-                        const l1_tag = document.getElementById(l1_id_from_l2);
-                        updateParentState(l1_tag, `.flavor-tag[data-parent-l1="${l1_id_from_l2}"]`);
-                        if (!this.classList.contains('selected')) {
-                            container.querySelectorAll(`.flavor-tag[data-parent-l2="${this.id}"]`).forEach(ct => ct.classList.remove('selected'));
-                        }
-                    } else { // Clicked L1
-                        if (!this.classList.contains('selected')) {
-                            container.querySelectorAll(`.flavor-tag[data-parent-l1="${this.id}"]`).forEach(ct => {
-                                ct.classList.remove('selected');
-                                container.querySelectorAll(`.flavor-tag[data-parent-l2="${ct.id}"]`).forEach(cct => cct.classList.remove('selected'));
-                            });
-                        }
-                    }
-                });
-            });
-        }
-
-        function updateParentState(parentTag, childrenSelector) {
-            if (!parentTag) return;
-            const siblings = parentTag.closest('table').querySelectorAll(childrenSelector);
-            const siblingsSelected = Array.from(siblings).some(t => t.classList.contains('selected'));
-            if (siblingsSelected) {
-                parentTag.classList.add('selected');
-            } else {
-                parentTag.classList.remove('selected');
-            }
-        }
-
-        function createFlavorTag(name, id, parentId = null, isL3 = false) {
-            let tag = document.createElement('span');
-            tag.className = 'flavor-tag';
-            tag.id = id;
-            tag.innerText = name;
-            if (isL3) {
-                tag.dataset.parentL2 = parentId;
-            } else if (parentId) {
-                tag.dataset.parentL1 = parentId;
-            }
-            return tag;
-        }
-
-        function generateSlider(id, label, parentAccordion) {
-            const collapseId = `collapse_${id}`;
-            const headerId = `heading_${id}`;
-            return `<div class="accordion-item">
-                        <h2 class="accordion-header" id="${headerId}">
-                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#${collapseId}" aria-expanded="false" aria-controls="${collapseId}">
-                                ${label}
-                            </button>
-                        </h2>
-                        <div id="${collapseId}" class="accordion-collapse collapse" aria-labelledby="${headerId}" data-bs-parent="#${parentAccordion}">
-                            <div class="accordion-body">
-                                <label class='form-label'>描述性:</label>
-                                <div class='slider-label mb-2'>
-                                    <span>[1]</span>
-                                    <span id='${id}_desc_value' class='fw-bold'>5</span>
-                                    <span>[9]</span>
-                                </div>
-                                <input type="range" class="form-range" id="${id}_desc" min="1" max="9" step="0.1" value="5" oninput="updateValue('${id}_desc')">
-
-                                <label class='form-label mt-3'>情感性:</label>
-                                <div class='slider-label mb-2'>
-                                    <span>[1]</span>
-                                    <span id='${id}_emotion_value' class='fw-bold'>5</span>
-                                    <span>[9]</span>
-                                </div>
-                                <input type="range" class="form-range" id="${id}_emotion" min="1" max="9" step="0.1" value="5" oninput="updateValue('${id}_emotion')">
-
-                                <div id="${id}_flavorList" class="mt-4"></div>
-                                <label class='form-label mt-3'>備註:</label>
-                                <textarea id="${id}_notes" class='form-control'></textarea>
-                            </div>
-                        </div>
-                    </div>`;
-        }
-
-        function generateSliderFilter(id, label, parentAccordion) {
-            const collapseId = `collapse_${id}`;
-            const headerId = `heading_${id}`;
-            return `<div class="accordion-item">
-                        <h2 class="accordion-header" id="${headerId}">
-                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#${collapseId}" aria-expanded="false" aria-controls="${collapseId}">
-                                ${label}
-                            </button>
-                        </h2>
-                        <div id="${collapseId}" class="accordion-collapse collapse" aria-labelledby="${headerId}" data-bs-parent="#${parentAccordion}">
-                            <div class="accordion-body">
-                                <label class='form-label'>描述性:</label>
-                                <div class='slider-label mb-2'>
-                                    <span>[1]</span>
-                                    <span id='${id}_desc_value' class='fw-bold'>5</span>
-                                    <span>[9]</span>
-                                </div>
-                                <input type="range" class="form-range" id="${id}_desc" min="1" max="9" step="0.1" value="5" oninput="updateValue('${id}_desc')">
-
-                                <label class='form-label mt-3'>情感性:</label>
-                                <div class='slider-label mb-2'>
-                                    <span>[1]</span>
-                                    <span id='${id}_emotion_value' class='fw-bold'>5</span>
-                                    <span>[9]</span>
-                                </div>
-                                <input type="range" class="form-range" id="${id}_emotion" min="1" max="9" step="0.1" value="5" oninput="updateValue('${id}_emotion')">
-                                <label class='form-label mt-3'>備註:</label>
-                                <textarea id="${id}_notes" class='form-control'></textarea>
-                            </div>
-                        </div>
-                    </div>`;
-        }
-
-        function updateRecordList() {
-            const recordList = document.getElementById('recordList');
-            recordList.innerHTML = '';
-            for (let i = 0; i < localStorage.length; i++) {
-                const key = localStorage.key(i);
-                if (key.startsWith('coffee_record_')) {
-                    const recordName = key.replace('coffee_record_', '');
-                    const option = document.createElement('option');
-                    option.value = key;
-                    option.textContent = recordName;
-                    recordList.appendChild(option);
-                }
-            }
         }
 
         function loadRecord() {
@@ -580,11 +463,9 @@
             allFields.forEach(field => {
                 const id = field.replace(/ /g, '_');
                 if (record.evaluations[id]) {
-                    document.getElementById(`${id}_desc`).value = record.evaluations[id].desc;
-                    document.getElementById(`${id}_emotion`).value = record.evaluations[id].emotion;
+                    setRating(document.getElementById(`${id}_desc_rating`), record.evaluations[id].desc);
+                    setRating(document.getElementById(`${id}_emotion_rating`), record.evaluations[id].emotion);
                     document.getElementById(`${id}_notes`).value = record.evaluations[id].notes;
-                    updateValue(`${id}_desc`);
-                    updateValue(`${id}_emotion`);
                 }
             });
 
@@ -613,32 +494,38 @@
             }
         }
 
+        function updateRecordList() {
+            const recordList = document.getElementById('recordList');
+            recordList.innerHTML = '';
+            for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                if (key.startsWith('coffee_record_')) {
+                    const recordName = key.replace('coffee_record_', '');
+                    const option = document.createElement('option');
+                    option.value = key;
+                    option.textContent = recordName;
+                    recordList.appendChild(option);
+                }
+            }
+        }
+
+        function updateValue(id) {
+            const slider = document.getElementById(id);
+            const value = parseFloat(slider.value);
+            document.getElementById(`${id}_value`).innerText = value;
+        }
+
         document.addEventListener('DOMContentLoaded', () => {
-            let content = "";
-            const parentAccordion = "evaluationAccordion";
-
-            fieldsIncludeFlavor.forEach(field => {
-                let id = field.replace(/ /g, "_");
-                content += generateSlider(id, field, parentAccordion);
-            });
-            fieldsFilter.forEach(field => {
-                let id = field.replace(/ /g, "_");
-                content += generateSliderFilter(id, field, parentAccordion);
-            });
-
-            document.getElementById(parentAccordion).innerHTML = content;
-
-            fieldsIncludeFlavor.forEach(field => {
-                let id = field.replace(/ /g, "_");
-                generateFlavorList(id + "_flavorList");
-            });
-            
+            initializeEvaluationAccordion();
             updateRecordList();
 
-            const script = document.createElement('script');
-            script.src = "https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js";
-            document.body.appendChild(script);
+            // Initialize tooltips
+            const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
+            var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+                return new bootstrap.Tooltip(tooltipTriggerEl)
+            });
         });
+
     </script>
 </body>
 
