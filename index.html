@@ -201,7 +201,34 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
         const fieldsIncludeFlavor = ["乾香", "濕香", "風味"];
-        const fieldsFilter = ["尾韻", "酸味", "甜感", "口感", "平衡度"];
+        const fieldsFilter = ["酸質", "甜感", "平衡度"];
+
+        const mouthfeelOptions = {
+            weight: {
+                label: "重量級別",
+                options: ["輕盈如茶", "圓潤順口", "醇厚飽滿"]
+            },
+            texture: {
+                label: "質地描述",
+                options: ["絲滑感", "奶油感", "絨布感", "糖漿感", "多汁感", "清脆感", "乾澀感", "氣泡感", "顆粒感"]
+            }
+        };
+
+        const aftertasteOptions = {
+            length: {
+                label: "尾韻長度",
+                options: ["短暫", "中等", "悠長", "綿延"]
+            },
+            quality: {
+                label: "尾韻質地",
+                options: ["乾淨", "粗糙 / 乾澀", "富有變化"]
+            }
+        };
+
+        const customEvaluationFields = {
+            "口感": mouthfeelOptions,
+            "尾韻": aftertasteOptions
+        };
 
         const flavors = [
             { id: "floral", name: "花香類", sub: ["茉莉", "玫瑰", "蘭花", "桂花", "紫羅蘭", "薰衣草"] },
@@ -226,47 +253,106 @@
             { id: "other", name: "其他", sub: ["化合物", "霉味 / 土味", "紙味"] }
         ];
 
-        function createRatingStars(parentElement) {
+        function createRatingStars(parentElement, id, label) {
             for (let i = 1; i <= 5; i++) {
                 let star = document.createElement('i');
                 star.className = 'bi bi-star-fill rating-star';
                 star.dataset.value = i;
-                star.addEventListener('click', () => setRating(parentElement, i));
+                star.addEventListener('click', () => setRating(parentElement, i, id, label));
                 parentElement.appendChild(star);
             }
         }
 
-        function setRating(group, value) {
+        function setRating(group, value, id, label) {
             group.dataset.rating = value;
             const stars = group.querySelectorAll('.rating-star');
             stars.forEach(star => {
                 star.classList.toggle('selected', star.dataset.value <= value);
             });
-            const id = group.id.replace('_desc_rating', '').replace('_emotion_rating', '');
-            updateEvaluationSummary(id);
+            updateSummary(id, label);
         }
 
         function getRating(group) {
             return group.dataset.rating || 0;
         }
 
-        function updateEvaluationSummary(id) {
+        function updateSummary(id, label) {
+            const summaryEl = document.getElementById(`${id}_summary`);
+            if (!summaryEl) return;
+
             const descRating = getRating(document.getElementById(`${id}_desc_rating`));
             const emotionRating = getRating(document.getElementById(`${id}_emotion_rating`));
-            const summaryEl = document.getElementById(`${id}_summary`);
-
-            if (summaryEl) {
-                let summaryText = '';
-                if (descRating > 0 || emotionRating > 0) {
-                    summaryText = `描述: ${descRating} | 情感: ${emotionRating}`;
-                }
-                summaryEl.textContent = summaryText;
+            
+            let starSummary = '';
+            if (descRating > 0 || emotionRating > 0) {
+                starSummary = `描述: ${descRating} | 情感: ${emotionRating}`;
             }
+
+            let customSummary = '';
+            if (customEvaluationFields[label]) {
+                const options = customEvaluationFields[label];
+                const primaryKey = Object.keys(options)[0];
+                const secondaryKey = Object.keys(options)[1];
+                const primaryValue = document.querySelector(`input[name="${id}_${primaryKey}"]:checked`)?.value || '';
+                const secondaryValues = Array.from(document.querySelectorAll(`input[name="${id}_${secondaryKey}"]:checked`)).map(cb => cb.value);
+                customSummary = [primaryValue, ...secondaryValues].filter(v => v).join(', ');
+            }
+            
+            summaryEl.textContent = [starSummary, customSummary].filter(Boolean).join('; ');
         }
 
         function generateEvaluationItem(id, label) {
             const isFlavorItem = fieldsIncludeFlavor.includes(label);
-            const flavorTableHTML = isFlavorItem ? `<div class="table-responsive"><div id="${id}_flavorList" class="mt-4"></div></div>` : '';
+            const isCustomField = Object.keys(customEvaluationFields).includes(label);
+
+            let bodyContent = `
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <div class="form-label-group">
+                            <label class="form-label">描述性:</label>
+                            <i class="bi bi-info-circle" data-bs-toggle="tooltip" title="客觀評估咖啡風味的強度與豐富性"></i>
+                        </div>
+                        <div id="${id}_desc_rating" class="rating-group"></div>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <div class="form-label-group">
+                            <label class="form-label">情感性:</label>
+                            <i class="bi bi-info-circle" data-bs-toggle="tooltip" title="主觀評估個人對此風味的喜愛程度"></i>
+                        </div>
+                        <div id="${id}_emotion_rating" class="rating-group"></div>
+                    </div>
+                </div>`;
+
+            if (isCustomField) {
+                const options = customEvaluationFields[label];
+                const primaryKey = Object.keys(options)[0];
+                const secondaryKey = Object.keys(options)[1];
+                const primaryOptions = options[primaryKey];
+                const secondaryOptions = options[secondaryKey];
+
+                let customHtml = `<hr><h5>${primaryOptions.label}</h5>`;
+                primaryOptions.options.forEach(opt => {
+                    customHtml += `<div class="form-check form-check-inline">
+                        <input class="form-check-input" type="radio" name="${id}_${primaryKey}" id="${id}_${primaryKey}_${opt}" value="${opt}" onchange="updateSummary('${id}', '${label}')">
+                        <label class="form-check-label" for="${id}_${primaryKey}_${opt}">${opt}</label>
+                    </div>`;
+                });
+
+                customHtml += `<h5 class="mt-4">${secondaryOptions.label}</h5>`;
+                secondaryOptions.options.forEach(opt => {
+                    customHtml += `<div class="form-check form-check-inline">
+                        <input class="form-check-input" type="checkbox" name="${id}_${secondaryKey}" id="${id}_${secondaryKey}_${opt}" value="${opt}" onchange="updateSummary('${id}', '${label}')">
+                        <label class="form-check-label" for="${id}_${secondaryKey}_${opt}">${opt}</label>
+                    </div>`;
+                });
+                bodyContent += customHtml;
+            }
+
+            if (isFlavorItem) {
+                bodyContent += `<div class="table-responsive"><div id="${id}_flavorList" class="mt-4"></div></div>`;
+            }
+            
+            bodyContent += `<label class="form-label mt-4">備註:</label><textarea id="${id}_notes" class="form-control"></textarea>`;
 
             return `<div class="accordion-item">
                 <h2 class="accordion-header" id="heading_${id}">
@@ -277,25 +363,7 @@
                 </h2>
                 <div id="collapse_${id}" class="accordion-collapse collapse" aria-labelledby="heading_${id}" data-bs-parent="#evaluationAccordion">
                     <div class="accordion-body">
-                        <div class="row">
-                            <div class="col-md-6 mb-3">
-                                <div class="form-label-group">
-                                    <label class="form-label">描述性:</label>
-                                    <i class="bi bi-info-circle" data-bs-toggle="tooltip" title="客觀評估咖啡風味的強度與豐富性"></i>
-                                </div>
-                                <div id="${id}_desc_rating" class="rating-group"></div>
-                            </div>
-                            <div class="col-md-6 mb-3">
-                                <div class="form-label-group">
-                                    <label class="form-label">情感性:</label>
-                                    <i class="bi bi-info-circle" data-bs-toggle="tooltip" title="主觀評估個人對此風味的喜愛程度"></i>
-                                </div>
-                                <div id="${id}_emotion_rating" class="rating-group"></div>
-                            </div>
-                        </div>
-                        ${flavorTableHTML}
-                        <label class="form-label mt-3">備註:</label>
-                        <textarea id="${id}_notes" class="form-control"></textarea>
+                        ${bodyContent}
                     </div>
                 </div>
             </div>`;
@@ -303,15 +371,15 @@
 
         function initializeEvaluationAccordion() {
             const accordion = document.getElementById('evaluationAccordion');
-            const allFields = [...fieldsIncludeFlavor, ...fieldsFilter];
+            const allFields = [...fieldsIncludeFlavor, ...fieldsFilter, ...Object.keys(customEvaluationFields)];
             accordion.innerHTML = allFields.map(field => generateEvaluationItem(field.replace(/ /g, '_'), field)).join('');
 
             allFields.forEach(field => {
                 const id = field.replace(/ /g, '_');
                 const descRatingGroup = document.getElementById(`${id}_desc_rating`);
                 const emotionRatingGroup = document.getElementById(`${id}_emotion_rating`);
-                createRatingStars(descRatingGroup);
-                createRatingStars(emotionRatingGroup);
+                createRatingStars(descRatingGroup, id, field);
+                createRatingStars(emotionRatingGroup, id, field);
 
                 if (fieldsIncludeFlavor.includes(field)) {
                     generateFlavorList(`${id}_flavorList`);
@@ -437,7 +505,7 @@
                 flavors: {}
             };
 
-            const allFields = [...fieldsIncludeFlavor, ...fieldsFilter];
+            const allFields = [...fieldsIncludeFlavor, ...fieldsFilter, ...Object.keys(customEvaluationFields)];
             allFields.forEach(field => {
                 const id = field.replace(/ /g, '_');
                 record.evaluations[id] = {
@@ -446,6 +514,16 @@
                     notes: document.getElementById(`${id}_notes`).value
                 };
 
+                if (customEvaluationFields[field]) {
+                    const options = customEvaluationFields[field];
+                    const primaryKey = Object.keys(options)[0];
+                    const secondaryKey = Object.keys(options)[1];
+                    const primaryValue = document.querySelector(`input[name="${id}_${primaryKey}"]:checked`)?.value || '';
+                    const secondaryValues = Array.from(document.querySelectorAll(`input[name="${id}_${secondaryKey}"]:checked`)).map(cb => cb.value);
+                    record.evaluations[id][primaryKey] = primaryValue;
+                    record.evaluations[id][secondaryKey] = secondaryValues;
+                }
+                
                 if (fieldsIncludeFlavor.includes(field)) {
                     record.flavors[id] = Array.from(document.querySelectorAll(`#${id}_flavorList .flavor-tag.selected`)).map(tag => tag.id);
                 }
@@ -476,30 +554,60 @@
             document.getElementById('overall').value = record.overall;
             updateValue('overall');
 
-            const allFields = [...fieldsIncludeFlavor, ...fieldsFilter];
+            const allFields = [...fieldsIncludeFlavor, ...fieldsFilter, ...Object.keys(customEvaluationFields)];
             allFields.forEach(field => {
                 const id = field.replace(/ /g, '_');
-                if (record.evaluations && record.evaluations[id]) {
-                    setRating(document.getElementById(`${id}_desc_rating`), record.evaluations[id].desc);
-                    setRating(document.getElementById(`${id}_emotion_rating`), record.evaluations[id].emotion);
-                    document.getElementById(`${id}_notes`).value = record.evaluations[id].notes;
-                } else {
-                    setRating(document.getElementById(`${id}_desc_rating`), 0);
-                    setRating(document.getElementById(`${id}_emotion_rating`), 0);
-                    document.getElementById(`${id}_notes`).value = '';
+                const evalData = record.evaluations ? record.evaluations[id] : null;
+
+                // Reset fields first
+                setRating(document.getElementById(`${id}_desc_rating`), 0, id, field);
+                setRating(document.getElementById(`${id}_emotion_rating`), 0, id, field);
+                document.getElementById(`${id}_notes`).value = '';
+                if (customEvaluationFields[field]) {
+                    const options = customEvaluationFields[field];
+                    const primaryKey = Object.keys(options)[0];
+                    const secondaryKey = Object.keys(options)[1];
+                    document.querySelectorAll(`input[name="${id}_${primaryKey}"], input[name="${id}_${secondaryKey}"]`).forEach(input => input.checked = false);
                 }
+
+                if (evalData) {
+                    setRating(document.getElementById(`${id}_desc_rating`), evalData.desc || 0, id, field);
+                    setRating(document.getElementById(`${id}_emotion_rating`), evalData.emotion || 0, id, field);
+                    document.getElementById(`${id}_notes`).value = evalData.notes || '';
+
+                    if (customEvaluationFields[field]) {
+                        const options = customEvaluationFields[field];
+                        const primaryKey = Object.keys(options)[0];
+                        const secondaryKey = Object.keys(options)[1];
+                        
+                        const primaryValue = evalData[primaryKey];
+                        if (primaryValue) {
+                            const radio = document.querySelector(`input[name="${id}_${primaryKey}"][value="${primaryValue}"]`);
+                            if (radio) radio.checked = true;
+                        }
+
+                        const secondaryValues = evalData[secondaryKey] || [];
+                        secondaryValues.forEach(value => {
+                            const checkbox = document.querySelector(`input[name="${id}_${secondaryKey}"][value="${value}"]`);
+                            if (checkbox) checkbox.checked = true;
+                        });
+                    }
+                }
+                updateSummary(id, field);
             });
 
             document.querySelectorAll('.flavor-tag').forEach(tag => tag.classList.remove('selected'));
-            fieldsIncludeFlavor.forEach(field => {
-                const id = field.replace(/ /g, '_');
-                if (record.flavors[id]) {
-                    record.flavors[id].forEach(tagId => {
-                        const tag = document.getElementById(tagId);
-                        if (tag) tag.classList.add('selected');
-                    });
-                }
-            });
+            if(record.flavors) {
+                fieldsIncludeFlavor.forEach(field => {
+                    const id = field.replace(/ /g, '_');
+                    if (record.flavors[id]) {
+                        record.flavors[id].forEach(tagId => {
+                            const tag = document.getElementById(tagId);
+                            if (tag) tag.classList.add('selected');
+                        });
+                    }
+                });
+            }
             alert("記錄已讀取");
         }
 
