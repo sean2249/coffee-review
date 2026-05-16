@@ -2,27 +2,37 @@
    Coffee Review — CoE evaluation app
    ========================================================================== */
 
-// ─── Tiers ───────────────────────────────────────────────────────────────────
-// `min`/`max` are the actual selectable bounds. Non-godly tiers include a .5
-// ceiling (76.5, 79.5, 82.5, 85.5, 88.5, 91.5) so the user can express
-// "almost into the next tier".
+// ─── Supabase config (paste your URL + anon key here once set up) ────────────
+const SUPABASE_CONFIG = {
+    url: '',           // e.g. 'https://xxxxx.supabase.co'
+    anonKey: '',       // anon/public key
+    table: 'coffee_records',
+    bucket: 'bean-photos',
+};
+
+// ─── Tier definitions — medal style (single-char label) ─────────────────────
 const totalScoreTiers = [
-    { id: 'trash',      name: '垃圾咖啡',             label: '≤76',   min: 74, max: 76.5,
-      color: '#6c757d', gradient: 'linear-gradient(135deg, #adb5bd, #495057)' },
-    { id: 'commercial', name: '商業咖啡',             label: '77-79', min: 77, max: 79.5,
-      color: '#8b5a2b', gradient: 'linear-gradient(135deg, #c69066, #7a4f33)' },
-    { id: 'common',     name: '一般精品',             label: '80-82', min: 80, max: 82.5,
-      color: '#d6a700', gradient: 'linear-gradient(135deg, #f5c75a, #c98e1f)',
-      nameFull: '一般精品（便利商店等級）' },
-    { id: 'like',       name: '平常喜歡的精品',       label: '83-85', min: 83, max: 85.5,
-      color: '#198754', gradient: 'linear-gradient(135deg, #4fb073, #1d7c43)' },
-    { id: 'recommend',  name: '會推薦給朋友的精品',   label: '86-88', min: 86, max: 88.5,
-      color: '#20c997', gradient: 'linear-gradient(135deg, #3dcfa2, #178d6c)' },
-    { id: 'amazing',    name: '覺得超級驚艷',         label: '89-91', min: 89, max: 91.5,
-      color: '#0d6efd', gradient: 'linear-gradient(135deg, #6aa1ee, #1f4fa8)',
-      nameFull: '覺得超級驚艷，想重複喝的' },
-    { id: 'godly',      name: '神級',                 label: '≥92',   min: 92, max: 96,
-      color: '#6f42c1', gradient: 'linear-gradient(135deg, #b48be4, #5a2ea0)' },
+    { id: 'trash',      medal: '拒', label: '≤76',   min: 74, max: 76.5,
+      name: '拒喝',          nameFull: '拒喝（垃圾咖啡）',
+      cssClass: 't-trash',      color: '#6c757d' },
+    { id: 'commercial', medal: '凡', label: '77-79', min: 77, max: 79.5,
+      name: '凡品',          nameFull: '凡品（商業咖啡）',
+      cssClass: 't-commercial', color: '#8b5a2b' },
+    { id: 'common',     medal: '銅', label: '80-82', min: 80, max: 82.5,
+      name: '銅獎',          nameFull: '銅獎（便利商店等級精品）',
+      cssClass: 't-common',     color: '#a85e22' },
+    { id: 'like',       medal: '銀', label: '83-85', min: 83, max: 85.5,
+      name: '銀獎',          nameFull: '銀獎（平常喜歡的精品）',
+      cssClass: 't-like',       color: '#8a8a8a' },
+    { id: 'recommend',  medal: '金', label: '86-88', min: 86, max: 88.5,
+      name: '金獎',          nameFull: '金獎（推薦給朋友的精品）',
+      cssClass: 't-recommend',  color: '#d4a017' },
+    { id: 'amazing',    medal: '鉑', label: '89-91', min: 89, max: 91.5,
+      name: '鉑金',          nameFull: '鉑金（驚艷想重複喝的）',
+      cssClass: 't-amazing',    color: '#92a5c0' },
+    { id: 'godly',      medal: '神', label: '≥92',   min: 92, max: 96,
+      name: '神級',          nameFull: '神級',
+      cssClass: 't-godly',      color: '#6f42c1' },
 ];
 
 function tierFromScore(score) {
@@ -32,9 +42,7 @@ function tierFromScore(score) {
 function tierById(id) {
     return totalScoreTiers.find(t => t.id === id) || totalScoreTiers[2];
 }
-function tierFullName(tier) {
-    return tier.nameFull || tier.name;
-}
+function tierFullName(tier) { return tier.nameFull || tier.name; }
 function scoresInTier(tier) {
     const list = [];
     for (let s = tier.min; s <= tier.max + 1e-9; s += 0.5) {
@@ -43,30 +51,15 @@ function scoresInTier(tier) {
     return list;
 }
 
-// ─── Reference / observation field definitions ───────────────────────────────
+// ─── Reference + observation fields ──────────────────────────────────────────
 const mouthfeelOptions = {
-    weight: {
-        label: '重量級別',
-        options: ['輕盈如茶', '圓潤順口', '醇厚飽滿'],
-    },
-    texture: {
-        label: '質地描述',
-        options: ['絲滑感', '奶油感', '絨布感', '糖漿感', '多汁感',
-                  '清脆感', '乾澀感', '氣泡感', '顆粒感'],
-    },
+    weight:  { label: '重量級別', options: ['輕盈如茶', '圓潤順口', '醇厚飽滿'] },
+    texture: { label: '質地描述', options: ['絲滑感', '奶油感', '絨布感', '糖漿感', '多汁感', '清脆感', '乾澀感', '氣泡感', '顆粒感'] },
 };
-
 const aftertasteOptions = {
-    length: {
-        label: '尾韻長度',
-        options: ['短暫', '中等', '悠長', '綿延'],
-    },
-    quality: {
-        label: '尾韻質地',
-        options: ['乾淨', '粗糙 / 乾澀', '富有變化'],
-    },
+    length:  { label: '尾韻長度', options: ['短暫', '中等', '悠長', '綿延'] },
+    quality: { label: '尾韻質地', options: ['乾淨', '粗糙 / 乾澀', '富有變化'] },
 };
-
 const referenceFields = [
     { key: 'flavor',     label: '風味 Flavor',      icon: 'bi-droplet-half',     hasFlavorWheel: true },
     { key: 'acidity',    label: '酸質 Acidity',     icon: 'bi-lightning-charge' },
@@ -77,12 +70,11 @@ const referenceFields = [
     { key: 'balance',    label: '平衡 Balance',     icon: 'bi-arrow-left-right' },
     { key: 'overall',    label: '整體 Overall',     icon: 'bi-trophy' },
 ];
-
 const observationFields = [
     { key: 'aroma', label: '香氣 Aroma', icon: 'bi-wind', hasFlavorWheel: true },
 ];
 
-// ─── Flavor wheel data + semantic colors ─────────────────────────────────────
+// ─── Flavor wheel data (with semantic colors) ────────────────────────────────
 const flavors = [
     { id: 'floral', name: '花香類', color: '#d6336c',
       sub: ['茉莉', '玫瑰', '蘭花', '桂花', '紫羅蘭', '薰衣草'] },
@@ -98,35 +90,34 @@ const flavors = [
         { id: 'nut',       name: '堅果類',   color: '#a67c52', sub: ['杏仁', '核桃', '榛果', '花生', '腰果'] },
         { id: 'chocolate', name: '巧克力類', color: '#5c3317', sub: ['牛奶巧克力', '黑巧克力', '可可粉'] },
     ]},
-    { id: 'spice',   name: '香料類', color: '#c1530c', sub: ['肉桂', '丁香', '胡椒', '薑', '八角'] },
-    { id: 'herbal',  name: '草本類', color: '#2f9e44', sub: ['薄荷', '羅勒', '茶感', '青草', '香草'] },
-    { id: 'roast',   name: '焙烤',   color: '#495057', sub: ['穀物味', '焦味', '菸草味'] },
-    { id: 'other',   name: '其他',   color: '#868e96', sub: ['化合物', '霉味 / 土味', '紙味'] },
+    { id: 'spice',  name: '香料類', color: '#c1530c', sub: ['肉桂', '丁香', '胡椒', '薑', '八角'] },
+    { id: 'herbal', name: '草本類', color: '#2f9e44', sub: ['薄荷', '羅勒', '茶感', '青草', '香草'] },
+    { id: 'roast',  name: '焙烤',   color: '#495057', sub: ['穀物味', '焦味', '菸草味'] },
+    { id: 'other',  name: '其他',   color: '#868e96', sub: ['化合物', '霉味 / 土味', '紙味'] },
 ];
 
 // ─── State ───────────────────────────────────────────────────────────────────
-const coeState = {
-    coeTotal: 82,
-    selectedTierId: 'common',
-};
+const coeState = { coeTotal: 82, selectedTierId: 'common' };
+let supabaseClient = null;
 
-// ─── CoE total card — render & interaction ───────────────────────────────────
-function renderTierChips() {
-    const row = document.getElementById('tierChipRow');
+// ─── CoE Medal Card — render & interaction ───────────────────────────────────
+function renderTierMedals() {
+    const row = document.getElementById('medalRow');
     row.innerHTML = '';
     totalScoreTiers.forEach(t => {
-        const chip = document.createElement('button');
-        chip.type = 'button';
-        chip.className = 'tier-chip' + (t.id === coeState.selectedTierId ? ' selected' : '');
-        chip.style.setProperty('--tier-color', t.color);
-        chip.style.setProperty('--tier-gradient', t.gradient);
-        chip.dataset.tierId = t.id;
-        chip.setAttribute('aria-pressed', t.id === coeState.selectedTierId);
-        chip.innerHTML =
-            `<span class="tier-name">${t.name}</span>` +
-            `<span class="tier-label">${t.label}</span>`;
-        chip.addEventListener('click', () => selectTier(t.id));
-        row.appendChild(chip);
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = `tier-medal ${t.cssClass}` + (t.id === coeState.selectedTierId ? ' selected' : '');
+        btn.dataset.tierId = t.id;
+        btn.setAttribute('aria-pressed', t.id === coeState.selectedTierId);
+        btn.setAttribute('aria-label', `${t.name} ${t.label}`);
+        btn.innerHTML = `
+            <span class="medal-face">
+                <span class="medal-text">${t.medal}</span>
+                <span class="medal-range">${t.label}</span>
+            </span>`;
+        btn.addEventListener('click', () => selectTier(t.id));
+        row.appendChild(btn);
     });
 }
 
@@ -134,17 +125,29 @@ function renderScoreChips(tier) {
     const row = document.getElementById('scoreChipRow');
     row.innerHTML = '';
     row.style.setProperty('--tier-color', tier.color);
-    row.style.setProperty('--tier-gradient', tier.gradient);
+    row.style.setProperty('--tier-gradient', `linear-gradient(135deg, ${tier.color}, ${shade(tier.color, -0.18)})`);
     scoresInTier(tier).forEach(s => {
         const chip = document.createElement('button');
         chip.type = 'button';
-        chip.className = 'score-chip' + (Math.abs(s - coeState.coeTotal) < 1e-6 ? ' selected' : '');
+        const sel = Math.abs(s - coeState.coeTotal) < 1e-6;
+        chip.className = 'score-chip' + (sel ? ' selected' : '');
         chip.dataset.score = s;
-        chip.setAttribute('aria-pressed', Math.abs(s - coeState.coeTotal) < 1e-6);
+        chip.setAttribute('aria-pressed', sel);
         chip.textContent = Number.isInteger(s) ? `${s}` : s.toFixed(1);
         chip.addEventListener('click', () => selectScore(s));
         row.appendChild(chip);
     });
+}
+
+function shade(hex, amt) {
+    const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+    if (!m) return hex;
+    const ch = c => {
+        let n = parseInt(c, 16);
+        n = Math.max(0, Math.min(255, Math.round(n + 255 * amt)));
+        return n.toString(16).padStart(2, '0');
+    };
+    return `#${ch(m[1])}${ch(m[2])}${ch(m[3])}`;
 }
 
 function selectTier(tierId, opts = {}) {
@@ -153,7 +156,7 @@ function selectTier(tierId, opts = {}) {
     if (!(coeState.coeTotal >= tier.min && coeState.coeTotal <= tier.max)) {
         coeState.coeTotal = opts.scoreOverride != null ? opts.scoreOverride : tier.min;
     }
-    renderTierChips();
+    renderTierMedals();
     renderScoreChips(tier);
     refreshTotalDisplay();
 }
@@ -215,19 +218,15 @@ function updateRefSummary(key) {
         const opts = field.custom;
         const pk = Object.keys(opts)[0], sk = Object.keys(opts)[1];
         const pv = document.querySelector(`input[name="${key}_${pk}"]:checked`)?.value || '';
-        const sv = Array.from(document.querySelectorAll(`input[name="${key}_${sk}"]:checked`))
-            .map(cb => cb.value);
+        const sv = Array.from(document.querySelectorAll(`input[name="${key}_${sk}"]:checked`)).map(cb => cb.value);
         const summary = [pv, ...sv].filter(Boolean).join(', ');
         if (summary) parts.push(summary);
     }
 
     if (field.hasFlavorWheel) {
-        const selected = Array.from(
-            document.querySelectorAll(`#${key}_flavorList .flavor-tag.selected`)
-        ).map(t => t.innerText);
+        const selected = getSelectedFlavorNames(`${key}_flavorList`);
         if (selected.length > 0) {
-            const preview = selected.slice(0, 2).join(', ')
-                + (selected.length > 2 ? `…(+${selected.length - 2})` : '');
+            const preview = selected.slice(0, 2).join(', ') + (selected.length > 2 ? `…(+${selected.length - 2})` : '');
             parts.push(preview);
         }
     }
@@ -238,16 +237,25 @@ function updateRefSummary(key) {
 function updateObservationSummary(key) {
     const summaryEl = document.getElementById(`${key}_summary`);
     if (!summaryEl) return;
-    const selected = Array.from(
-        document.querySelectorAll(`#${key}_flavorList .flavor-tag.selected`)
-    ).map(t => t.innerText);
+    const selected = getSelectedFlavorNames(`${key}_flavorList`);
     summaryEl.textContent = selected.length === 0
         ? ''
-        : selected.slice(0, 3).join(', ')
-            + (selected.length > 3 ? `…(+${selected.length - 3})` : '');
+        : selected.slice(0, 3).join(', ') + (selected.length > 3 ? `…(+${selected.length - 3})` : '');
 }
 
-// ─── Accordion item generation ───────────────────────────────────────────────
+function getSelectedFlavorNames(containerId) {
+    return Array.from(
+        document.querySelectorAll(`#${containerId} .flavor-tag.selected`)
+    ).map(t => t.dataset.flavorName || t.innerText);
+}
+
+function getSelectedFlavorIds(containerId) {
+    return Array.from(
+        document.querySelectorAll(`#${containerId} .flavor-tag.selected`)
+    ).map(t => t.dataset.flavorId);
+}
+
+// ─── Accordion ──────────────────────────────────────────────────────────────
 function wrapAccordionItem(key, label, icon, body) {
     const iconHtml = icon
         ? `<span class="eval-icon"><i class="bi ${icon}"></i></span>`
@@ -257,8 +265,7 @@ function wrapAccordionItem(key, label, icon, body) {
             <button class="accordion-button collapsed" type="button"
                     data-bs-toggle="collapse" data-bs-target="#collapse_${key}"
                     aria-expanded="false" aria-controls="collapse_${key}">
-                ${iconHtml}
-                <span>${label}</span>
+                ${iconHtml}<span>${label}</span>
                 <span id="${key}_summary" class="eval-summary"></span>
             </button>
         </h2>
@@ -273,14 +280,12 @@ function generateReferenceItem(field) {
     const key = field.key;
     let body = `
         <div class="mb-3">
-            <label class="form-label">參考分 (4 - 8):</label>
             <div class="ref-slider-group">
                 <input type="range" class="form-range" id="${key}_score"
-                       min="4" max="8" step="0.5" value="5"
-                       data-ref-score="${key}">
+                       min="4" max="8" step="0.5" value="5" data-ref-score="${key}">
                 <span class="ref-slider-value" id="${key}_score_value" data-band="mid">5.0</span>
             </div>
-            <div class="small-hint">此分數僅作各面向參考印象，不影響上方 CoE 總分。</div>
+            <div class="small-hint">參考分 4-8（預設 5），不影響上方 CoE 總分。</div>
         </div>`;
 
     if (field.custom) {
@@ -288,33 +293,31 @@ function generateReferenceItem(field) {
         const pk = Object.keys(opts)[0], sk = Object.keys(opts)[1];
         const primary = opts[pk], secondary = opts[sk];
 
-        body += `<hr><h6 class="mb-3 text-secondary">${primary.label}</h6>`;
+        body += `<h6 class="mb-2 text-secondary small">${primary.label}</h6>`;
         primary.options.forEach(opt => {
             body += `<div class="form-check form-check-inline">
                 <input class="form-check-input" type="radio"
-                       name="${key}_${pk}" id="${key}_${pk}_${opt}" value="${opt}"
-                       data-ref-key="${key}">
+                       name="${key}_${pk}" id="${key}_${pk}_${opt}" value="${opt}" data-ref-key="${key}">
                 <label class="form-check-label" for="${key}_${pk}_${opt}">${opt}</label>
             </div>`;
         });
-        body += `<h6 class="mt-3 mb-3 text-secondary">${secondary.label}</h6>`;
+        body += `<h6 class="mt-2 mb-2 text-secondary small">${secondary.label}</h6>`;
         secondary.options.forEach(opt => {
             body += `<div class="form-check form-check-inline">
                 <input class="form-check-input" type="checkbox"
-                       name="${key}_${sk}" id="${key}_${sk}_${opt}" value="${opt}"
-                       data-ref-key="${key}">
+                       name="${key}_${sk}" id="${key}_${sk}_${opt}" value="${opt}" data-ref-key="${key}">
                 <label class="form-check-label" for="${key}_${sk}_${opt}">${opt}</label>
             </div>`;
         });
     }
 
     if (field.hasFlavorWheel) {
-        body += `<label class="form-label mt-4">風味詞（風味輪）:</label>
-            <div class="table-responsive"><div id="${key}_flavorList" class="mt-2"></div></div>`;
+        body += `<label class="form-label mt-3">風味（點選後展開細項）:</label>
+            <div id="${key}_flavorList" class="flavor-wheel"></div>`;
     }
 
-    body += `<label class="form-label mt-4">備註:</label>
-        <textarea id="${key}_notes" class="form-control"></textarea>`;
+    body += `<label class="form-label mt-3">備註:</label>
+        <textarea id="${key}_notes" class="form-control" rows="2"></textarea>`;
 
     return wrapAccordionItem(key, field.label, field.icon, body);
 }
@@ -322,19 +325,19 @@ function generateReferenceItem(field) {
 function generateObservationItem(field) {
     const key = field.key;
     let body = `
-        <div class="small-hint mb-3">香氣為觀察項，不計分。請記錄你聞到的乾香與濕香印象。</div>
-        <label class="form-label">乾香 (Dry Aroma):</label>
-        <textarea id="${key}_dryAroma" class="form-control mb-3" rows="2"></textarea>
-        <label class="form-label">濕香 (Wet Aroma):</label>
-        <textarea id="${key}_wetAroma" class="form-control mb-3" rows="2"></textarea>`;
+        <div class="small-hint mb-2">香氣為觀察項，不計分。</div>
+        <label class="form-label">乾香:</label>
+        <textarea id="${key}_dryAroma" class="form-control mb-2" rows="2"></textarea>
+        <label class="form-label">濕香:</label>
+        <textarea id="${key}_wetAroma" class="form-control mb-2" rows="2"></textarea>`;
 
     if (field.hasFlavorWheel) {
-        body += `<label class="form-label mt-2">風味詞（風味輪）:</label>
-            <div class="table-responsive"><div id="${key}_flavorList" class="mt-2"></div></div>`;
+        body += `<label class="form-label mt-2">風味（點選後展開細項）:</label>
+            <div id="${key}_flavorList" class="flavor-wheel"></div>`;
     }
 
-    body += `<label class="form-label mt-4">備註:</label>
-        <textarea id="${key}_notes" class="form-control"></textarea>`;
+    body += `<label class="form-label mt-3">備註:</label>
+        <textarea id="${key}_notes" class="form-control" rows="2"></textarea>`;
 
     return wrapAccordionItem(key, field.label, field.icon, body);
 }
@@ -348,32 +351,149 @@ function initializeEvaluationAccordion() {
 
     observationFields.forEach(f => {
         if (f.hasFlavorWheel) {
-            generateFlavorList(`${f.key}_flavorList`, () => updateObservationSummary(f.key));
+            renderFlavorWheel(`${f.key}_flavorList`, () => updateObservationSummary(f.key));
         }
     });
     referenceFields.forEach(f => {
         if (f.hasFlavorWheel) {
-            generateFlavorList(`${f.key}_flavorList`, () => updateRefSummary(f.key));
+            renderFlavorWheel(`${f.key}_flavorList`, () => updateRefSummary(f.key));
         }
         updateRefSummary(f.key);
     });
 
-    // Event delegation for slider input + radio/checkbox change inside accordion
-    accordion.addEventListener('input', (e) => {
+    accordion.addEventListener('input', e => {
         const key = e.target.dataset.refScore;
         if (key) onRefScoreInput(key);
     });
-    accordion.addEventListener('change', (e) => {
+    accordion.addEventListener('change', e => {
         const key = e.target.dataset.refKey;
         if (key) updateRefSummary(key);
     });
 }
 
-// ─── Flavor wheel ────────────────────────────────────────────────────────────
-function setFlavorTagColor(tag, color) {
+// ─── Flavor wheel — progressive disclosure ───────────────────────────────────
+// State per container: which L1/L2 categories are "expanded" (i.e. their
+// children should be visible). A category auto-expands when itself or any
+// descendant is selected.
+const wheelState = new Map();   // containerId → { expandedL1: Set, expandedL2: Set, callback }
+
+function renderFlavorWheel(containerId, onChange) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    if (!wheelState.has(containerId)) {
+        wheelState.set(containerId, {
+            selected: new Set(),  // ids
+            expandedL1: new Set(),
+            expandedL2: new Set(),
+            callback: onChange,
+        });
+    }
+    drawFlavorWheel(containerId);
+}
+
+function drawFlavorWheel(containerId) {
+    const container = document.getElementById(containerId);
+    const state = wheelState.get(containerId);
+    if (!container || !state) return;
+    container.innerHTML = '';
+
+    // L1 row (always shown)
+    const l1Row = document.createElement('div');
+    l1Row.className = 'flavor-row flavor-row-l1';
+    flavors.forEach(l1 => {
+        const l1Id = `${containerId}__l1-${l1.id}`;
+        const tag = makeTag({
+            text: l1.name, id: l1Id, color: l1.color,
+            selected: state.selected.has(l1Id),
+            onClick: () => toggleFlavor(containerId, { level: 1, l1: l1.id, color: l1.color }),
+        });
+        tag.dataset.flavorName = l1.name;
+        l1Row.appendChild(tag);
+    });
+    container.appendChild(l1Row);
+
+    // For each L1 that's "active" (expanded or has selected descendants), show L2 row
+    flavors.forEach(l1 => {
+        const l1Id = `${containerId}__l1-${l1.id}`;
+        const isL1Active = state.expandedL1.has(l1.id) || hasSelectedDescendant(containerId, l1);
+        if (!isL1Active || !l1.sub || l1.sub.length === 0) return;
+
+        const l2Row = document.createElement('div');
+        l2Row.className = 'flavor-row flavor-row-l2';
+        l2Row.style.setProperty('--ft-color', l1.color);
+
+        const lbl = document.createElement('span');
+        lbl.className = 'flavor-row-label';
+        lbl.textContent = `${l1.name} ↳`;
+        l2Row.appendChild(lbl);
+
+        l1.sub.forEach(l2 => {
+            if (typeof l2 === 'string') {
+                // No L3 children — just a leaf chip under L1
+                const l2Id = `${l1Id}__l2-${l2.replace(/[\/\s]/g, '')}`;
+                const tag = makeTag({
+                    text: l2, id: l2Id, color: l1.color,
+                    selected: state.selected.has(l2Id),
+                    onClick: () => toggleFlavor(containerId, { level: 2, l1: l1.id, l2: l2, color: l1.color, leaf: true, id: l2Id }),
+                });
+                tag.dataset.flavorName = l2;
+                l2Row.appendChild(tag);
+            } else {
+                const l2Id = `${l1Id}__l2-${l2.id}`;
+                const l2Color = l2.color || l1.color;
+                const tag = makeTag({
+                    text: l2.name, id: l2Id, color: l2Color,
+                    selected: state.selected.has(l2Id),
+                    onClick: () => toggleFlavor(containerId, { level: 2, l1: l1.id, l2: l2.id, color: l2Color }),
+                });
+                tag.dataset.flavorName = l2.name;
+                l2Row.appendChild(tag);
+            }
+        });
+        container.appendChild(l2Row);
+
+        // For each L2 that's active, show L3 row
+        l1.sub.forEach(l2 => {
+            if (typeof l2 === 'string' || !l2.sub) return;
+            const l2KeyForExpand = `${l1.id}::${l2.id}`;
+            const isL2Active = state.expandedL2.has(l2KeyForExpand) || hasSelectedDescendantL2(containerId, l1, l2);
+            if (!isL2Active) return;
+
+            const l2Id = `${l1Id}__l2-${l2.id}`;
+            const l3Row = document.createElement('div');
+            l3Row.className = 'flavor-row flavor-row-l3';
+            l3Row.style.setProperty('--ft-color', l2.color || l1.color);
+
+            const lbl3 = document.createElement('span');
+            lbl3.className = 'flavor-row-label';
+            lbl3.textContent = `${l2.name} ↳`;
+            l3Row.appendChild(lbl3);
+
+            l2.sub.forEach(l3 => {
+                const l3Id = `${l2Id}__l3-${l3.replace(/[\/\s]/g, '')}`;
+                const tag = makeTag({
+                    text: l3, id: l3Id, color: l2.color || l1.color,
+                    selected: state.selected.has(l3Id),
+                    onClick: () => toggleFlavor(containerId, { level: 3, l1: l1.id, l2: l2.id, l3: l3, color: l2.color || l1.color, id: l3Id }),
+                });
+                tag.dataset.flavorName = l3;
+                l3Row.appendChild(tag);
+            });
+            container.appendChild(l3Row);
+        });
+    });
+}
+
+function makeTag({ text, id, color, selected, onClick }) {
+    const tag = document.createElement('span');
+    tag.className = 'flavor-tag' + (selected ? ' selected' : '');
+    tag.dataset.flavorId = id;
     tag.style.setProperty('--ft-color', color);
     const rgb = hexToRgb(color);
-    if (rgb) tag.style.setProperty('--ft-soft', `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.12)`);
+    if (rgb) tag.style.setProperty('--ft-soft', `rgba(${rgb.r},${rgb.g},${rgb.b},0.12)`);
+    tag.innerText = text;
+    tag.addEventListener('click', onClick);
+    return tag;
 }
 
 function hexToRgb(hex) {
@@ -381,129 +501,200 @@ function hexToRgb(hex) {
     return m ? { r: parseInt(m[1], 16), g: parseInt(m[2], 16), b: parseInt(m[3], 16) } : null;
 }
 
-function createFlavorTag(name, id, color, parentId = null, isL3 = false) {
-    const tag = document.createElement('span');
-    tag.className = 'flavor-tag';
-    tag.id = id;
-    tag.innerText = name;
-    setFlavorTagColor(tag, color);
-    if (isL3) tag.dataset.parentL2 = parentId;
-    else if (parentId) tag.dataset.parentL1 = parentId;
-    return tag;
-}
+function toggleFlavor(containerId, ev) {
+    const state = wheelState.get(containerId);
+    if (!state) return;
 
-function generateFlavorList(containerId, onChange) {
-    const container = document.getElementById(containerId);
-    if (!container) return;
-    container.innerHTML = '';
-
-    const table = document.createElement('table');
-    table.className = 'table table-bordered flavor-table';
-    table.innerHTML = '<thead><tr><th>主要風味</th><th>次要風味</th><th>詳細風味</th></tr></thead>';
-    const tbody = table.createTBody();
-
-    flavors.forEach(l1 => {
-        const l1Id = `${containerId}__l1-${l1.id}`;
-        const l1Color = l1.color;
-        if (!l1.sub || l1.sub.length === 0) {
-            const row = tbody.insertRow();
-            const cell = row.insertCell();
-            cell.colSpan = 3;
-            cell.appendChild(createFlavorTag(l1.name, l1Id, l1Color));
+    if (ev.level === 1) {
+        const l1Id = `${containerId}__l1-${ev.l1}`;
+        if (state.selected.has(l1Id)) {
+            state.selected.delete(l1Id);
+            // Collapsing: remove all expansion for this L1 and deselect descendants
+            state.expandedL1.delete(ev.l1);
+            removeDescendantSelections(state, containerId, ev.l1);
         } else {
-            l1.sub.forEach((l2, i) => {
-                const row = tbody.insertRow();
-                if (i === 0) {
-                    const cell = row.insertCell();
-                    cell.rowSpan = l1.sub.length;
-                    cell.appendChild(createFlavorTag(l1.name, l1Id, l1Color));
-                }
-                const l2Cell = row.insertCell();
-                const l3Cell = row.insertCell();
-                if (typeof l2 === 'string') {
-                    const l2Id = `${l1Id}__l2-${l2.replace(/[\/\s]/g, '')}`;
-                    l2Cell.appendChild(createFlavorTag(l2, l2Id, l1Color, l1Id));
-                } else {
-                    const l2Id = `${l1Id}__l2-${l2.id}`;
-                    const l2Color = l2.color || l1Color;
-                    l2Cell.appendChild(createFlavorTag(l2.name, l2Id, l2Color, l1Id));
-                    if (l2.sub && l2.sub.length > 0) {
-                        l2.sub.forEach(l3 => {
-                            const l3Id = `${l2Id}__l3-${l3.replace(/[\/\s]/g, '')}`;
-                            l3Cell.appendChild(createFlavorTag(l3, l3Id, l2Color, l2Id, true));
-                        });
-                    }
-                }
-            });
+            state.selected.add(l1Id);
+            state.expandedL1.add(ev.l1);
         }
-    });
+    } else if (ev.level === 2) {
+        const l2Id = ev.id || `${containerId}__l1-${ev.l1}__l2-${ev.l2}`;
+        if (state.selected.has(l2Id)) {
+            state.selected.delete(l2Id);
+            if (!ev.leaf) {
+                state.expandedL2.delete(`${ev.l1}::${ev.l2}`);
+                removeDescendantSelectionsL2(state, containerId, ev.l1, ev.l2);
+            }
+        } else {
+            state.selected.add(l2Id);
+            if (!ev.leaf) state.expandedL2.add(`${ev.l1}::${ev.l2}`);
+            // Auto-select parent L1
+            state.selected.add(`${containerId}__l1-${ev.l1}`);
+            state.expandedL1.add(ev.l1);
+        }
+    } else if (ev.level === 3) {
+        const l3Id = ev.id;
+        if (state.selected.has(l3Id)) {
+            state.selected.delete(l3Id);
+        } else {
+            state.selected.add(l3Id);
+            // Auto-select parents
+            const l2Id = `${containerId}__l1-${ev.l1}__l2-${ev.l2}`;
+            const l1Id = `${containerId}__l1-${ev.l1}`;
+            state.selected.add(l2Id);
+            state.selected.add(l1Id);
+            state.expandedL1.add(ev.l1);
+            state.expandedL2.add(`${ev.l1}::${ev.l2}`);
+        }
+    }
 
-    const wrap = document.createElement('div');
-    wrap.className = 'table-responsive';
-    wrap.appendChild(table);
-    container.appendChild(wrap);
-
-    container.querySelectorAll('.flavor-tag').forEach(tag => {
-        tag.addEventListener('click', function () {
-            this.classList.toggle('selected');
-            handleFlavorTagToggle(this, container);
-            if (typeof onChange === 'function') onChange();
-        });
-    });
+    drawFlavorWheel(containerId);
+    if (state.callback) state.callback();
 }
 
-function handleFlavorTagToggle(tag, container) {
-    const l1ParentId = tag.dataset.parentL1;
-    const l2ParentId = tag.dataset.parentL2;
+function hasSelectedDescendant(containerId, l1) {
+    const state = wheelState.get(containerId);
+    if (!state) return false;
+    const prefix = `${containerId}__l1-${l1.id}__`;
+    for (const id of state.selected) {
+        if (id.startsWith(prefix)) return true;
+    }
+    return false;
+}
 
-    if (l2ParentId) {
-        const l2Tag = document.getElementById(l2ParentId);
-        const l1Tag = l2Tag ? document.getElementById(l2Tag.dataset.parentL1) : null;
-        updateParentState(l2Tag, `.flavor-tag[data-parent-l2="${l2ParentId}"]`);
-        if (l1Tag) updateParentState(l1Tag, `.flavor-tag[data-parent-l1="${l1Tag.id}"]`);
-    } else if (l1ParentId) {
-        const l1Tag = document.getElementById(l1ParentId);
-        updateParentState(l1Tag, `.flavor-tag[data-parent-l1="${l1ParentId}"]`);
-        if (!tag.classList.contains('selected')) {
-            container.querySelectorAll(`.flavor-tag[data-parent-l2="${tag.id}"]`)
-                .forEach(c => c.classList.remove('selected'));
-        }
-    } else {
-        // L1 deselected: cascade
-        if (!tag.classList.contains('selected')) {
-            container.querySelectorAll(`.flavor-tag[data-parent-l1="${tag.id}"]`)
-                .forEach(c => {
-                    c.classList.remove('selected');
-                    container.querySelectorAll(`.flavor-tag[data-parent-l2="${c.id}"]`)
-                        .forEach(cc => cc.classList.remove('selected'));
-                });
-        }
+function hasSelectedDescendantL2(containerId, l1, l2) {
+    const state = wheelState.get(containerId);
+    if (!state) return false;
+    const prefix = `${containerId}__l1-${l1.id}__l2-${l2.id}__`;
+    for (const id of state.selected) {
+        if (id.startsWith(prefix)) return true;
+    }
+    return false;
+}
+
+function removeDescendantSelections(state, containerId, l1Slug) {
+    const prefix = `${containerId}__l1-${l1Slug}__`;
+    for (const id of [...state.selected]) {
+        if (id.startsWith(prefix)) state.selected.delete(id);
+    }
+    // also drop expanded L2 entries for this L1
+    for (const k of [...state.expandedL2]) {
+        if (k.startsWith(`${l1Slug}::`)) state.expandedL2.delete(k);
     }
 }
 
-function updateParentState(parentTag, childSelector) {
-    if (!parentTag) return;
-    const siblings = parentTag.closest('table').querySelectorAll(childSelector);
-    parentTag.classList.toggle('selected',
-        Array.from(siblings).some(t => t.classList.contains('selected')));
+function removeDescendantSelectionsL2(state, containerId, l1Slug, l2Slug) {
+    const prefix = `${containerId}__l1-${l1Slug}__l2-${l2Slug}__`;
+    for (const id of [...state.selected]) {
+        if (id.startsWith(prefix)) state.selected.delete(id);
+    }
 }
 
-// ─── Save / Load (localStorage) ──────────────────────────────────────────────
+function applyFlavorSelections(containerId, ids) {
+    const state = wheelState.get(containerId);
+    if (!state) return;
+    state.selected = new Set(ids || []);
+    state.expandedL1 = new Set();
+    state.expandedL2 = new Set();
+    // Re-derive expansion from selections
+    for (const id of state.selected) {
+        // Format: containerId__l1-<l1>[__l2-<l2>[__l3-...]]
+        const rest = id.slice(containerId.length);
+        const l1Match = rest.match(/^__l1-([^_]+)/);
+        if (l1Match) state.expandedL1.add(l1Match[1]);
+        const l2Match = rest.match(/^__l1-([^_]+)__l2-([^_]+)/);
+        if (l2Match) state.expandedL2.add(`${l2Match[1]}::${l2Match[2]}`);
+    }
+    drawFlavorWheel(containerId);
+}
+
+// ─── Photo OCR (Tesseract.js, lazy-loaded) ───────────────────────────────────
+let tesseractPromise = null;
+function loadTesseract() {
+    if (tesseractPromise) return tesseractPromise;
+    tesseractPromise = new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
+        s.onload = () => resolve(window.Tesseract);
+        s.onerror = reject;
+        document.head.appendChild(s);
+    });
+    return tesseractPromise;
+}
+
+async function runOcr(file) {
+    const preview = document.getElementById('ocrPreview');
+    preview.classList.add('active');
+    preview.textContent = '辨識中… (首次需下載辨識模型，約 3MB)';
+    try {
+        const Tess = await loadTesseract();
+        const { data } = await Tess.recognize(file, 'chi_tra+eng', {
+            logger: m => {
+                if (m.status === 'recognizing text') {
+                    preview.textContent = `辨識中… ${Math.round((m.progress || 0) * 100)}%`;
+                }
+            },
+        });
+        const text = (data.text || '').trim();
+        if (!text) {
+            preview.textContent = '辨識完成，但沒有讀到文字。';
+            return;
+        }
+        // Pick the longest line as the bean name candidate
+        const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+        const candidate = lines.sort((a, b) => b.length - a.length)[0] || text;
+        document.getElementById('name').value = candidate;
+        preview.textContent = `已填入: ${candidate}（讀取全部: ${lines.length} 行，可在欄位中編輯）`;
+    } catch (e) {
+        console.error(e);
+        preview.textContent = `辨識失敗: ${e.message || e}`;
+    }
+}
+
+function handleOcrPick() {
+    const fileInput = document.getElementById('ocrFile');
+    fileInput.value = '';
+    fileInput.click();
+}
+
+// ─── Supabase ────────────────────────────────────────────────────────────────
+async function ensureSupabase() {
+    if (!SUPABASE_CONFIG.url || !SUPABASE_CONFIG.anonKey) return null;
+    if (supabaseClient) return supabaseClient;
+    const mod = await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm');
+    supabaseClient = mod.createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.anonKey);
+    return supabaseClient;
+}
+
+function isCloudReady() {
+    return !!(SUPABASE_CONFIG.url && SUPABASE_CONFIG.anonKey);
+}
+
+function showToast(msg, ms = 1800) {
+    let el = document.getElementById('toastMsg');
+    if (!el) {
+        el = document.createElement('div');
+        el.id = 'toastMsg';
+        el.className = 'toast-msg';
+        document.body.appendChild(el);
+    }
+    el.textContent = msg;
+    el.classList.add('show');
+    clearTimeout(el._t);
+    el._t = setTimeout(() => el.classList.remove('show'), ms);
+}
+
+// ─── Save / Load ─────────────────────────────────────────────────────────────
 const BASIC_FIELDS = ['name', 'origin', 'process', 'roast', 'grind', 'water_temp',
                       'ratio', 'method', 'extraction_time', 'defects', 'notes'];
 
-function saveRecord() {
-    const recordName = prompt('請為此記錄命名:');
-    if (!recordName) return;
-
+function buildRecord() {
     const record = {
         schemaVersion: 2,
-        coeTotal: coeState.coeTotal,
-        coeTierId: coeState.selectedTierId,
+        coe_total: coeState.coeTotal,
+        coe_tier_id: coeState.selectedTierId,
         evaluations: {},
         observation: {},
     };
-
     BASIC_FIELDS.forEach(id => { record[id] = document.getElementById(id).value; });
 
     referenceFields.forEach(f => {
@@ -514,13 +705,10 @@ function saveRecord() {
         if (f.custom) {
             const pk = Object.keys(f.custom)[0], sk = Object.keys(f.custom)[1];
             entry[pk] = document.querySelector(`input[name="${f.key}_${pk}"]:checked`)?.value || '';
-            entry[sk] = Array.from(document.querySelectorAll(`input[name="${f.key}_${sk}"]:checked`))
-                .map(cb => cb.value);
+            entry[sk] = Array.from(document.querySelectorAll(`input[name="${f.key}_${sk}"]:checked`)).map(cb => cb.value);
         }
         if (f.hasFlavorWheel) {
-            entry.flavors = Array.from(
-                document.querySelectorAll(`#${f.key}_flavorList .flavor-tag.selected`)
-            ).map(tag => tag.id);
+            entry.flavors = getSelectedFlavorIds(`${f.key}_flavorList`);
         }
         record.evaluations[f.key] = entry;
     });
@@ -532,24 +720,44 @@ function saveRecord() {
             entry.wetAroma = document.getElementById(`${f.key}_wetAroma`).value;
         }
         if (f.hasFlavorWheel) {
-            entry.flavors = Array.from(
-                document.querySelectorAll(`#${f.key}_flavorList .flavor-tag.selected`)
-            ).map(tag => tag.id);
+            entry.flavors = getSelectedFlavorIds(`${f.key}_flavorList`);
         }
         record.observation[f.key] = entry;
     });
 
-    localStorage.setItem(`coffee_record_${recordName}`, JSON.stringify(record));
-    alert(`記錄 "${recordName}" 已儲存`);
-    updateRecordList();
+    return record;
+}
+
+async function saveRecord() {
+    if (!isCloudReady()) {
+        alert('尚未設定雲端：請在 app.js 頂端的 SUPABASE_CONFIG 填入 url + anonKey。');
+        return;
+    }
+    const recordName = prompt('請為此記錄命名:', document.getElementById('name').value || '');
+    if (!recordName) return;
+
+    const data = buildRecord();
+    data.title = recordName;
+    data.created_at = new Date().toISOString();
+
+    try {
+        const sb = await ensureSupabase();
+        const { error } = await sb.from(SUPABASE_CONFIG.table).insert(data);
+        if (error) throw error;
+        showToast(`✓ 已儲存到雲端 — ${recordName}`);
+        updateRecordList();
+    } catch (e) {
+        alert('儲存失敗: ' + (e.message || e));
+    }
 }
 
 function resetFormToDefaults() {
     BASIC_FIELDS.forEach(id => { document.getElementById(id).value = ''; });
+    document.getElementById('ocrPreview').classList.remove('active');
 
     coeState.coeTotal = 82;
     coeState.selectedTierId = 'common';
-    renderTierChips();
+    renderTierMedals();
     renderScoreChips(tierById('common'));
     refreshTotalDisplay();
 
@@ -562,10 +770,7 @@ function resetFormToDefaults() {
                 `input[name="${f.key}_${pk}"], input[name="${f.key}_${sk}"]`
             ).forEach(i => i.checked = false);
         }
-        if (f.hasFlavorWheel) {
-            document.querySelectorAll(`#${f.key}_flavorList .flavor-tag.selected`)
-                .forEach(t => t.classList.remove('selected'));
-        }
+        if (f.hasFlavorWheel) applyFlavorSelections(`${f.key}_flavorList`, []);
         updateRefSummary(f.key);
     });
 
@@ -575,34 +780,19 @@ function resetFormToDefaults() {
             document.getElementById(`${f.key}_dryAroma`).value = '';
             document.getElementById(`${f.key}_wetAroma`).value = '';
         }
-        if (f.hasFlavorWheel) {
-            document.querySelectorAll(`#${f.key}_flavorList .flavor-tag.selected`)
-                .forEach(t => t.classList.remove('selected'));
-        }
+        if (f.hasFlavorWheel) applyFlavorSelections(`${f.key}_flavorList`, []);
         updateObservationSummary(f.key);
     });
 }
 
-function loadRecord() {
-    const recordKey = document.getElementById('recordList').value;
-    if (!recordKey) return;
-    const record = JSON.parse(localStorage.getItem(recordKey));
-    if (!record) return;
-
-    resetFormToDefaults();
-
+function applyRecord(record) {
     BASIC_FIELDS.forEach(id => {
         if (record[id] != null) document.getElementById(id).value = record[id];
     });
 
-    if (record.schemaVersion !== 2) {
-        alert('此為舊格式記錄，僅還原文字欄位；分數請重評。');
-        return;
-    }
-
-    coeState.coeTotal = typeof record.coeTotal === 'number' ? record.coeTotal : 82;
-    coeState.selectedTierId = record.coeTierId || tierFromScore(coeState.coeTotal).id;
-    renderTierChips();
+    coeState.coeTotal = typeof record.coe_total === 'number' ? record.coe_total : 82;
+    coeState.selectedTierId = record.coe_tier_id || tierFromScore(coeState.coeTotal).id;
+    renderTierMedals();
     renderScoreChips(tierById(coeState.selectedTierId));
     refreshTotalDisplay();
 
@@ -624,10 +814,7 @@ function loadRecord() {
                 });
             }
             if (f.hasFlavorWheel && Array.isArray(data.flavors)) {
-                data.flavors.forEach(id => {
-                    const tag = document.getElementById(id);
-                    if (tag) tag.classList.add('selected');
-                });
+                applyFlavorSelections(`${f.key}_flavorList`, data.flavors);
             }
             updateRefSummary(f.key);
         });
@@ -643,40 +830,85 @@ function loadRecord() {
                 document.getElementById(`${f.key}_wetAroma`).value = data.wetAroma || '';
             }
             if (f.hasFlavorWheel && Array.isArray(data.flavors)) {
-                data.flavors.forEach(id => {
-                    const tag = document.getElementById(id);
-                    if (tag) tag.classList.add('selected');
-                });
+                applyFlavorSelections(`${f.key}_flavorList`, data.flavors);
             }
             updateObservationSummary(f.key);
         });
     }
-
-    alert('記錄已讀取');
 }
 
-function deleteRecord() {
-    const recordList = document.getElementById('recordList');
-    const recordKey = recordList.value;
-    if (!recordKey) return;
-    if (confirm(`確定要刪除記錄 "${recordKey.replace('coffee_record_', '')}" 嗎？`)) {
-        localStorage.removeItem(recordKey);
-        updateRecordList();
-        alert('記錄已刪除');
+async function loadRecord() {
+    if (!isCloudReady()) {
+        alert('尚未設定雲端：請在 app.js 頂端的 SUPABASE_CONFIG 填入 url + anonKey。');
+        return;
+    }
+    const id = document.getElementById('recordList').value;
+    if (!id) return;
+    try {
+        const sb = await ensureSupabase();
+        const { data, error } = await sb.from(SUPABASE_CONFIG.table).select('*').eq('id', id).single();
+        if (error) throw error;
+        resetFormToDefaults();
+        applyRecord(data);
+        showToast(`✓ 已讀取 — ${data.title}`);
+    } catch (e) {
+        alert('讀取失敗: ' + (e.message || e));
     }
 }
 
-function updateRecordList() {
-    const recordList = document.getElementById('recordList');
-    recordList.innerHTML = '';
-    for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (key.startsWith('coffee_record_')) {
+async function deleteRecord() {
+    if (!isCloudReady()) return;
+    const sel = document.getElementById('recordList');
+    const id = sel.value;
+    if (!id) return;
+    const title = sel.options[sel.selectedIndex]?.textContent || '';
+    if (!confirm(`刪除 "${title}"？`)) return;
+    try {
+        const sb = await ensureSupabase();
+        const { error } = await sb.from(SUPABASE_CONFIG.table).delete().eq('id', id);
+        if (error) throw error;
+        showToast('✓ 已刪除');
+        updateRecordList();
+    } catch (e) {
+        alert('刪除失敗: ' + (e.message || e));
+    }
+}
+
+async function updateRecordList() {
+    const sel = document.getElementById('recordList');
+    sel.innerHTML = '';
+    if (!isCloudReady()) {
+        const opt = document.createElement('option');
+        opt.textContent = '— 尚未設定雲端 —';
+        opt.disabled = true;
+        sel.appendChild(opt);
+        return;
+    }
+    try {
+        const sb = await ensureSupabase();
+        const { data, error } = await sb.from(SUPABASE_CONFIG.table)
+            .select('id, title, created_at')
+            .order('created_at', { ascending: false });
+        if (error) throw error;
+        (data || []).forEach(r => {
             const opt = document.createElement('option');
-            opt.value = key;
-            opt.textContent = key.replace('coffee_record_', '');
-            recordList.appendChild(opt);
+            opt.value = r.id;
+            const ts = r.created_at ? new Date(r.created_at).toLocaleString('zh-TW', { hour12: false }) : '';
+            opt.textContent = `${r.title || '(未命名)'} — ${ts}`;
+            sel.appendChild(opt);
+        });
+        if (!data || data.length === 0) {
+            const opt = document.createElement('option');
+            opt.textContent = '— 尚無記錄 —';
+            opt.disabled = true;
+            sel.appendChild(opt);
         }
+    } catch (e) {
+        console.error(e);
+        const opt = document.createElement('option');
+        opt.textContent = '— 載入失敗 —';
+        opt.disabled = true;
+        sel.appendChild(opt);
     }
 }
 
@@ -709,7 +941,6 @@ function generateMarkdown() {
     });
     lines.push('');
 
-    // Observation (Aroma)
     observationFields.forEach(f => {
         lines.push(`## ${f.label}（觀察）`);
         if (f.key === 'aroma') {
@@ -718,9 +949,7 @@ function generateMarkdown() {
             if (wet) lines.push(`* **濕香:** ${wet}`);
         }
         if (f.hasFlavorWheel) {
-            const sel = Array.from(
-                document.querySelectorAll(`#${f.key}_flavorList .flavor-tag.selected`)
-            ).map(t => t.innerText);
+            const sel = getSelectedFlavorNames(`${f.key}_flavorList`);
             if (sel.length) lines.push(`* **風味詞:** ${sel.join(', ')}`);
         }
         const note = v(`${f.key}_notes`);
@@ -728,7 +957,6 @@ function generateMarkdown() {
         lines.push('');
     });
 
-    // Per-field details (only if something to say)
     const detailBlocks = [];
     referenceFields.forEach(f => {
         const note = v(`${f.key}_notes`);
@@ -736,23 +964,18 @@ function generateMarkdown() {
         if (f.custom) {
             const pk = Object.keys(f.custom)[0], sk = Object.keys(f.custom)[1];
             const pv = document.querySelector(`input[name="${f.key}_${pk}"]:checked`)?.value || '';
-            const sv = Array.from(document.querySelectorAll(`input[name="${f.key}_${sk}"]:checked`))
-                .map(cb => cb.value);
+            const sv = Array.from(document.querySelectorAll(`input[name="${f.key}_${sk}"]:checked`)).map(cb => cb.value);
             if (pv) details.push(`* **${f.custom[pk].label}:** ${pv}`);
             if (sv.length) details.push(`* **${f.custom[sk].label}:** ${sv.join(', ')}`);
         }
         if (f.hasFlavorWheel) {
-            const sel = Array.from(
-                document.querySelectorAll(`#${f.key}_flavorList .flavor-tag.selected`)
-            ).map(t => t.innerText);
+            const sel = getSelectedFlavorNames(`${f.key}_flavorList`);
             if (sel.length) details.push(`* **風味詞:** ${sel.join(', ')}`);
         }
         if (note) details.push(`* **備註:** ${note}`);
         if (details.length) detailBlocks.push(`### ${f.label}\n${details.join('\n')}`);
     });
-    if (detailBlocks.length) {
-        lines.push('## 各項細節', '', detailBlocks.join('\n\n'), '');
-    }
+    if (detailBlocks.length) lines.push('## 各項細節', '', detailBlocks.join('\n\n'), '');
 
     const defects = v('defects');
     if (defects) lines.push('## 瑕疵記錄', defects, '');
@@ -764,12 +987,9 @@ function generateMarkdown() {
 
 function copyToClipboard() {
     const text = document.getElementById('markdownOutput').textContent;
-    if (!text) {
-        alert('請先點「生成 Markdown」');
-        return;
-    }
+    if (!text) { alert('請先點「生成 Markdown」'); return; }
     navigator.clipboard.writeText(text)
-        .then(() => alert('Markdown 已複製到剪貼簿！'))
+        .then(() => showToast('✓ Markdown 已複製'))
         .catch(() => alert('複製失敗'));
 }
 
@@ -780,13 +1000,18 @@ function bindStaticListeners() {
     document.getElementById('saveBtn').addEventListener('click', saveRecord);
     document.getElementById('generateBtn').addEventListener('click', generateMarkdown);
     document.getElementById('copyBtn').addEventListener('click', copyToClipboard);
+    document.getElementById('ocrBtn').addEventListener('click', handleOcrPick);
+    document.getElementById('ocrFile').addEventListener('change', e => {
+        const f = e.target.files?.[0];
+        if (f) runOcr(f);
+    });
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-    renderTierChips();
+    renderTierMedals();
     renderScoreChips(tierById(coeState.selectedTierId));
     refreshTotalDisplay();
     initializeEvaluationAccordion();
-    updateRecordList();
     bindStaticListeners();
+    updateRecordList();
 });
