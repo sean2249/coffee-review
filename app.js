@@ -13,33 +13,33 @@ const SUPABASE_CONFIG = {
 // ─── Tier definitions — flat medal, professional naming ─────────────────────
 const totalScoreTiers = [
     { id: 'trash',      medal: '拒', label: '≤76',   min: 74, max: 76.5,
-      badgeName: '未達標', name: '風味平淡',
-      description: '平淡或具瑕疵的風味',
+      badgeName: '瑕疵',   name: '風味平淡',
+      description: '平淡無亮點，或帶明顯瑕疵',
       cssClass: 't-trash',      color: '#6c757d' },
 
     { id: 'commercial', medal: '凡', label: '77-79', min: 77, max: 79.5,
-      badgeName: '商業級', name: '商業風味',
-      description: '普羅可接受的日常咖啡',
+      badgeName: '普羅',   name: '商業風味',
+      description: '普羅大眾的日常選擇，缺乏精品層次',
       cssClass: 't-commercial', color: '#6e5640' },
 
     { id: 'common',     medal: '銅', label: '80-82', min: 80, max: 82.5,
-      badgeName: '銅獎',   name: '卓越銅獎',
-      description: '合格精品，日常品飲的選擇',
+      badgeName: '銅牌',   name: '卓越銅獎',
+      description: '合格的精品咖啡，適合日常品飲',
       cssClass: 't-common',     color: '#b86826' },
 
     { id: 'like',       medal: '銀', label: '83-85', min: 83, max: 85.5,
-      badgeName: '銀獎',   name: '優秀銀獎',
-      description: '平衡乾淨、日常喜愛的精品',
+      badgeName: '銀牌',   name: '優秀銀獎',
+      description: '平衡乾淨、值得反覆品飲的精品',
       cssClass: 't-like',       color: '#7a7a7a' },
 
     { id: 'recommend',  medal: '金', label: '86-88', min: 86, max: 88.5,
-      badgeName: '金獎',   name: '傑出金獎',
-      description: '風味飽滿、層次豐富的傑出精品',
+      badgeName: '金牌',   name: '傑出金獎',
+      description: '風味飽滿、層次豐富的傑作',
       cssClass: 't-recommend',  color: '#d4a017' },
 
     { id: 'amazing',    medal: '鉑', label: '89-91', min: 89, max: 91.5,
       badgeName: '鉑金',   name: '大師鉑金',
-      description: '驚艷且想反覆品味的大師之作',
+      description: '結構完整、令人驚艷的大師之作',
       cssClass: 't-amazing',    color: '#6c83a3' },
 
     { id: 'godly',      medal: '神', label: '≥92',   min: 92, max: 96,
