@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>咖啡杯測記錄</title>
+    <title>咖啡杯測記錄 (CoE)</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
     <style>
@@ -18,23 +18,6 @@
 
         .card {
             margin-bottom: 1.5rem;
-        }
-
-        .rating-group {
-            display: flex;
-            gap: 0.5rem; /* Add space between stars */
-        }
-
-        .rating-group .rating-star {
-            font-size: 1.8rem;
-            color: #e0e0e0;
-            cursor: pointer;
-            transition: color 0.2s ease-in-out;
-        }
-
-        .rating-group .rating-star:hover,
-        .rating-group .rating-star.selected {
-            color: #ffc107;
         }
 
         .flavor-tag {
@@ -92,12 +75,127 @@
             align-items: center;
             gap: 0.5rem;
         }
+
+        /* CoE 總分卡 */
+        .tier-chip-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .tier-chip {
+            display: inline-flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 0.5rem 0.85rem;
+            line-height: 1.25;
+            border-radius: 0.6rem;
+            border: 2px solid var(--tier-color, #adb5bd);
+            color: var(--tier-color, #495057);
+            cursor: pointer;
+            background-color: #fff;
+            transition: all 0.15s ease-in-out;
+            user-select: none;
+        }
+
+        .tier-chip .tier-name {
+            font-weight: 600;
+            font-size: 0.92rem;
+        }
+
+        .tier-chip .tier-label {
+            font-size: 0.75rem;
+            opacity: 0.85;
+        }
+
+        .tier-chip.selected {
+            background-color: var(--tier-color, #495057);
+            color: #fff;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
+        }
+
+        .score-chip-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.4rem;
+            padding: 0.6rem 0.75rem;
+            background-color: #f1f3f5;
+            border-radius: 0.5rem;
+            margin-bottom: 1rem;
+            overflow-x: auto;
+        }
+
+        .score-chip {
+            display: inline-block;
+            min-width: 3rem;
+            padding: 0.35rem 0.55rem;
+            text-align: center;
+            border-radius: 0.5rem;
+            border: 1px solid #adb5bd;
+            background-color: #fff;
+            cursor: pointer;
+            font-weight: 500;
+            user-select: none;
+            transition: all 0.15s ease-in-out;
+        }
+
+        .score-chip.selected {
+            background-color: var(--tier-color, #495057);
+            border-color: var(--tier-color, #495057);
+            color: #fff;
+        }
+
+        .coe-total-display {
+            font-size: 2.1rem;
+            font-weight: 700;
+            line-height: 1.2;
+        }
+
+        .coe-total-tier-name {
+            font-size: 1rem;
+            font-weight: 500;
+            color: #6c757d;
+            margin-left: 0.5rem;
+        }
+
+        /* 參考分 slider */
+        .ref-slider-group {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .ref-slider-group .form-range {
+            flex: 1;
+        }
+
+        .ref-slider-value {
+            min-width: 2.8rem;
+            text-align: center;
+            font-weight: 600;
+            font-size: 1.05rem;
+            padding: 0.25rem 0.5rem;
+            border-radius: 0.4rem;
+            background-color: #e9ecef;
+        }
+
+        .ref-slider-value[data-band="low"]   { background-color: #f1f3f5; color: #6c757d; }
+        .ref-slider-value[data-band="mid"]   { background-color: #fff3cd; color: #664d03; }
+        .ref-slider-value[data-band="good"]  { background-color: #d1e7dd; color: #0f5132; }
+        .ref-slider-value[data-band="great"] { background-color: #cff4fc; color: #055160; }
+        .ref-slider-value[data-band="top"]   { background-color: #cfe2ff; color: #052c65; }
+
+        .small-hint {
+            font-size: 0.85rem;
+            color: #6c757d;
+        }
     </style>
 </head>
 
 <body>
     <div class="container py-5">
-        <h2 class="mb-4 text-center">咖啡杯測記錄</h2>
+        <h2 class="mb-4 text-center">咖啡杯測記錄 (CoE)</h2>
 
         <div class="card">
             <div class="card-body">
@@ -162,24 +260,30 @@
             </div>
         </div>
 
-        <h3 class="mb-3">感官評估</h3>
-        <div class="accordion" id="evaluationAccordion">
+        <div class="card">
+            <div class="card-body">
+                <h3 class="card-title mb-3">CoE 總分</h3>
+                <div class="small-hint mb-2">先選徽章再選分數；下方各項僅供參考，不影響此分數。</div>
+                <div id="tierChipRow" class="tier-chip-row"></div>
+                <div id="scoreChipRow" class="score-chip-row"></div>
+                <div>
+                    <span class="coe-total-display" id="coeTotalDisplay">82.0</span>
+                    <span class="text-muted"> / 100</span>
+                    <span class="coe-total-tier-name" id="coeTotalTierName">— 一般精品（便利商店等級）</span>
+                </div>
+            </div>
         </div>
+
+        <h3 class="mb-3">感官評估</h3>
+        <div class="accordion mb-4" id="evaluationAccordion"></div>
 
         <div class="card">
             <div class="card-body">
-                <h3 class="card-title mb-3">總結</h3>
-                <div class="form-label-group">
-                    <label class="form-label">整體評價 (1-9):</label>
-                    <i class="bi bi-info-circle" data-bs-toggle="tooltip" title="綜合所有項目的最終整體印象評分"></i>
-                </div>
-                <input type="range" class="form-range" id="overall" min="1" max="9" value="5" oninput="updateValue('overall')">
-                <div class="text-center fw-bold" id="overall_value">5</div>
+                <h3 class="card-title mb-3">瑕疵與備註</h3>
+                <label class="form-label">瑕疵記錄:</label>
+                <textarea id="defects" class="form-control mb-3" placeholder="記錄任何瑕疵，例如過度萃取、雜味等..." rows="3"></textarea>
 
-                <h4 class="mt-4">瑕疵記錄</h4>
-                <textarea id="defects" class="form-control" placeholder="記錄任何瑕疵，例如過度萃取、雜味等..." rows="3"></textarea>
-
-                <h4 class="mt-4">備註</h4>
+                <label class="form-label">最終備註:</label>
                 <textarea id="notes" class="form-control" placeholder="請輸入額外的備註..." rows="4"></textarea>
             </div>
         </div>
@@ -193,16 +297,100 @@
         <div class="card">
             <div class="card-body">
                 <h3 class="card-title">Markdown 輸出</h3>
-                <pre id="markdownOutput" class="bg-light p-3 rounded"></pre>
+                <pre id="markdownOutput" class="bg-light p-3 rounded" style="white-space: pre-wrap;"></pre>
             </div>
         </div>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-        const fieldsIncludeFlavor = ["乾香", "濕香", "風味"];
-        const fieldsFilter = ["酸質", "甜感", "平衡度"];
+        // ===== 徽章 / 分數區間定義 =====
+        // label = chip 顯示的區間文字；min/max = 該徽章「實際可選的最低/最高分數」
+        // 非神級徽章的 max 是「整數上限 + 0.5」(76.5、79.5、82.5...)，作為天花板分數
+        const totalScoreTiers = [
+            { id: "trash",      name: "垃圾咖啡",                  label: "≤76",   min: 74, max: 76.5, color: "#6c757d" },
+            { id: "commercial", name: "商業咖啡",                  label: "77-79", min: 77, max: 79.5, color: "#8b5a2b" },
+            { id: "common",     name: "一般精品（便利商店等級）",   label: "80-82", min: 80, max: 82.5, color: "#d6a700" },
+            { id: "like",       name: "平常喜歡的精品",             label: "83-85", min: 83, max: 85.5, color: "#198754" },
+            { id: "recommend",  name: "會推薦給朋友的精品",         label: "86-88", min: 86, max: 88.5, color: "#20c997" },
+            { id: "amazing",    name: "覺得超級驚艷，想重複喝的",   label: "89-91", min: 89, max: 91.5, color: "#0d6efd" },
+            { id: "godly",      name: "神級",                      label: "≥92",   min: 92, max: 96,   color: "#6f42c1" },
+        ];
 
+        function tierFromScore(score) {
+            return totalScoreTiers.find(t => score >= t.min && score <= t.max) || totalScoreTiers[2];
+        }
+
+        function scoresInTier(tier) {
+            const list = [];
+            for (let s = tier.min; s <= tier.max + 1e-9; s += 0.5) {
+                list.push(Math.round(s * 10) / 10);
+            }
+            return list;
+        }
+
+        // ===== CoE 總分卡 狀態 + 渲染 =====
+        const coeState = {
+            coeTotal: 82,
+            selectedTierId: "common",
+        };
+
+        function renderTierChips() {
+            const row = document.getElementById('tierChipRow');
+            row.innerHTML = '';
+            totalScoreTiers.forEach(t => {
+                const chip = document.createElement('div');
+                chip.className = 'tier-chip' + (t.id === coeState.selectedTierId ? ' selected' : '');
+                chip.style.setProperty('--tier-color', t.color);
+                chip.dataset.tierId = t.id;
+                chip.innerHTML = `<span class="tier-name">${t.name}</span><span class="tier-label">${t.label}</span>`;
+                chip.addEventListener('click', () => selectTier(t.id));
+                row.appendChild(chip);
+            });
+        }
+
+        function renderScoreChips(tier) {
+            const row = document.getElementById('scoreChipRow');
+            row.innerHTML = '';
+            row.style.setProperty('--tier-color', tier.color);
+            scoresInTier(tier).forEach(s => {
+                const chip = document.createElement('div');
+                chip.className = 'score-chip' + (Math.abs(s - coeState.coeTotal) < 1e-6 ? ' selected' : '');
+                chip.dataset.score = s;
+                chip.textContent = Number.isInteger(s) ? `${s}` : s.toFixed(1);
+                chip.addEventListener('click', () => selectScore(s));
+                row.appendChild(chip);
+            });
+        }
+
+        function selectTier(tierId, opts = {}) {
+            const tier = totalScoreTiers.find(t => t.id === tierId);
+            if (!tier) return;
+            coeState.selectedTierId = tierId;
+            // 切換徽章時，若目前總分不在新區間內，重設為新區間的最低分（最常用的邏輯）
+            if (!(coeState.coeTotal >= tier.min && coeState.coeTotal <= tier.max)) {
+                coeState.coeTotal = opts.scoreOverride != null ? opts.scoreOverride : tier.min;
+            }
+            renderTierChips();
+            renderScoreChips(tier);
+            refreshTotalDisplay();
+        }
+
+        function selectScore(score) {
+            coeState.coeTotal = score;
+            const tier = totalScoreTiers.find(t => t.id === coeState.selectedTierId);
+            renderScoreChips(tier);
+            refreshTotalDisplay();
+        }
+
+        function refreshTotalDisplay() {
+            const tier = totalScoreTiers.find(t => t.id === coeState.selectedTierId);
+            document.getElementById('coeTotalDisplay').textContent = coeState.coeTotal.toFixed(1);
+            document.getElementById('coeTotalTierName').textContent = `— ${tier.name}`;
+            document.getElementById('coeTotalTierName').style.color = tier.color;
+        }
+
+        // ===== 細評 / 觀察項定義 =====
         const mouthfeelOptions = {
             weight: {
                 label: "重量級別",
@@ -225,10 +413,20 @@
             }
         };
 
-        const customEvaluationFields = {
-            "口感": mouthfeelOptions,
-            "尾韻": aftertasteOptions
-        };
+        const referenceFields = [
+            { key: "flavor",     label: "風味 Flavor",      hasFlavorWheel: true },
+            { key: "acidity",    label: "酸質 Acidity" },
+            { key: "sweetness",  label: "甜度 Sweetness" },
+            { key: "mouthfeel",  label: "口感 Mouthfeel",   custom: mouthfeelOptions },
+            { key: "aftertaste", label: "尾韻 Aftertaste",  custom: aftertasteOptions },
+            { key: "cleanness",  label: "乾淨度 Clean Cup" },
+            { key: "balance",    label: "平衡 Balance" },
+            { key: "overall",    label: "整體 Overall" },
+        ];
+
+        const observationFields = [
+            { key: "aroma", label: "香氣 Aroma（觀察項，不計分）", hasFlavorWheel: true }
+        ];
 
         const flavors = [
             { id: "floral", name: "花香類", sub: ["茉莉", "玫瑰", "蘭花", "桂花", "紫羅蘭", "薰衣草"] },
@@ -253,176 +451,216 @@
             { id: "other", name: "其他", sub: ["化合物", "霉味 / 土味", "紙味"] }
         ];
 
-        function createRatingStars(parentElement, id, label) {
-            for (let i = 1; i <= 5; i++) {
-                let star = document.createElement('i');
-                star.className = 'bi bi-star-fill rating-star';
-                star.dataset.value = i;
-                star.addEventListener('click', () => setRating(parentElement, i, id, label));
-                parentElement.appendChild(star);
-            }
+        // ===== 參考分 slider =====
+        function refScoreBand(v) {
+            if (v <= 4.5) return "low";
+            if (v <= 5.5) return "mid";
+            if (v <= 6.5) return "good";
+            if (v <= 7.5) return "great";
+            return "top";
         }
 
-        function setRating(group, value, id, label) {
-            group.dataset.rating = value;
-            const stars = group.querySelectorAll('.rating-star');
-            stars.forEach(star => {
-                star.classList.toggle('selected', star.dataset.value <= value);
-            });
-            updateSummary(id, label);
+        function onRefScoreInput(key) {
+            const slider = document.getElementById(`${key}_score`);
+            const valueEl = document.getElementById(`${key}_score_value`);
+            const v = parseFloat(slider.value);
+            valueEl.textContent = v.toFixed(1);
+            valueEl.dataset.band = refScoreBand(v);
+            updateRefSummary(key);
         }
 
-        function getRating(group) {
-            return group.dataset.rating || 0;
+        function setReferenceScore(key, value) {
+            const slider = document.getElementById(`${key}_score`);
+            if (!slider) return;
+            slider.value = value;
+            onRefScoreInput(key);
         }
 
-        function updateSummary(id, label) {
-            const summaryEl = document.getElementById(`${id}_summary`);
+        function getReferenceScore(key) {
+            const slider = document.getElementById(`${key}_score`);
+            return slider ? parseFloat(slider.value) : 5;
+        }
+
+        function updateRefSummary(key) {
+            const summaryEl = document.getElementById(`${key}_summary`);
             if (!summaryEl) return;
+            const field = referenceFields.find(f => f.key === key);
+            if (!field) return;
 
-            const descRating = getRating(document.getElementById(`${id}_desc_rating`));
-            const emotionRating = getRating(document.getElementById(`${id}_emotion_rating`));
-            
-            let starSummary = '';
-            if (descRating > 0 || emotionRating > 0) {
-                starSummary = `描述: ${descRating} | 情感: ${emotionRating}`;
-            }
+            const score = getReferenceScore(key);
+            const parts = [`${score.toFixed(1)} / 8`];
 
-            let customSummary = '';
-            if (customEvaluationFields[label]) {
-                const options = customEvaluationFields[label];
+            if (field.custom) {
+                const options = field.custom;
                 const primaryKey = Object.keys(options)[0];
                 const secondaryKey = Object.keys(options)[1];
-                const primaryValue = document.querySelector(`input[name="${id}_${primaryKey}"]:checked`)?.value || '';
-                const secondaryValues = Array.from(document.querySelectorAll(`input[name="${id}_${secondaryKey}"]:checked`)).map(cb => cb.value);
-                customSummary = [primaryValue, ...secondaryValues].filter(v => v).join(', ');
+                const primaryValue = document.querySelector(`input[name="${key}_${primaryKey}"]:checked`)?.value || '';
+                const secondaryValues = Array.from(document.querySelectorAll(`input[name="${key}_${secondaryKey}"]:checked`)).map(cb => cb.value);
+                const customSummary = [primaryValue, ...secondaryValues].filter(v => v).join(', ');
+                if (customSummary) parts.push(customSummary);
             }
-            
-            summaryEl.textContent = [starSummary, customSummary].filter(Boolean).join('; ');
+
+            if (field.hasFlavorWheel) {
+                const selected = Array.from(document.querySelectorAll(`#${key}_flavorList .flavor-tag.selected`)).map(t => t.innerText);
+                if (selected.length > 0) {
+                    const preview = selected.slice(0, 2).join(', ') + (selected.length > 2 ? `…(+${selected.length - 2})` : '');
+                    parts.push(preview);
+                }
+            }
+
+            summaryEl.textContent = parts.join(' | ');
         }
 
-        function generateEvaluationItem(id, label) {
-            const isFlavorItem = fieldsIncludeFlavor.includes(label);
-            const isCustomField = Object.keys(customEvaluationFields).includes(label);
-
-            let bodyContent = `
-                <div class="row">
-                    <div class="col-md-6 mb-3">
-                        <div class="form-label-group">
-                            <label class="form-label">描述性:</label>
-                            <i class="bi bi-info-circle" data-bs-toggle="tooltip" title="客觀評估咖啡風味的強度與豐富性"></i>
-                        </div>
-                        <div id="${id}_desc_rating" class="rating-group"></div>
-                    </div>
-                    <div class="col-md-6 mb-3">
-                        <div class="form-label-group">
-                            <label class="form-label">情感性:</label>
-                            <i class="bi bi-info-circle" data-bs-toggle="tooltip" title="主觀評估個人對此風味的喜愛程度"></i>
-                        </div>
-                        <div id="${id}_emotion_rating" class="rating-group"></div>
-                    </div>
-                </div>`;
-
-            if (isCustomField) {
-                const options = customEvaluationFields[label];
-                const primaryKey = Object.keys(options)[0];
-                const secondaryKey = Object.keys(options)[1];
-                const primaryOptions = options[primaryKey];
-                const secondaryOptions = options[secondaryKey];
-
-                let customHtml = `<hr><h5>${primaryOptions.label}</h5>`;
-                primaryOptions.options.forEach(opt => {
-                    customHtml += `<div class="form-check form-check-inline">
-                        <input class="form-check-input" type="radio" name="${id}_${primaryKey}" id="${id}_${primaryKey}_${opt}" value="${opt}" onchange="updateSummary('${id}', '${label}')">
-                        <label class="form-check-label" for="${id}_${primaryKey}_${opt}">${opt}</label>
-                    </div>`;
-                });
-
-                customHtml += `<h5 class="mt-4">${secondaryOptions.label}</h5>`;
-                secondaryOptions.options.forEach(opt => {
-                    customHtml += `<div class="form-check form-check-inline">
-                        <input class="form-check-input" type="checkbox" name="${id}_${secondaryKey}" id="${id}_${secondaryKey}_${opt}" value="${opt}" onchange="updateSummary('${id}', '${label}')">
-                        <label class="form-check-label" for="${id}_${secondaryKey}_${opt}">${opt}</label>
-                    </div>`;
-                });
-                bodyContent += customHtml;
+        function updateObservationSummary(key) {
+            const summaryEl = document.getElementById(`${key}_summary`);
+            if (!summaryEl) return;
+            const selected = Array.from(document.querySelectorAll(`#${key}_flavorList .flavor-tag.selected`)).map(t => t.innerText);
+            if (selected.length === 0) {
+                summaryEl.textContent = '';
+            } else {
+                summaryEl.textContent = selected.slice(0, 3).join(', ') + (selected.length > 3 ? `…(+${selected.length - 3})` : '');
             }
+        }
 
-            if (isFlavorItem) {
-                bodyContent += `<div class="table-responsive"><div id="${id}_flavorList" class="mt-4"></div></div>`;
-            }
-            
-            bodyContent += `<label class="form-label mt-4">備註:</label><textarea id="${id}_notes" class="form-control"></textarea>`;
-
+        // ===== Accordion 生成 =====
+        function wrapAccordionItem(key, label, body) {
             return `<div class="accordion-item">
-                <h2 class="accordion-header" id="heading_${id}">
-                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapse_${id}" aria-expanded="false" aria-controls="collapse_${id}">
+                <h2 class="accordion-header" id="heading_${key}">
+                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapse_${key}" aria-expanded="false" aria-controls="collapse_${key}">
                         ${label}
-                        <span id="${id}_summary" class="ms-auto text-muted small pe-3"></span>
+                        <span id="${key}_summary" class="ms-auto text-muted small pe-3"></span>
                     </button>
                 </h2>
-                <div id="collapse_${id}" class="accordion-collapse collapse" aria-labelledby="heading_${id}" data-bs-parent="#evaluationAccordion">
+                <div id="collapse_${key}" class="accordion-collapse collapse" aria-labelledby="heading_${key}" data-bs-parent="#evaluationAccordion">
                     <div class="accordion-body">
-                        ${bodyContent}
+                        ${body}
                     </div>
                 </div>
             </div>`;
         }
 
+        function generateReferenceItem(field) {
+            const key = field.key;
+            let body = `
+                <div class="mb-3">
+                    <label class="form-label">參考分 (4 - 8):</label>
+                    <div class="ref-slider-group">
+                        <input type="range" class="form-range" id="${key}_score" min="4" max="8" step="0.5" value="5" oninput="onRefScoreInput('${key}')">
+                        <span class="ref-slider-value" id="${key}_score_value" data-band="mid">5.0</span>
+                    </div>
+                    <div class="small-hint">此分數僅作各面向參考印象，不影響上方 CoE 總分。</div>
+                </div>`;
+
+            if (field.custom) {
+                const options = field.custom;
+                const primaryKey = Object.keys(options)[0];
+                const secondaryKey = Object.keys(options)[1];
+                const primaryOptions = options[primaryKey];
+                const secondaryOptions = options[secondaryKey];
+
+                body += `<hr><h5>${primaryOptions.label}</h5>`;
+                primaryOptions.options.forEach(opt => {
+                    body += `<div class="form-check form-check-inline">
+                        <input class="form-check-input" type="radio" name="${key}_${primaryKey}" id="${key}_${primaryKey}_${opt}" value="${opt}" onchange="updateRefSummary('${key}')">
+                        <label class="form-check-label" for="${key}_${primaryKey}_${opt}">${opt}</label>
+                    </div>`;
+                });
+                body += `<h5 class="mt-4">${secondaryOptions.label}</h5>`;
+                secondaryOptions.options.forEach(opt => {
+                    body += `<div class="form-check form-check-inline">
+                        <input class="form-check-input" type="checkbox" name="${key}_${secondaryKey}" id="${key}_${secondaryKey}_${opt}" value="${opt}" onchange="updateRefSummary('${key}')">
+                        <label class="form-check-label" for="${key}_${secondaryKey}_${opt}">${opt}</label>
+                    </div>`;
+                });
+            }
+
+            if (field.hasFlavorWheel) {
+                body += `<label class="form-label mt-4">風味詞（風味輪）:</label>
+                    <div class="table-responsive"><div id="${key}_flavorList" class="mt-2"></div></div>`;
+            }
+
+            body += `<label class="form-label mt-4">備註:</label><textarea id="${key}_notes" class="form-control"></textarea>`;
+
+            return wrapAccordionItem(key, field.label, body);
+        }
+
+        function generateObservationItem(field) {
+            const key = field.key;
+            let body = `
+                <div class="small-hint mb-3">香氣為觀察項，不計分。請記錄你聞到的乾香與濕香印象。</div>
+                <label class="form-label">乾香 (Dry Aroma):</label>
+                <textarea id="${key}_dryAroma" class="form-control mb-3" rows="2"></textarea>
+                <label class="form-label">濕香 (Wet Aroma):</label>
+                <textarea id="${key}_wetAroma" class="form-control mb-3" rows="2"></textarea>`;
+
+            if (field.hasFlavorWheel) {
+                body += `<label class="form-label mt-2">風味詞（風味輪）:</label>
+                    <div class="table-responsive"><div id="${key}_flavorList" class="mt-2"></div></div>`;
+            }
+
+            body += `<label class="form-label mt-4">備註:</label><textarea id="${key}_notes" class="form-control"></textarea>`;
+
+            return wrapAccordionItem(key, field.label, body);
+        }
+
         function initializeEvaluationAccordion() {
             const accordion = document.getElementById('evaluationAccordion');
-            const allFields = [...fieldsIncludeFlavor, ...fieldsFilter, ...Object.keys(customEvaluationFields)];
-            accordion.innerHTML = allFields.map(field => generateEvaluationItem(field.replace(/ /g, '_'), field)).join('');
+            accordion.innerHTML = [
+                ...observationFields.map(generateObservationItem),
+                ...referenceFields.map(generateReferenceItem)
+            ].join('');
 
-            allFields.forEach(field => {
-                const id = field.replace(/ /g, '_');
-                const descRatingGroup = document.getElementById(`${id}_desc_rating`);
-                const emotionRatingGroup = document.getElementById(`${id}_emotion_rating`);
-                createRatingStars(descRatingGroup, id, field);
-                createRatingStars(emotionRatingGroup, id, field);
-
-                if (fieldsIncludeFlavor.includes(field)) {
-                    generateFlavorList(`${id}_flavorList`);
+            observationFields.forEach(f => {
+                if (f.hasFlavorWheel) {
+                    generateFlavorList(`${f.key}_flavorList`, () => updateObservationSummary(f.key));
                 }
+            });
+
+            referenceFields.forEach(f => {
+                if (f.hasFlavorWheel) {
+                    generateFlavorList(`${f.key}_flavorList`, () => updateRefSummary(f.key));
+                }
+                updateRefSummary(f.key);
             });
         }
 
-        function generateFlavorList(containerId) {
+        // ===== 風味輪 =====
+        function generateFlavorList(containerId, onSelectionChange) {
             const container = document.getElementById(containerId);
             if (!container) return;
             container.innerHTML = '';
 
-            let table = document.createElement('table');
+            const table = document.createElement('table');
             table.className = 'table table-bordered flavor-table';
             table.innerHTML = '<thead><tr><th>主要風味</th><th>次要風味</th><th>詳細風味</th></tr></thead>';
-            let tbody = table.createTBody();
+            const tbody = table.createTBody();
 
             flavors.forEach(l1 => {
-                const l1_id = `l1-${l1.id}`;
+                const l1_id = `${containerId}__l1-${l1.id}`;
                 if (!l1.sub || l1.sub.length === 0) {
-                    let row = tbody.insertRow();
-                    let cell = row.insertCell();
+                    const row = tbody.insertRow();
+                    const cell = row.insertCell();
                     cell.colSpan = 3;
                     cell.appendChild(createFlavorTag(l1.name, l1_id));
                 } else {
                     l1.sub.forEach((l2, i) => {
-                        let row = tbody.insertRow();
+                        const row = tbody.insertRow();
                         if (i === 0) {
-                            let cell = row.insertCell();
+                            const cell = row.insertCell();
                             cell.rowSpan = l1.sub.length;
                             cell.appendChild(createFlavorTag(l1.name, l1_id));
                         }
-                        let l2_cell = row.insertCell();
-                        let l3_cell = row.insertCell();
+                        const l2_cell = row.insertCell();
+                        const l3_cell = row.insertCell();
                         if (typeof l2 === 'string') {
-                            const l2_id = `l2-${l1_id}-${l2.replace(/[\/\s]/g, '')}`;
+                            const l2_id = `${l1_id}__l2-${l2.replace(/[\/\s]/g, '')}`;
                             l2_cell.appendChild(createFlavorTag(l2, l2_id, l1_id));
                         } else {
-                            const l2_id = `l2-${l1_id}-${l2.id}`;
+                            const l2_id = `${l1_id}__l2-${l2.id}`;
                             l2_cell.appendChild(createFlavorTag(l2.name, l2_id, l1_id));
                             if (l2.sub && l2.sub.length > 0) {
                                 l2.sub.forEach(l3 => {
-                                    const l3_id = `l3-${l2_id}-${l3.replace(/[\/\s]/g, '')}`;
+                                    const l3_id = `${l2_id}__l3-${l3.replace(/[\/\s]/g, '')}`;
                                     l3_cell.appendChild(createFlavorTag(l3, l3_id, l2_id, true));
                                 });
                             }
@@ -443,9 +681,9 @@
 
                     if (l2_id_from_l3) {
                         const l2_tag = document.getElementById(l2_id_from_l3);
-                        const l1_tag = document.getElementById(l2_tag.dataset.parentL1);
+                        const l1_tag = l2_tag ? document.getElementById(l2_tag.dataset.parentL1) : null;
                         updateParentState(l2_tag, `.flavor-tag[data-parent-l2="${l2_id_from_l3}"]`);
-                        updateParentState(l1_tag, `.flavor-tag[data-parent-l1="${l1_tag.id}"]`);
+                        if (l1_tag) updateParentState(l1_tag, `.flavor-tag[data-parent-l1="${l1_tag.id}"]`);
                     } else if (l1_id_from_l2) {
                         const l1_tag = document.getElementById(l1_id_from_l2);
                         updateParentState(l1_tag, `.flavor-tag[data-parent-l1="${l1_id_from_l2}"]`);
@@ -456,10 +694,13 @@
                         if (!this.classList.contains('selected')) {
                             container.querySelectorAll(`.flavor-tag[data-parent-l1="${this.id}"]`).forEach(ct => {
                                 ct.classList.remove('selected');
-                                container.querySelectorAll(`.flavor-tag[data-parent-l2^="l2-${this.id}"]`).forEach(cct => cct.classList.remove('selected'));
+                                const escapedId = ct.id.replace(/"/g, '\\"');
+                                container.querySelectorAll(`.flavor-tag[data-parent-l2="${escapedId}"]`).forEach(cct => cct.classList.remove('selected'));
                             });
                         }
                     }
+
+                    if (typeof onSelectionChange === 'function') onSelectionChange();
                 });
             });
         }
@@ -472,7 +713,7 @@
         }
 
         function createFlavorTag(name, id, parentId = null, isL3 = false) {
-            let tag = document.createElement('span');
+            const tag = document.createElement('span');
             tag.className = 'flavor-tag';
             tag.id = id;
             tag.innerText = name;
@@ -484,11 +725,13 @@
             return tag;
         }
 
+        // ===== 儲存 / 讀取 =====
         function saveRecord() {
             const recordName = prompt("請為此記錄命名:");
             if (!recordName) return;
 
             const record = {
+                schemaVersion: 2,
                 name: document.getElementById('name').value,
                 origin: document.getElementById('origin').value,
                 process: document.getElementById('process').value,
@@ -500,33 +743,41 @@
                 extraction_time: document.getElementById('extraction_time').value,
                 defects: document.getElementById('defects').value,
                 notes: document.getElementById('notes').value,
-                overall: document.getElementById('overall').value,
+                coeTotal: coeState.coeTotal,
+                coeTierId: coeState.selectedTierId,
                 evaluations: {},
-                flavors: {}
+                observation: {}
             };
 
-            const allFields = [...fieldsIncludeFlavor, ...fieldsFilter, ...Object.keys(customEvaluationFields)];
-            allFields.forEach(field => {
-                const id = field.replace(/ /g, '_');
-                record.evaluations[id] = {
-                    desc: getRating(document.getElementById(`${id}_desc_rating`)),
-                    emotion: getRating(document.getElementById(`${id}_emotion_rating`)),
-                    notes: document.getElementById(`${id}_notes`).value
+            referenceFields.forEach(f => {
+                const entry = {
+                    score: getReferenceScore(f.key),
+                    notes: document.getElementById(`${f.key}_notes`).value
                 };
+                if (f.custom) {
+                    const primaryKey = Object.keys(f.custom)[0];
+                    const secondaryKey = Object.keys(f.custom)[1];
+                    entry[primaryKey] = document.querySelector(`input[name="${f.key}_${primaryKey}"]:checked`)?.value || '';
+                    entry[secondaryKey] = Array.from(document.querySelectorAll(`input[name="${f.key}_${secondaryKey}"]:checked`)).map(cb => cb.value);
+                }
+                if (f.hasFlavorWheel) {
+                    entry.flavors = Array.from(document.querySelectorAll(`#${f.key}_flavorList .flavor-tag.selected`)).map(tag => tag.id);
+                }
+                record.evaluations[f.key] = entry;
+            });
 
-                if (customEvaluationFields[field]) {
-                    const options = customEvaluationFields[field];
-                    const primaryKey = Object.keys(options)[0];
-                    const secondaryKey = Object.keys(options)[1];
-                    const primaryValue = document.querySelector(`input[name="${id}_${primaryKey}"]:checked`)?.value || '';
-                    const secondaryValues = Array.from(document.querySelectorAll(`input[name="${id}_${secondaryKey}"]:checked`)).map(cb => cb.value);
-                    record.evaluations[id][primaryKey] = primaryValue;
-                    record.evaluations[id][secondaryKey] = secondaryValues;
+            observationFields.forEach(f => {
+                const entry = {
+                    notes: document.getElementById(`${f.key}_notes`).value
+                };
+                if (f.key === 'aroma') {
+                    entry.dryAroma = document.getElementById(`${f.key}_dryAroma`).value;
+                    entry.wetAroma = document.getElementById(`${f.key}_wetAroma`).value;
                 }
-                
-                if (fieldsIncludeFlavor.includes(field)) {
-                    record.flavors[id] = Array.from(document.querySelectorAll(`#${id}_flavorList .flavor-tag.selected`)).map(tag => tag.id);
+                if (f.hasFlavorWheel) {
+                    entry.flavors = Array.from(document.querySelectorAll(`#${f.key}_flavorList .flavor-tag.selected`)).map(tag => tag.id);
                 }
+                record.observation[f.key] = entry;
             });
 
             localStorage.setItem(`coffee_record_${recordName}`, JSON.stringify(record));
@@ -534,81 +785,121 @@
             updateRecordList();
         }
 
+        function resetFormToDefaults() {
+            // 基本欄位
+            ['name', 'origin', 'process', 'roast', 'grind', 'water_temp', 'ratio', 'method', 'extraction_time', 'defects', 'notes']
+                .forEach(id => { document.getElementById(id).value = ''; });
+
+            // CoE 總分回預設
+            coeState.coeTotal = 82;
+            coeState.selectedTierId = 'common';
+            renderTierChips();
+            renderScoreChips(totalScoreTiers.find(t => t.id === 'common'));
+            refreshTotalDisplay();
+
+            // 細評項
+            referenceFields.forEach(f => {
+                setReferenceScore(f.key, 5);
+                document.getElementById(`${f.key}_notes`).value = '';
+                if (f.custom) {
+                    const primaryKey = Object.keys(f.custom)[0];
+                    const secondaryKey = Object.keys(f.custom)[1];
+                    document.querySelectorAll(`input[name="${f.key}_${primaryKey}"], input[name="${f.key}_${secondaryKey}"]`)
+                        .forEach(input => input.checked = false);
+                }
+                if (f.hasFlavorWheel) {
+                    document.querySelectorAll(`#${f.key}_flavorList .flavor-tag.selected`).forEach(t => t.classList.remove('selected'));
+                }
+                updateRefSummary(f.key);
+            });
+
+            // 觀察項
+            observationFields.forEach(f => {
+                document.getElementById(`${f.key}_notes`).value = '';
+                if (f.key === 'aroma') {
+                    document.getElementById(`${f.key}_dryAroma`).value = '';
+                    document.getElementById(`${f.key}_wetAroma`).value = '';
+                }
+                if (f.hasFlavorWheel) {
+                    document.querySelectorAll(`#${f.key}_flavorList .flavor-tag.selected`).forEach(t => t.classList.remove('selected'));
+                }
+                updateObservationSummary(f.key);
+            });
+        }
+
         function loadRecord() {
             const recordKey = document.getElementById('recordList').value;
             if (!recordKey) return;
 
             const record = JSON.parse(localStorage.getItem(recordKey));
+            if (!record) return;
 
-            document.getElementById('name').value = record.name;
-            document.getElementById('origin').value = record.origin;
-            document.getElementById('process').value = record.process;
-            document.getElementById('roast').value = record.roast;
-            document.getElementById('grind').value = record.grind;
-            document.getElementById('water_temp').value = record.water_temp;
-            document.getElementById('ratio').value = record.ratio;
-            document.getElementById('method').value = record.method;
-            document.getElementById('extraction_time').value = record.extraction_time;
-            document.getElementById('defects').value = record.defects;
-            document.getElementById('notes').value = record.notes;
-            document.getElementById('overall').value = record.overall;
-            updateValue('overall');
+            resetFormToDefaults();
 
-            const allFields = [...fieldsIncludeFlavor, ...fieldsFilter, ...Object.keys(customEvaluationFields)];
-            allFields.forEach(field => {
-                const id = field.replace(/ /g, '_');
-                const evalData = record.evaluations ? record.evaluations[id] : null;
+            // 基本資訊（兩版皆相容）
+            ['name', 'origin', 'process', 'roast', 'grind', 'water_temp', 'ratio', 'method', 'extraction_time', 'defects', 'notes']
+                .forEach(id => { if (record[id] != null) document.getElementById(id).value = record[id]; });
 
-                // Reset fields first
-                setRating(document.getElementById(`${id}_desc_rating`), 0, id, field);
-                setRating(document.getElementById(`${id}_emotion_rating`), 0, id, field);
-                document.getElementById(`${id}_notes`).value = '';
-                if (customEvaluationFields[field]) {
-                    const options = customEvaluationFields[field];
-                    const primaryKey = Object.keys(options)[0];
-                    const secondaryKey = Object.keys(options)[1];
-                    document.querySelectorAll(`input[name="${id}_${primaryKey}"], input[name="${id}_${secondaryKey}"]`).forEach(input => input.checked = false);
-                }
+            if (record.schemaVersion === 2) {
+                // 新格式
+                coeState.coeTotal = typeof record.coeTotal === 'number' ? record.coeTotal : 82;
+                coeState.selectedTierId = record.coeTierId || tierFromScore(coeState.coeTotal).id;
+                renderTierChips();
+                renderScoreChips(totalScoreTiers.find(t => t.id === coeState.selectedTierId));
+                refreshTotalDisplay();
 
-                if (evalData) {
-                    setRating(document.getElementById(`${id}_desc_rating`), evalData.desc || 0, id, field);
-                    setRating(document.getElementById(`${id}_emotion_rating`), evalData.emotion || 0, id, field);
-                    document.getElementById(`${id}_notes`).value = evalData.notes || '';
-
-                    if (customEvaluationFields[field]) {
-                        const options = customEvaluationFields[field];
-                        const primaryKey = Object.keys(options)[0];
-                        const secondaryKey = Object.keys(options)[1];
-                        
-                        const primaryValue = evalData[primaryKey];
-                        if (primaryValue) {
-                            const radio = document.querySelector(`input[name="${id}_${primaryKey}"][value="${primaryValue}"]`);
-                            if (radio) radio.checked = true;
+                if (record.evaluations) {
+                    referenceFields.forEach(f => {
+                        const data = record.evaluations[f.key];
+                        if (!data) return;
+                        if (typeof data.score === 'number') setReferenceScore(f.key, data.score);
+                        document.getElementById(`${f.key}_notes`).value = data.notes || '';
+                        if (f.custom) {
+                            const primaryKey = Object.keys(f.custom)[0];
+                            const secondaryKey = Object.keys(f.custom)[1];
+                            if (data[primaryKey]) {
+                                const radio = document.querySelector(`input[name="${f.key}_${primaryKey}"][value="${data[primaryKey]}"]`);
+                                if (radio) radio.checked = true;
+                            }
+                            (data[secondaryKey] || []).forEach(v => {
+                                const cb = document.querySelector(`input[name="${f.key}_${secondaryKey}"][value="${v}"]`);
+                                if (cb) cb.checked = true;
+                            });
                         }
-
-                        const secondaryValues = evalData[secondaryKey] || [];
-                        secondaryValues.forEach(value => {
-                            const checkbox = document.querySelector(`input[name="${id}_${secondaryKey}"][value="${value}"]`);
-                            if (checkbox) checkbox.checked = true;
-                        });
-                    }
+                        if (f.hasFlavorWheel && Array.isArray(data.flavors)) {
+                            data.flavors.forEach(tagId => {
+                                const tag = document.getElementById(tagId);
+                                if (tag) tag.classList.add('selected');
+                            });
+                        }
+                        updateRefSummary(f.key);
+                    });
                 }
-                updateSummary(id, field);
-            });
 
-            document.querySelectorAll('.flavor-tag').forEach(tag => tag.classList.remove('selected'));
-            if(record.flavors) {
-                fieldsIncludeFlavor.forEach(field => {
-                    const id = field.replace(/ /g, '_');
-                    if (record.flavors[id]) {
-                        record.flavors[id].forEach(tagId => {
-                            const tag = document.getElementById(tagId);
-                            if (tag) tag.classList.add('selected');
-                        });
-                    }
-                });
+                if (record.observation) {
+                    observationFields.forEach(f => {
+                        const data = record.observation[f.key];
+                        if (!data) return;
+                        document.getElementById(`${f.key}_notes`).value = data.notes || '';
+                        if (f.key === 'aroma') {
+                            document.getElementById(`${f.key}_dryAroma`).value = data.dryAroma || '';
+                            document.getElementById(`${f.key}_wetAroma`).value = data.wetAroma || '';
+                        }
+                        if (f.hasFlavorWheel && Array.isArray(data.flavors)) {
+                            data.flavors.forEach(tagId => {
+                                const tag = document.getElementById(tagId);
+                                if (tag) tag.classList.add('selected');
+                            });
+                        }
+                        updateObservationSummary(f.key);
+                    });
+                }
+
+                alert("記錄已讀取");
+            } else {
+                // 舊格式（v1）— 只還原文字欄位，分數請重評
+                alert("此為舊格式記錄，僅還原文字欄位；分數請重評。");
             }
-            alert("記錄已讀取");
         }
 
         function deleteRecord() {
@@ -616,7 +907,7 @@
             const recordKey = recordList.value;
             if (!recordKey) return;
 
-            if (confirm(`確定要刪除記錄 "${recordKey.replace('coffee_record_', '')}"嗎？`)) {
+            if (confirm(`確定要刪除記錄 "${recordKey.replace('coffee_record_', '')}" 嗎？`)) {
                 localStorage.removeItem(recordKey);
                 updateRecordList();
                 alert("記錄已刪除");
@@ -638,99 +929,106 @@
             }
         }
 
-        function updateValue(id) {
-            const slider = document.getElementById(id);
-            const value = parseFloat(slider.value);
-            document.getElementById(`${id}_value`).innerText = value;
-        }
-
+        // ===== Markdown 匯出 =====
         function generateMarkdown() {
-            const getValue = (id) => document.getElementById(id).value;
-            const getRatingValue = (id) => getRating(document.getElementById(id));
+            const v = (id) => document.getElementById(id).value;
+            const tier = totalScoreTiers.find(t => t.id === coeState.selectedTierId);
 
-            let md = `# 咖啡杯測報告: ${getValue('name')}\n\n`;
+            let md = `# 咖啡杯測報告: ${v('name')}\n\n`;
+
             md += `## 基本資訊\n`;
-            md += `* **產地:** ${getValue('origin')}\n`;
-            md += `* **處理法:** ${getValue('process')}\n`;
-            md += `* **烘焙度:** ${getValue('roast')}\n\n`;
+            md += `* **產地:** ${v('origin')}\n`;
+            md += `* **處理法:** ${v('process')}\n`;
+            md += `* **烘焙度:** ${v('roast')}\n\n`;
 
             md += `## 沖煮參數\n`;
-            md += `* **研磨度:** ${getValue('grind')}\n`;
-            md += `* **水溫:** ${getValue('water_temp')}°C\n`;
-            md += `* **粉水比:** ${getValue('ratio')}\n`;
-            md += `* **沖煮方法:** ${getValue('method')}\n`;
-            md += `* **萃取時間:** ${getValue('extraction_time')}s\n\n`;
+            md += `* **研磨度:** ${v('grind')}\n`;
+            md += `* **水溫:** ${v('water_temp')}°C\n`;
+            md += `* **粉水比:** ${v('ratio')}\n`;
+            md += `* **沖煮方法:** ${v('method')}\n`;
+            md += `* **萃取時間:** ${v('extraction_time')}s\n\n`;
 
-            md += `## 感官評估\n`;
-            const allFields = [...fieldsIncludeFlavor, ...fieldsFilter, ...Object.keys(customEvaluationFields)];
-            allFields.forEach(field => {
-                const id = field.replace(/ /g, '_');
-                md += `### ${field}\n`;
-                md += `* **描述性:** ${getRatingValue(id + '_desc_rating')} / 5\n`;
-                md += `* **情感性:** ${getRatingValue(id + '_emotion_rating')} / 5\n`;
+            md += `## CoE 總分: ${coeState.coeTotal.toFixed(1)} / 100 — ${tier.name}\n\n`;
 
-                if (customEvaluationFields[field]) {
-                    const options = customEvaluationFields[field];
-                    const primaryKey = Object.keys(options)[0];
-                    const secondaryKey = Object.keys(options)[1];
-                    const primaryValue = document.querySelector(`input[name="${id}_${primaryKey}"]:checked`)?.value || '未選擇';
-                    const secondaryValues = Array.from(document.querySelectorAll(`input[name="${id}_${secondaryKey}"]:checked`)).map(cb => cb.value);
-                    
-                    md += `* **${options[primaryKey].label}:** ${primaryValue}\n`;
-                    if(secondaryValues.length > 0){
-                        md += `* **${options[secondaryKey].label}:** ${secondaryValues.join(', ')}\n`;
-                    }
+            md += `## 參考分（不計入總分）\n`;
+            md += `| 項目 | 分數 |\n|------|------|\n`;
+            referenceFields.forEach(f => {
+                md += `| ${f.label} | ${getReferenceScore(f.key).toFixed(1)} |\n`;
+            });
+            md += `\n`;
+
+            // 香氣 觀察
+            observationFields.forEach(f => {
+                md += `## ${f.label.replace('（觀察項，不計分）', '')}（觀察）\n`;
+                if (f.key === 'aroma') {
+                    const dry = v(`${f.key}_dryAroma`);
+                    const wet = v(`${f.key}_wetAroma`);
+                    if (dry) md += `* **乾香:** ${dry}\n`;
+                    if (wet) md += `* **濕香:** ${wet}\n`;
                 }
-
-                if (fieldsIncludeFlavor.includes(field)) {
-                    const selectedFlavors = Array.from(document.querySelectorAll(`#${id}_flavorList .flavor-tag.selected`)).map(tag => tag.innerText);
-                    if (selectedFlavors.length > 0) {
-                        md += `* **風味描述:** ${selectedFlavors.join(', ')}\n`;
-                    }
+                if (f.hasFlavorWheel) {
+                    const selected = Array.from(document.querySelectorAll(`#${f.key}_flavorList .flavor-tag.selected`)).map(t => t.innerText);
+                    if (selected.length > 0) md += `* **風味詞:** ${selected.join(', ')}\n`;
                 }
-
-                const notes = getValue(`${id}_notes`);
-                if (notes) {
-                    md += `* **備註:** ${notes}\n`;
-                }
-                md += '\n';
+                const note = v(`${f.key}_notes`);
+                if (note) md += `* **備註:** ${note}\n`;
+                md += `\n`;
             });
 
-            md += `## 總結\n`;
-            md += `* **整體評價:** ${getValue('overall')} / 9\n`;
-            const defects = getValue('defects');
-            if (defects) {
-                md += `* **瑕疵記錄:** ${defects}\n`;
-            }
-            const finalNotes = getValue('notes');
-            if (finalNotes) {
-                md += `* **最終備註:** ${finalNotes}\n`;
-            }
+            // 各項細節
+            md += `## 各項細節\n`;
+            referenceFields.forEach(f => {
+                const note = v(`${f.key}_notes`);
+                let details = [];
+                if (f.custom) {
+                    const primaryKey = Object.keys(f.custom)[0];
+                    const secondaryKey = Object.keys(f.custom)[1];
+                    const primaryValue = document.querySelector(`input[name="${f.key}_${primaryKey}"]:checked`)?.value || '';
+                    const secondaryValues = Array.from(document.querySelectorAll(`input[name="${f.key}_${secondaryKey}"]:checked`)).map(cb => cb.value);
+                    if (primaryValue) details.push(`* **${f.custom[primaryKey].label}:** ${primaryValue}`);
+                    if (secondaryValues.length > 0) details.push(`* **${f.custom[secondaryKey].label}:** ${secondaryValues.join(', ')}`);
+                }
+                if (f.hasFlavorWheel) {
+                    const selected = Array.from(document.querySelectorAll(`#${f.key}_flavorList .flavor-tag.selected`)).map(t => t.innerText);
+                    if (selected.length > 0) details.push(`* **風味詞:** ${selected.join(', ')}`);
+                }
+                if (note) details.push(`* **備註:** ${note}`);
+
+                if (details.length > 0) {
+                    md += `### ${f.label}\n`;
+                    md += details.join('\n') + `\n\n`;
+                }
+            });
+
+            const defects = v('defects');
+            if (defects) md += `## 瑕疵記錄\n${defects}\n\n`;
+            const finalNotes = v('notes');
+            if (finalNotes) md += `## 最終備註\n${finalNotes}\n\n`;
 
             document.getElementById('markdownOutput').textContent = md;
         }
 
         function copyToClipboard() {
             const markdownText = document.getElementById('markdownOutput').textContent;
+            if (!markdownText) {
+                alert('請先點「生成 Markdown」');
+                return;
+            }
             navigator.clipboard.writeText(markdownText).then(() => {
                 alert('Markdown 已複製到剪貼簿！');
-            }, (err) => {
-                alert('複製失敗: ', err);
+            }, () => {
+                alert('複製失敗');
             });
         }
 
-
         document.addEventListener('DOMContentLoaded', () => {
+            renderTierChips();
+            renderScoreChips(totalScoreTiers.find(t => t.id === coeState.selectedTierId));
+            refreshTotalDisplay();
+
             initializeEvaluationAccordion();
             updateRecordList();
-
-            // Initialize tooltips
-            const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
-            var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
-                return new bootstrap.Tooltip(tooltipTriggerEl)
-            });
         });
-
     </script>
 </body>
 
