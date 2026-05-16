@@ -3,9 +3,12 @@
    ========================================================================== */
 
 // ─── Supabase config (paste your URL + anon key here once set up) ────────────
+// 與其他專案共用 Supabase？把所有資料放在獨立 schema 即可。
+// 記得在 Supabase Dashboard → Settings → API → "Exposed schemas" 加上 schema 名稱。
 const SUPABASE_CONFIG = {
-    url: '',           // e.g. 'https://xxxxx.supabase.co'
-    anonKey: '',       // anon/public key
+    url: '',                  // e.g. 'https://xxxxx.supabase.co'
+    anonKey: '',              // anon/public key
+    schema: 'coffee',         // 自訂 schema 名稱（與其他專案隔離）
     table: 'coffee_records',
     bucket: 'bean-photos',
 };
@@ -30,7 +33,7 @@ const totalScoreTiers = [
     { id: 'like',       medal: '銀', label: '83-85', min: 83, max: 85.5,
       badgeName: '銀牌',   name: '優秀銀獎',
       description: '平衡乾淨、值得反覆品飲的精品',
-      cssClass: 't-like',       color: '#7a7a7a' },
+      cssClass: 't-like',       color: '#9e9e9e' },
 
     { id: 'recommend',  medal: '金', label: '86-88', min: 86, max: 88.5,
       badgeName: '金牌',   name: '傑出金獎',
@@ -468,10 +471,12 @@ function drawFlavorWheel(containerId) {
 }
 
 function makeTag({ text, id, color, selected, onClick }) {
-    const tag = document.createElement('span');
+    const tag = document.createElement('button');
+    tag.type = 'button';
     tag.className = 'flavor-tag' + (selected ? ' selected' : '');
     tag.dataset.flavorId = id;
     tag.style.setProperty('--ft-color', color);
+    tag.setAttribute('aria-pressed', selected ? 'true' : 'false');
     tag.innerText = text;
     tag.addEventListener('click', onClick);
     return tag;
@@ -567,12 +572,22 @@ function applyFlavorSelections(containerId, ids) {
     state.selected = new Set(ids || []);
     state.expandedL1 = new Set();
     state.expandedL2 = new Set();
+    // Parse by splitting on the explicit markers so multi-underscore slugs
+    // like `nutty_cocoa` / `stone_fruit` / `tropical_fruit` survive intact.
     for (const id of state.selected) {
         const rest = id.slice(containerId.length);
-        const l1Match = rest.match(/^__l1-([^_]+)/);
-        if (l1Match) state.expandedL1.add(l1Match[1]);
-        const l2Match = rest.match(/^__l1-([^_]+)__l2-([^_]+)/);
-        if (l2Match) state.expandedL2.add(`${l2Match[1]}::${l2Match[2]}`);
+        const l1Start = rest.indexOf('__l1-');
+        if (l1Start < 0) continue;
+        const afterL1 = rest.slice(l1Start + '__l1-'.length);
+        const l2Start = afterL1.indexOf('__l2-');
+        const l1Slug = l2Start < 0 ? afterL1 : afterL1.slice(0, l2Start);
+        state.expandedL1.add(l1Slug);
+        if (l2Start >= 0) {
+            const afterL2 = afterL1.slice(l2Start + '__l2-'.length);
+            const l3Start = afterL2.indexOf('__l3-');
+            const l2Slug = l3Start < 0 ? afterL2 : afterL2.slice(0, l3Start);
+            state.expandedL2.add(`${l1Slug}::${l2Slug}`);
+        }
     }
     drawFlavorWheel(containerId);
 }
@@ -627,7 +642,9 @@ async function ensureSupabase() {
     if (!SUPABASE_CONFIG.url || !SUPABASE_CONFIG.anonKey) return null;
     if (supabaseClient) return supabaseClient;
     const mod = await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm');
-    supabaseClient = mod.createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.anonKey);
+    supabaseClient = mod.createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.anonKey, {
+        db: { schema: SUPABASE_CONFIG.schema || 'public' },
+    });
     return supabaseClient;
 }
 
@@ -655,7 +672,7 @@ const BASIC_FIELDS = ['name', 'origin', 'process', 'roast', 'grind', 'water_temp
 
 function buildRecord() {
     const record = {
-        schemaVersion: 3,
+        schema_version: 3,
         coe_total: coeState.coeTotal,
         coe_tier_id: coeState.selectedTierId,
         evaluations: {},
@@ -823,7 +840,10 @@ async function loadRecord() {
 }
 
 async function deleteRecord() {
-    if (!isCloudReady()) return;
+    if (!isCloudReady()) {
+        alert('尚未設定雲端：請在 app.js 頂端的 SUPABASE_CONFIG 填入 url + anonKey。');
+        return;
+    }
     const sel = document.getElementById('recordList');
     const id = sel.value;
     if (!id) return;

@@ -102,6 +102,14 @@ body {
 }
 .card-title .bi { color: var(--accent); }
 
+button.card-title {
+    background: transparent;
+    border: none;
+    width: 100%;
+    text-align: left;
+    color: var(--text-primary);
+    padding: 0;
+}
 .card-title-collapsible {
     cursor: pointer;
     user-select: none;
