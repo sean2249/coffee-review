@@ -298,19 +298,21 @@ function generateReferenceItem(field) {
         const primary = opts[pk], secondary = opts[sk];
 
         body += `<h6 class="mb-2 text-secondary small">${primary.label}</h6>`;
-        primary.options.forEach(opt => {
+        primary.options.forEach((opt, i) => {
+            const optId = `${key}_${pk}_${i}`;
             body += `<div class="form-check form-check-inline">
                 <input class="form-check-input" type="radio"
-                       name="${key}_${pk}" id="${key}_${pk}_${opt}" value="${opt}" data-ref-key="${key}">
-                <label class="form-check-label" for="${key}_${pk}_${opt}">${opt}</label>
+                       name="${key}_${pk}" id="${optId}" value="${opt}" data-ref-key="${key}">
+                <label class="form-check-label" for="${optId}">${opt}</label>
             </div>`;
         });
         body += `<h6 class="mt-2 mb-2 text-secondary small">${secondary.label}</h6>`;
-        secondary.options.forEach(opt => {
+        secondary.options.forEach((opt, i) => {
+            const optId = `${key}_${sk}_${i}`;
             body += `<div class="form-check form-check-inline">
                 <input class="form-check-input" type="checkbox"
-                       name="${key}_${sk}" id="${key}_${sk}_${opt}" value="${opt}" data-ref-key="${key}">
-                <label class="form-check-label" for="${key}_${sk}_${opt}">${opt}</label>
+                       name="${key}_${sk}" id="${optId}" value="${opt}" data-ref-key="${key}">
+                <label class="form-check-label" for="${optId}">${opt}</label>
             </div>`;
         });
     }
@@ -721,7 +723,7 @@ async function saveRecord() {
 
     const data = buildRecord();
     data.title = recordName;
-    data.created_at = new Date().toISOString();
+    // created_at 交給 Supabase 的 now() 預設值，避免使用者本機時鐘錯誤
 
     try {
         const sb = await ensureSupabase();
@@ -860,14 +862,27 @@ async function deleteRecord() {
     }
 }
 
+function refreshRecordActionButtons() {
+    const sel = document.getElementById('recordList');
+    const hasReal = !!sel.value;
+    document.getElementById('loadBtn').disabled = !hasReal;
+    document.getElementById('deleteBtn').disabled = !hasReal;
+}
+
 async function updateRecordList() {
     const sel = document.getElementById('recordList');
     sel.innerHTML = '';
-    if (!isCloudReady()) {
+    const placeholder = (text) => {
         const opt = document.createElement('option');
-        opt.textContent = '— 尚未設定雲端 —';
+        opt.textContent = text;
         opt.disabled = true;
+        opt.value = '';
         sel.appendChild(opt);
+    };
+
+    if (!isCloudReady()) {
+        placeholder('— 尚未設定雲端 —');
+        refreshRecordActionButtons();
         return;
     }
     try {
@@ -876,26 +891,22 @@ async function updateRecordList() {
             .select('id, title, created_at')
             .order('created_at', { ascending: false });
         if (error) throw error;
-        (data || []).forEach(r => {
-            const opt = document.createElement('option');
-            opt.value = r.id;
-            const ts = r.created_at ? new Date(r.created_at).toLocaleString('zh-TW', { hour12: false }) : '';
-            opt.textContent = `${r.title || '(未命名)'} — ${ts}`;
-            sel.appendChild(opt);
-        });
         if (!data || data.length === 0) {
-            const opt = document.createElement('option');
-            opt.textContent = '— 尚無記錄 —';
-            opt.disabled = true;
-            sel.appendChild(opt);
+            placeholder('— 尚無記錄 —');
+        } else {
+            data.forEach(r => {
+                const opt = document.createElement('option');
+                opt.value = r.id;
+                const ts = r.created_at ? new Date(r.created_at).toLocaleString('zh-TW', { hour12: false }) : '';
+                opt.textContent = `${r.title || '(未命名)'} — ${ts}`;
+                sel.appendChild(opt);
+            });
         }
     } catch (e) {
         console.error(e);
-        const opt = document.createElement('option');
-        opt.textContent = '— 載入失敗 —';
-        opt.disabled = true;
-        sel.appendChild(opt);
+        placeholder('— 載入失敗 —');
     }
+    refreshRecordActionButtons();
 }
 
 // ─── Markdown export ─────────────────────────────────────────────────────────
@@ -992,6 +1003,7 @@ function bindStaticListeners() {
         const f = e.target.files?.[0];
         if (f) runOcr(f);
     });
+    document.getElementById('recordList').addEventListener('change', refreshRecordActionButtons);
 }
 
 document.addEventListener('DOMContentLoaded', () => {

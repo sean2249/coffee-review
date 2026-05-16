@@ -49,6 +49,9 @@ A. **建立 schema（與其他專案共用 Supabase 時必要）**
 到 SQL Editor 執行：
 
 ```sql
+-- gen_random_uuid() 需要 pgcrypto extension
+create extension if not exists pgcrypto;
+
 -- 建立獨立 schema
 create schema if not exists coffee;
 
