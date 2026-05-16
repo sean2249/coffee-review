@@ -10,29 +10,42 @@ const SUPABASE_CONFIG = {
     bucket: 'bean-photos',
 };
 
-// ─── Tier definitions — medal style (single-char label) ─────────────────────
+// ─── Tier definitions — flat medal, professional naming ─────────────────────
 const totalScoreTiers = [
     { id: 'trash',      medal: '拒', label: '≤76',   min: 74, max: 76.5,
-      name: '拒喝',          nameFull: '拒喝（垃圾咖啡）',
+      badgeName: '未達標', name: '風味平淡',
+      description: '平淡或具瑕疵的風味',
       cssClass: 't-trash',      color: '#6c757d' },
+
     { id: 'commercial', medal: '凡', label: '77-79', min: 77, max: 79.5,
-      name: '凡品',          nameFull: '凡品（商業咖啡）',
-      cssClass: 't-commercial', color: '#8b5a2b' },
+      badgeName: '商業級', name: '商業風味',
+      description: '普羅可接受的日常咖啡',
+      cssClass: 't-commercial', color: '#6e5640' },
+
     { id: 'common',     medal: '銅', label: '80-82', min: 80, max: 82.5,
-      name: '銅獎',          nameFull: '銅獎（便利商店等級精品）',
-      cssClass: 't-common',     color: '#a85e22' },
+      badgeName: '銅獎',   name: '卓越銅獎',
+      description: '合格精品，日常品飲的選擇',
+      cssClass: 't-common',     color: '#b86826' },
+
     { id: 'like',       medal: '銀', label: '83-85', min: 83, max: 85.5,
-      name: '銀獎',          nameFull: '銀獎（平常喜歡的精品）',
-      cssClass: 't-like',       color: '#8a8a8a' },
+      badgeName: '銀獎',   name: '優秀銀獎',
+      description: '平衡乾淨、日常喜愛的精品',
+      cssClass: 't-like',       color: '#7a7a7a' },
+
     { id: 'recommend',  medal: '金', label: '86-88', min: 86, max: 88.5,
-      name: '金獎',          nameFull: '金獎（推薦給朋友的精品）',
+      badgeName: '金獎',   name: '傑出金獎',
+      description: '風味飽滿、層次豐富的傑出精品',
       cssClass: 't-recommend',  color: '#d4a017' },
+
     { id: 'amazing',    medal: '鉑', label: '89-91', min: 89, max: 91.5,
-      name: '鉑金',          nameFull: '鉑金（驚艷想重複喝的）',
-      cssClass: 't-amazing',    color: '#92a5c0' },
+      badgeName: '鉑金',   name: '大師鉑金',
+      description: '驚艷且想反覆品味的大師之作',
+      cssClass: 't-amazing',    color: '#6c83a3' },
+
     { id: 'godly',      medal: '神', label: '≥92',   min: 92, max: 96,
-      name: '神級',          nameFull: '神級',
-      cssClass: 't-godly',      color: '#6f42c1' },
+      badgeName: '典藏',   name: '稀世絕品',
+      description: '可遇不可求的競標級稀世絕品',
+      cssClass: 't-godly',      color: '#5a2ea0' },
 ];
 
 function tierFromScore(score) {
@@ -42,7 +55,6 @@ function tierFromScore(score) {
 function tierById(id) {
     return totalScoreTiers.find(t => t.id === id) || totalScoreTiers[2];
 }
-function tierFullName(tier) { return tier.nameFull || tier.name; }
 function scoresInTier(tier) {
     const list = [];
     for (let s = tier.min; s <= tier.max + 1e-9; s += 0.5) {
@@ -105,19 +117,26 @@ function renderTierMedals() {
     const row = document.getElementById('medalRow');
     row.innerHTML = '';
     totalScoreTiers.forEach(t => {
+        const selected = (t.id === coeState.selectedTierId);
+        const cell = document.createElement('div');
+        cell.className = 'medal-cell' + (selected ? ' selected' : '');
+
         const btn = document.createElement('button');
         btn.type = 'button';
-        btn.className = `tier-medal ${t.cssClass}` + (t.id === coeState.selectedTierId ? ' selected' : '');
+        btn.className = `tier-medal ${t.cssClass}` + (selected ? ' selected' : '');
         btn.dataset.tierId = t.id;
-        btn.setAttribute('aria-pressed', t.id === coeState.selectedTierId);
+        btn.setAttribute('aria-pressed', selected);
         btn.setAttribute('aria-label', `${t.name} ${t.label}`);
-        btn.innerHTML = `
-            <span class="medal-face">
-                <span class="medal-text">${t.medal}</span>
-                <span class="medal-range">${t.label}</span>
-            </span>`;
+        btn.innerHTML = `<span class="medal-text">${t.medal}</span>`;
         btn.addEventListener('click', () => selectTier(t.id));
-        row.appendChild(btn);
+
+        const lbl = document.createElement('span');
+        lbl.className = 'medal-range-label';
+        lbl.textContent = t.label;
+
+        cell.appendChild(btn);
+        cell.appendChild(lbl);
+        row.appendChild(cell);
     });
 }
 
@@ -125,7 +144,6 @@ function renderScoreChips(tier) {
     const row = document.getElementById('scoreChipRow');
     row.innerHTML = '';
     row.style.setProperty('--tier-color', tier.color);
-    row.style.setProperty('--tier-gradient', `linear-gradient(135deg, ${tier.color}, ${shade(tier.color, -0.18)})`);
     scoresInTier(tier).forEach(s => {
         const chip = document.createElement('button');
         chip.type = 'button';
@@ -137,17 +155,6 @@ function renderScoreChips(tier) {
         chip.addEventListener('click', () => selectScore(s));
         row.appendChild(chip);
     });
-}
-
-function shade(hex, amt) {
-    const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-    if (!m) return hex;
-    const ch = c => {
-        let n = parseInt(c, 16);
-        n = Math.max(0, Math.min(255, Math.round(n + 255 * amt)));
-        return n.toString(16).padStart(2, '0');
-    };
-    return `#${ch(m[1])}${ch(m[2])}${ch(m[3])}`;
 }
 
 function selectTier(tierId, opts = {}) {
@@ -170,26 +177,20 @@ function selectScore(score) {
 function refreshTotalDisplay() {
     const tier = tierById(coeState.selectedTierId);
     document.getElementById('coeTotalDisplay').textContent = coeState.coeTotal.toFixed(1);
-    const nameEl = document.getElementById('coeTotalTierName');
-    nameEl.textContent = `— ${tierFullName(tier)}`;
-    nameEl.style.color = tier.color;
+    const badge = document.getElementById('coeTotalTierBadge');
+    badge.textContent = `[ ${tier.badgeName} ]`;
+    badge.style.color = tier.color;
+    document.getElementById('coeTotalDesc').textContent = tier.description;
 }
 
 // ─── Reference slider ────────────────────────────────────────────────────────
-function refScoreBand(v) {
-    if (v <= 4.5) return 'low';
-    if (v <= 5.5) return 'mid';
-    if (v <= 6.5) return 'good';
-    if (v <= 7.5) return 'great';
-    return 'top';
-}
-
 function onRefScoreInput(key) {
     const slider = document.getElementById(`${key}_score`);
     const valueEl = document.getElementById(`${key}_score_value`);
     const v = parseFloat(slider.value);
     valueEl.textContent = v.toFixed(1);
-    valueEl.dataset.band = refScoreBand(v);
+    const pct = ((v - 4) / 4) * 100;
+    slider.style.setProperty('--slider-fill', `${pct}%`);
     updateRefSummary(key);
 }
 
@@ -283,7 +284,7 @@ function generateReferenceItem(field) {
             <div class="ref-slider-group">
                 <input type="range" class="form-range" id="${key}_score"
                        min="4" max="8" step="0.5" value="5" data-ref-score="${key}">
-                <span class="ref-slider-value" id="${key}_score_value" data-band="mid">5.0</span>
+                <span class="ref-slider-value" id="${key}_score_value">5.0</span>
             </div>
             <div class="small-hint">參考分 4-8（預設 5），不影響上方 CoE 總分。</div>
         </div>`;
@@ -358,7 +359,8 @@ function initializeEvaluationAccordion() {
         if (f.hasFlavorWheel) {
             renderFlavorWheel(`${f.key}_flavorList`, () => updateRefSummary(f.key));
         }
-        updateRefSummary(f.key);
+        // Initial slider fill + summary
+        setReferenceScore(f.key, 5);
     });
 
     accordion.addEventListener('input', e => {
@@ -371,18 +373,15 @@ function initializeEvaluationAccordion() {
     });
 }
 
-// ─── Flavor wheel — progressive disclosure ───────────────────────────────────
-// State per container: which L1/L2 categories are "expanded" (i.e. their
-// children should be visible). A category auto-expands when itself or any
-// descendant is selected.
-const wheelState = new Map();   // containerId → { expandedL1: Set, expandedL2: Set, callback }
+// ─── Flavor wheel — progressive disclosure (indent-only, no ↳) ──────────────
+const wheelState = new Map();
 
 function renderFlavorWheel(containerId, onChange) {
     const container = document.getElementById(containerId);
     if (!container) return;
     if (!wheelState.has(containerId)) {
         wheelState.set(containerId, {
-            selected: new Set(),  // ids
+            selected: new Set(),
             expandedL1: new Set(),
             expandedL2: new Set(),
             callback: onChange,
@@ -397,7 +396,6 @@ function drawFlavorWheel(containerId) {
     if (!container || !state) return;
     container.innerHTML = '';
 
-    // L1 row (always shown)
     const l1Row = document.createElement('div');
     l1Row.className = 'flavor-row flavor-row-l1';
     flavors.forEach(l1 => {
@@ -412,7 +410,6 @@ function drawFlavorWheel(containerId) {
     });
     container.appendChild(l1Row);
 
-    // For each L1 that's "active" (expanded or has selected descendants), show L2 row
     flavors.forEach(l1 => {
         const l1Id = `${containerId}__l1-${l1.id}`;
         const isL1Active = state.expandedL1.has(l1.id) || hasSelectedDescendant(containerId, l1);
@@ -420,16 +417,9 @@ function drawFlavorWheel(containerId) {
 
         const l2Row = document.createElement('div');
         l2Row.className = 'flavor-row flavor-row-l2';
-        l2Row.style.setProperty('--ft-color', l1.color);
-
-        const lbl = document.createElement('span');
-        lbl.className = 'flavor-row-label';
-        lbl.textContent = `${l1.name} ↳`;
-        l2Row.appendChild(lbl);
 
         l1.sub.forEach(l2 => {
             if (typeof l2 === 'string') {
-                // No L3 children — just a leaf chip under L1
                 const l2Id = `${l1Id}__l2-${l2.replace(/[\/\s]/g, '')}`;
                 const tag = makeTag({
                     text: l2, id: l2Id, color: l1.color,
@@ -452,7 +442,6 @@ function drawFlavorWheel(containerId) {
         });
         container.appendChild(l2Row);
 
-        // For each L2 that's active, show L3 row
         l1.sub.forEach(l2 => {
             if (typeof l2 === 'string' || !l2.sub) return;
             const l2KeyForExpand = `${l1.id}::${l2.id}`;
@@ -462,12 +451,6 @@ function drawFlavorWheel(containerId) {
             const l2Id = `${l1Id}__l2-${l2.id}`;
             const l3Row = document.createElement('div');
             l3Row.className = 'flavor-row flavor-row-l3';
-            l3Row.style.setProperty('--ft-color', l2.color || l1.color);
-
-            const lbl3 = document.createElement('span');
-            lbl3.className = 'flavor-row-label';
-            lbl3.textContent = `${l2.name} ↳`;
-            l3Row.appendChild(lbl3);
 
             l2.sub.forEach(l3 => {
                 const l3Id = `${l2Id}__l3-${l3.replace(/[\/\s]/g, '')}`;
@@ -489,16 +472,9 @@ function makeTag({ text, id, color, selected, onClick }) {
     tag.className = 'flavor-tag' + (selected ? ' selected' : '');
     tag.dataset.flavorId = id;
     tag.style.setProperty('--ft-color', color);
-    const rgb = hexToRgb(color);
-    if (rgb) tag.style.setProperty('--ft-soft', `rgba(${rgb.r},${rgb.g},${rgb.b},0.12)`);
     tag.innerText = text;
     tag.addEventListener('click', onClick);
     return tag;
-}
-
-function hexToRgb(hex) {
-    const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-    return m ? { r: parseInt(m[1], 16), g: parseInt(m[2], 16), b: parseInt(m[3], 16) } : null;
 }
 
 function toggleFlavor(containerId, ev) {
@@ -509,7 +485,6 @@ function toggleFlavor(containerId, ev) {
         const l1Id = `${containerId}__l1-${ev.l1}`;
         if (state.selected.has(l1Id)) {
             state.selected.delete(l1Id);
-            // Collapsing: remove all expansion for this L1 and deselect descendants
             state.expandedL1.delete(ev.l1);
             removeDescendantSelections(state, containerId, ev.l1);
         } else {
@@ -527,7 +502,6 @@ function toggleFlavor(containerId, ev) {
         } else {
             state.selected.add(l2Id);
             if (!ev.leaf) state.expandedL2.add(`${ev.l1}::${ev.l2}`);
-            // Auto-select parent L1
             state.selected.add(`${containerId}__l1-${ev.l1}`);
             state.expandedL1.add(ev.l1);
         }
@@ -537,7 +511,6 @@ function toggleFlavor(containerId, ev) {
             state.selected.delete(l3Id);
         } else {
             state.selected.add(l3Id);
-            // Auto-select parents
             const l2Id = `${containerId}__l1-${ev.l1}__l2-${ev.l2}`;
             const l1Id = `${containerId}__l1-${ev.l1}`;
             state.selected.add(l2Id);
@@ -576,7 +549,6 @@ function removeDescendantSelections(state, containerId, l1Slug) {
     for (const id of [...state.selected]) {
         if (id.startsWith(prefix)) state.selected.delete(id);
     }
-    // also drop expanded L2 entries for this L1
     for (const k of [...state.expandedL2]) {
         if (k.startsWith(`${l1Slug}::`)) state.expandedL2.delete(k);
     }
@@ -595,9 +567,7 @@ function applyFlavorSelections(containerId, ids) {
     state.selected = new Set(ids || []);
     state.expandedL1 = new Set();
     state.expandedL2 = new Set();
-    // Re-derive expansion from selections
     for (const id of state.selected) {
-        // Format: containerId__l1-<l1>[__l2-<l2>[__l3-...]]
         const rest = id.slice(containerId.length);
         const l1Match = rest.match(/^__l1-([^_]+)/);
         if (l1Match) state.expandedL1.add(l1Match[1]);
@@ -635,11 +605,7 @@ async function runOcr(file) {
             },
         });
         const text = (data.text || '').trim();
-        if (!text) {
-            preview.textContent = '辨識完成，但沒有讀到文字。';
-            return;
-        }
-        // Pick the longest line as the bean name candidate
+        if (!text) { preview.textContent = '辨識完成，但沒有讀到文字。'; return; }
         const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
         const candidate = lines.sort((a, b) => b.length - a.length)[0] || text;
         document.getElementById('name').value = candidate;
@@ -689,7 +655,7 @@ const BASIC_FIELDS = ['name', 'origin', 'process', 'roast', 'grind', 'water_temp
 
 function buildRecord() {
     const record = {
-        schemaVersion: 2,
+        schemaVersion: 3,
         coe_total: coeState.coeTotal,
         coe_tier_id: coeState.selectedTierId,
         evaluations: {},
@@ -932,7 +898,8 @@ function generateMarkdown() {
     lines.push(`* **沖煮方法:** ${v('method')}`);
     lines.push(`* **萃取時間:** ${v('extraction_time')}s`, '');
 
-    lines.push(`## CoE 總分: ${coeState.coeTotal.toFixed(1)} / 100 — ${tierFullName(tier)}`, '');
+    lines.push(`## CoE 總分: ${coeState.coeTotal.toFixed(1)} / 100  [ ${tier.badgeName} ] ${tier.name}`);
+    lines.push(`> ${tier.description}`, '');
 
     lines.push('## 參考分（不計入總分）');
     lines.push('| 項目 | 分數 |', '|------|------|');
