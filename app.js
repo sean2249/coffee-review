@@ -12,7 +12,7 @@ const SUPABASE_CONFIG = {
 
 // ─── Tier definitions — flat medal, professional naming ─────────────────────
 const totalScoreTiers = [
-    { id: 'trash',      medal: '拒', label: '≤76',   min: 74, max: 76.5,
+    { id: 'trash',      medal: '劣', label: '≤76',   min: 74, max: 76.5,
       badgeName: '瑕疵',   name: '風味平淡',
       description: '平淡無亮點，或帶明顯瑕疵',
       cssClass: 't-trash',      color: '#6c757d' },
