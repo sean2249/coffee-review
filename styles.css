@@ -102,6 +102,27 @@ body {
 }
 .card-title .bi { color: var(--accent); }
 
+.card-title-collapsible {
+    cursor: pointer;
+    user-select: none;
+    transition: margin-bottom 0.2s ease;
+}
+.card-title-collapsible.collapsed { margin-bottom: 0; }
+.card-title-collapsible:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px var(--accent-tint);
+    border-radius: var(--radius-sm);
+}
+.card-title-collapsible .card-toggle-chevron {
+    margin-left: auto;
+    color: var(--text-muted) !important;
+    font-size: 0.9rem;
+    transition: transform 0.2s ease;
+}
+.card-title-collapsible:not(.collapsed) .card-toggle-chevron {
+    transform: rotate(180deg);
+}
+
 /* ───── Forms ──────────────────────────────────────────────────────────── */
 .form-label {
     font-weight: 500;
