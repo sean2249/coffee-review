@@ -1,7 +1,7 @@
 // Coffee Review — Service Worker
 // Cache strategy:
-//   • App shell + CDN libs: stale-while-revalidate
-//   • Supabase API + Tesseract WASM/tessdata: pass-through (always live)
+//   • App shell + CDN libs (含 Tesseract WASM): stale-while-revalidate
+//   • Supabase API + Tesseract 語言資料 (.traineddata): pass-through，永遠走網路
 
 const VERSION = 'v1';
 const CACHE = `coffee-review-${VERSION}`;
@@ -66,7 +66,12 @@ self.addEventListener('fetch', event => {
                 }
                 return res;
             })
-            .catch(() => cached);
-        return cached || networkPromise;
+            .catch(() => null);
+        // 順序：cache hit → 立刻回；否則等網路；網路也掛掉就回一個離線 Response
+        const res = cached || await networkPromise;
+        return res || new Response(
+            '離線且無快取',
+            { status: 504, statusText: 'Gateway Timeout', headers: { 'Content-Type': 'text/plain; charset=utf-8' } }
+        );
     })());
 });

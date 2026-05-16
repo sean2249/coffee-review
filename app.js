@@ -274,7 +274,7 @@ function wrapAccordionItem(key, label, icon, body) {
             </button>
         </h2>
         <div id="collapse_${key}" class="accordion-collapse collapse"
-             aria-labelledby="heading_${key}" data-bs-parent="#evaluationAccordion">
+             aria-labelledby="heading_${key}">
             <div class="accordion-body">${body}</div>
         </div>
     </div>`;
