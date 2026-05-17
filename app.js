@@ -816,13 +816,19 @@ async function saveRecord() {
     const recordName = prompt('請為此記錄命名:', defaultName || '');
     if (!recordName) return;
 
+    // Snapshot photo state synchronously before any await — UI remains
+    // interactive during upload, so visitPhotos/visitPhotoPaths could be
+    // mutated by tab switch (resetVisitFields) or thumb-remove clicks.
+    const snapshotPaths = mode === 'visit' ? [...visitPhotoPaths] : [];
+    const snapshotFiles = mode === 'visit' ? [...visitPhotos] : [];
+
     let uploadedPaths = [];
     try {
         const data = mode === 'visit' ? buildVisitRecord() : buildBeansRecord();
         data.title = recordName;
         if (mode === 'visit') {
-            uploadedPaths = await uploadVisitPhotos();
-            data.photo_paths = [...visitPhotoPaths, ...uploadedPaths];
+            uploadedPaths = await uploadVisitPhotos(snapshotFiles);
+            data.photo_paths = [...snapshotPaths, ...uploadedPaths];
         }
         // created_at 交給 Supabase 的 now() 預設值，避免使用者本機時鐘錯誤
 
@@ -836,14 +842,20 @@ async function saveRecord() {
             throw error;
         }
 
+        // Promote uploaded paths to local state only if user is still on
+        // visit mode; remove the just-uploaded File objects by reference
+        // (snapshotFiles may have been spliced from visitPhotos meanwhile).
         if (mode === 'visit' && uploadedPaths.length && appMode === 'visit') {
+            for (const file of snapshotFiles) {
+                const idx = visitPhotos.indexOf(file);
+                if (idx >= 0) visitPhotos.splice(idx, 1);
+            }
             visitPhotoPaths.push(...uploadedPaths);
-            visitPhotos.length = 0;
             renderVisitPhotoPreviews();
         }
 
         showToast(`✓ 已儲存到雲端 — ${recordName}`);
-        if (mode === appMode) updateRecordList();
+        updateRecordList();
         loadShopOptions();
     } catch (e) {
         alert('儲存失敗: ' + (e.message || e));
@@ -1069,7 +1081,7 @@ async function deleteRecord() {
             }
         }
         showToast('✓ 已刪除');
-        if (mode === appMode) updateRecordList();
+        updateRecordList();
     } catch (e) {
         alert('刪除失敗: ' + (e.message || e));
     }
@@ -1101,8 +1113,12 @@ function refreshRecordActionButtons() {
 
 async function updateRecordList() {
     const sel = document.getElementById('recordList');
+    const requestMode = appMode;
+    const requestTable = requestMode === 'visit' ? SUPABASE_CONFIG.visitTable : SUPABASE_CONFIG.table;
     sel.innerHTML = '';
     const placeholder = (text) => {
+        if (requestMode !== appMode) return;
+        sel.innerHTML = '';
         const opt = document.createElement('option');
         opt.textContent = text;
         opt.disabled = true;
@@ -1117,9 +1133,10 @@ async function updateRecordList() {
     }
     try {
         const sb = await ensureSupabase();
-        const { data, error } = await sb.from(currentTable())
+        const { data, error } = await sb.from(requestTable)
             .select('id, title, created_at')
             .order('created_at', { ascending: false });
+        if (requestMode !== appMode) return;
         if (error) throw error;
         if (!data || data.length === 0) {
             placeholder('— 尚無記錄 —');
@@ -1133,10 +1150,11 @@ async function updateRecordList() {
             });
         }
     } catch (e) {
+        if (requestMode !== appMode) return;
         console.error(e);
         placeholder('— 載入失敗 —');
     }
-    refreshRecordActionButtons();
+    if (requestMode === appMode) refreshRecordActionButtons();
 }
 
 // ─── Markdown export ─────────────────────────────────────────────────────────
@@ -1258,11 +1276,11 @@ function copyToClipboard() {
 }
 
 // ─── Visit photos — upload + preview ────────────────────────────────────────
-async function uploadVisitPhotos() {
-    if (visitPhotos.length === 0) return [];
+async function uploadVisitPhotos(files) {
+    if (!files || files.length === 0) return [];
     const sb = await ensureSupabase();
     const newPaths = [];
-    for (const file of visitPhotos) {
+    for (const file of files) {
         const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
         const safeExt = /^[a-z0-9]{1,5}$/.test(ext) ? ext : 'jpg';
         const path = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${safeExt}`;
