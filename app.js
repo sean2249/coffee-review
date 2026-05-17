@@ -124,10 +124,6 @@ let appMode = 'beans';
 const visitPhotos = [];
 const visitPhotoPaths = [];
 
-function currentTable() {
-    return appMode === 'visit' ? SUPABASE_CONFIG.visitTable : SUPABASE_CONFIG.table;
-}
-
 function setAppMode(mode) {
     if (mode === appMode) return;
     appMode = mode;
@@ -135,7 +131,7 @@ function setAppMode(mode) {
     document.querySelectorAll('.mode-tab').forEach(btn => {
         const active = btn.dataset.mode === mode;
         btn.classList.toggle('active', active);
-        btn.setAttribute('aria-selected', active);
+        btn.setAttribute('aria-pressed', String(active));
     });
     resetFormToDefaults();
     updateRecordList();
@@ -1036,14 +1032,18 @@ async function loadRecord() {
     }
     const id = document.getElementById('recordList').value;
     if (!id) return;
+    const requestMode = appMode;
+    const requestTable = requestMode === 'visit' ? SUPABASE_CONFIG.visitTable : SUPABASE_CONFIG.table;
     try {
         const sb = await ensureSupabase();
-        const { data, error } = await sb.from(currentTable()).select('*').eq('id', id).single();
+        const { data, error } = await sb.from(requestTable).select('*').eq('id', id).single();
+        if (requestMode !== appMode) return;
         if (error) throw error;
         resetFormToDefaults();
         applyRecord(data);
         showToast(`✓ 已讀取 — ${data.title}`);
     } catch (e) {
+        if (requestMode !== appMode) return;
         alert('讀取失敗: ' + (e.message || e));
     }
 }
