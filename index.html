@@ -20,7 +20,7 @@
     <link rel="stylesheet" href="styles.css">
 </head>
 
-<body>
+<body data-mode="beans">
     <div class="container py-3">
 
         <header class="app-header">
@@ -28,6 +28,15 @@
             <h1>咖啡杯測記錄</h1>
             <div class="app-subtitle">CoE 風格 · 獎牌徽章選分</div>
         </header>
+
+        <div class="mode-tabs" role="tablist" aria-label="記錄模式">
+            <button type="button" class="mode-tab active" data-mode="beans" role="tab" aria-selected="true">
+                <i class="bi bi-cup-hot"></i><span>自己沖煮</span>
+            </button>
+            <button type="button" class="mode-tab" data-mode="visit" role="tab" aria-selected="false">
+                <i class="bi bi-shop"></i><span>店家探訪</span>
+            </button>
+        </div>
 
         <div class="card">
             <div class="card-body">
@@ -45,7 +54,7 @@
             </div>
         </div>
 
-        <div class="card">
+        <div class="card mode-only-beans">
             <div class="card-body">
                 <h3 class="card-title"><i class="bi bi-info-circle"></i>咖啡資訊</h3>
                 <div class="row g-2">
@@ -76,7 +85,7 @@
             </div>
         </div>
 
-        <div class="card">
+        <div class="card mode-only-beans">
             <div class="card-body">
                 <button type="button"
                         class="card-title card-title-collapsible collapsed"
@@ -110,6 +119,51 @@
                         </div>
                     </div>
                 </div>
+            </div>
+        </div>
+
+        <div class="card mode-only-visit">
+            <div class="card-body">
+                <h3 class="card-title"><i class="bi bi-shop"></i>店家資訊</h3>
+                <div class="row g-2">
+                    <div class="col-12 mb-2">
+                        <label for="shop_name" class="form-label">店名</label>
+                        <input type="text" class="form-control" id="shop_name" placeholder="例：山小盆咖啡">
+                    </div>
+                    <div class="col-md-6 col-12">
+                        <label for="shop_location" class="form-label">位置</label>
+                        <input type="text" class="form-control" id="shop_location" placeholder="例：台北市大安區">
+                    </div>
+                    <div class="col-md-3 col-6">
+                        <label for="visit_date" class="form-label">日期</label>
+                        <input type="date" class="form-control" id="visit_date">
+                    </div>
+                    <div class="col-md-3 col-6">
+                        <label for="price" class="form-label">價格</label>
+                        <input type="number" class="form-control" id="price" min="0" step="1">
+                    </div>
+                    <div class="col-12">
+                        <label for="item_ordered" class="form-label">點用品項</label>
+                        <input type="text" class="form-control" id="item_ordered" placeholder="例：V60 衣索比亞耶加雪菲 / 拿鐵">
+                    </div>
+                    <div class="col-12 mt-2">
+                        <label for="visitPhotoInput" class="form-label">店面 / 飲品照片</label>
+                        <input type="file" class="form-control" id="visitPhotoInput" accept="image/*" multiple>
+                        <div id="visitPhotoPreviews" class="visit-photo-previews mt-2"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card mode-only-visit">
+            <div class="card-body">
+                <h3 class="card-title"><i class="bi bi-journal-text"></i>探訪心得</h3>
+                <label for="atmosphere_notes" class="form-label">氛圍</label>
+                <textarea id="atmosphere_notes" class="form-control mb-2" rows="2"></textarea>
+                <label for="decor_notes" class="form-label">裝潢</label>
+                <textarea id="decor_notes" class="form-control mb-2" rows="2"></textarea>
+                <label for="service_notes" class="form-label">服務</label>
+                <textarea id="service_notes" class="form-control" rows="2"></textarea>
             </div>
         </div>
 
