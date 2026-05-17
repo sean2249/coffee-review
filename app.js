@@ -795,9 +795,21 @@ async function initAuth() {
     }
     finish();
 
-    sb.auth.onAuthStateChange((_event, session) => {
+    sb.auth.onAuthStateChange(async (_event, session) => {
         const next = session?.user || null;
         const changed = (authState.user?.id || null) !== (next?.id || null);
+
+        // 新登入：白名單 probe。避免「假登入成功 + 後續 save 全 403」的爛 UX。
+        // 白名單表 RLS 只允許讀「自己那一筆」，能讀到 → 已授權；空 → 未授權。
+        if (next && changed) {
+            const allowed = await checkWhitelist(sb, next.id);
+            if (!allowed) {
+                try { await sb.auth.signOut(); } catch (e) { console.warn('signOut failed:', e); }
+                showToast('此帳號未獲授權寫入，已切回檢視模式', 3500);
+                return; // 後續會以 SIGNED_OUT 再次觸發本回呼
+            }
+        }
+
         authState.user = next;
         applyAuthUI();
         if (changed) {
@@ -808,6 +820,21 @@ async function initAuth() {
     });
 }
 
+async function checkWhitelist(sb, userId) {
+    try {
+        const { data, error } = await sb
+            .from('allowed_user_ids')
+            .select('id')
+            .eq('id', userId)
+            .maybeSingle();
+        if (error) { console.warn('whitelist probe failed:', error); return false; }
+        return !!data;
+    } catch (e) {
+        console.warn('whitelist probe threw:', e);
+        return false;
+    }
+}
+
 async function loginWithPassword(email, password) {
     const sb = await ensureSupabase();
     if (!sb) throw new Error('雲端未設定，無法登入');
@@ -816,6 +843,28 @@ async function loginWithPassword(email, password) {
     authState.user = data?.user || null;
     applyAuthUI();
     return data;
+}
+
+async function loginWithGitHub() {
+    const sb = await ensureSupabase();
+    if (!sb) { warnNoCloud(); return; }
+    const errEl = document.getElementById('loginError');
+    const btn = document.getElementById('loginGithubBtn');
+    if (errEl) { errEl.hidden = true; errEl.textContent = ''; }
+    if (btn) { btn.disabled = true; }
+    try {
+        // 顯式 redirectTo 避免帶入當前 hash/query 跟 OAuth fragment 衝突
+        const redirectTo = window.location.origin + window.location.pathname;
+        const { error } = await sb.auth.signInWithOAuth({
+            provider: 'github',
+            options: { redirectTo },
+        });
+        if (error) throw error;
+        // signInWithOAuth 觸發全頁 redirect，下面通常跑不到
+    } catch (err) {
+        if (errEl) { errEl.textContent = err.message || 'GitHub 登入失敗'; errEl.hidden = false; }
+        if (btn) { btn.disabled = false; }
+    }
 }
 
 async function logout() {
@@ -1554,6 +1603,8 @@ function bindStaticListeners() {
     if (authBtn) authBtn.addEventListener('click', handleAuthButtonClick);
     const loginForm = document.getElementById('loginForm');
     if (loginForm) loginForm.addEventListener('submit', handleLoginSubmit);
+    const githubBtn = document.getElementById('loginGithubBtn');
+    if (githubBtn) githubBtn.addEventListener('click', loginWithGitHub);
 
     const photoInput = document.getElementById('visitPhotoInput');
     if (photoInput) {

@@ -143,6 +143,23 @@ body[data-auth="loading"] .auth-bar { visibility: hidden; }
     margin: 0 0 0.7rem;
 }
 
+.login-divider {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    margin: 0.5rem 0 0.75rem;
+}
+
+.login-divider::before,
+.login-divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+}
+
 .app-logo {
     display: inline-flex;
     align-items: center;

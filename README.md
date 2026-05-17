@@ -250,6 +250,129 @@ create policy "visit-photos delete" on storage.objects for delete to authenticat
 > 若每個使用者只能看自己的資料，把上面的 `for select using (true)` 改成
 > `using (user_id = auth.uid())`，並在表上加 `user_id uuid references auth.users(id)` 欄位。
 
+## GitHub OAuth + 白名單（推薦）
+
+Email/密碼方案的問題是：anon key 公開，且 `to authenticated` 只擋「沒登入」，沒擋「誰能登入」
+— 如果 Supabase project 開放註冊，任何人註冊就能寫入。下面的 GitHub OAuth + 白名單機制把
+「能寫入的人」收斂到一份明確清單，註冊不註冊都不影響。
+
+設計：登入流走 Supabase 的 GitHub OAuth provider，RLS 寫入政策改為檢查 `auth.uid()` 是否
+在 `coffee.allowed_user_ids` 白名單裡。前端登入後會 probe 白名單，未授權的帳號直接被踢回
+檢視模式，避免「假裝登入成功 + 後續 save 一直 403」的爛 UX。
+
+### 1. 建 GitHub OAuth App
+
+GitHub → Settings → Developer settings → OAuth Apps → **New OAuth App**：
+
+- **Application name**：自取
+- **Homepage URL**：你的網站 URL，例如 `https://你的帳號.github.io/coffee-review/`
+- **Authorization callback URL**：**Supabase 的 callback**，不是你的網站！格式為
+  `https://<你的-project-ref>.supabase.co/auth/v1/callback`
+  （在 Supabase Dashboard → Project Settings → API 找得到 project ref）
+
+建好之後拿 **Client ID** 與 **Client Secret**。
+
+### 2. Supabase Dashboard 設定
+
+- **Authentication → Providers → GitHub**：Enable，貼上剛剛的 Client ID / Secret，Save。
+- **Authentication → URL Configuration**：
+  - *Site URL*：`https://你的帳號.github.io/coffee-review/`
+  - *Redirect URLs*：再加同樣的 URL 一次到 allowlist（前端顯式傳 `redirectTo` 時要在這裡才會放行）
+
+### 3. SQL：建白名單表 + 收緊政策
+
+到 SQL Editor 跑下面這段（會取代前一段「檢視模式 + 登入寫入」裡的 `auth write/update/delete`
+政策）：
+
+```sql
+-- 白名單表 + 自讀政策（給前端 probe 用）+ FK cascade
+create table coffee.allowed_user_ids (
+    id uuid primary key references auth.users(id) on delete cascade,
+    note text,
+    added_at timestamptz default now()
+);
+alter table coffee.allowed_user_ids enable row level security;
+-- 只開「讀自己那一筆」：沒人能列出別人，但能 probe 自己在不在
+create policy "self read" on coffee.allowed_user_ids
+    for select to authenticated using (id = (select auth.uid()));
+
+-- coffee_records：取代原本的 to authenticated
+drop policy if exists "auth write"  on coffee.coffee_records;
+drop policy if exists "auth update" on coffee.coffee_records;
+drop policy if exists "auth delete" on coffee.coffee_records;
+create policy "whitelisted write" on coffee.coffee_records
+    for insert to authenticated
+    with check ((select auth.uid()) in (select id from coffee.allowed_user_ids));
+create policy "whitelisted update" on coffee.coffee_records
+    for update to authenticated
+    using      ((select auth.uid()) in (select id from coffee.allowed_user_ids))
+    with check ((select auth.uid()) in (select id from coffee.allowed_user_ids));
+create policy "whitelisted delete" on coffee.coffee_records
+    for delete to authenticated
+    using      ((select auth.uid()) in (select id from coffee.allowed_user_ids));
+
+-- visit_records：同上
+drop policy if exists "auth write"  on coffee.visit_records;
+drop policy if exists "auth update" on coffee.visit_records;
+drop policy if exists "auth delete" on coffee.visit_records;
+create policy "whitelisted write" on coffee.visit_records
+    for insert to authenticated
+    with check ((select auth.uid()) in (select id from coffee.allowed_user_ids));
+create policy "whitelisted update" on coffee.visit_records
+    for update to authenticated
+    using      ((select auth.uid()) in (select id from coffee.allowed_user_ids))
+    with check ((select auth.uid()) in (select id from coffee.allowed_user_ids));
+create policy "whitelisted delete" on coffee.visit_records
+    for delete to authenticated
+    using      ((select auth.uid()) in (select id from coffee.allowed_user_ids));
+
+-- visit-photos storage：同上
+drop policy if exists "visit-photos write"  on storage.objects;
+drop policy if exists "visit-photos update" on storage.objects;
+drop policy if exists "visit-photos delete" on storage.objects;
+create policy "visit-photos write" on storage.objects for insert to authenticated
+    with check (
+        bucket_id = 'visit-photos'
+        and (select auth.uid()) in (select id from coffee.allowed_user_ids)
+    );
+create policy "visit-photos update" on storage.objects for update to authenticated
+    using (
+        bucket_id = 'visit-photos'
+        and (select auth.uid()) in (select id from coffee.allowed_user_ids)
+    );
+create policy "visit-photos delete" on storage.objects for delete to authenticated
+    using (
+        bucket_id = 'visit-photos'
+        and (select auth.uid()) in (select id from coffee.allowed_user_ids)
+    );
+```
+
+### 4. 首次登入 → 加白名單
+
+1. 開網頁，點右上角「登入」，按「用 GitHub 登入」走完授權
+2. 回到網站時會看到 toast「此帳號未獲授權寫入，已切回檢視模式」— 預期行為，因為還沒加白名單
+3. 回 Supabase SQL Editor 撈剛剛建立的 user UUID：
+
+   ```sql
+   select id, email, raw_user_meta_data->>'user_name' as github_login
+   from auth.users
+   order by created_at desc limit 5;
+   ```
+
+4. 把 UUID 插進白名單：
+
+   ```sql
+   insert into coffee.allowed_user_ids (id, note)
+   values ('貼上你剛查到的 UUID', '你的 GitHub 帳號');
+   ```
+
+5. 再回網站點一次「用 GitHub 登入」（或重新整理）— 這次會成功進入編輯模式
+
+> Email/密碼路徑仍可使用作為 fallback；若不需要，可把 modal 內的 email/password 表單拿掉。
+>
+> 本機開發（`python3 -m http.server`）無法跑 GitHub OAuth（callback URL 沒設本機），請在本機改用
+> email/密碼登入測試。
+
 ## Using GitHub Pages
 
 You can use GitHub Pages to create a simple, viewable website for your coffee reviews. The `index.html` in this repository is a starting point.

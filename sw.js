@@ -3,7 +3,7 @@
 //   • App shell + CDN libs (含 Tesseract WASM): stale-while-revalidate
 //   • Supabase API + Tesseract 語言資料 (.traineddata): pass-through，永遠走網路
 
-const VERSION = 'v2';
+const VERSION = 'v3';
 const CACHE = `coffee-review-${VERSION}`;
 
 const APP_SHELL = [
