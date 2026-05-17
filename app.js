@@ -654,6 +654,14 @@ function isCloudReady() {
     return !!(SUPABASE_CONFIG.url && SUPABASE_CONFIG.anonKey);
 }
 
+const NO_CLOUD_MSG = '尚未設定雲端。\n\n' +
+    '本地開發：複製 config.example.js → config.js，填入 Supabase URL 與 publishable key。\n' +
+    'GitHub Pages 部署：在 repo Settings → Secrets and variables → Actions 加入 ' +
+    'SUPABASE_URL 與 SUPABASE_ANON_KEY，重新觸發部署。\n\n' +
+    '完整步驟見 README。';
+
+function warnNoCloud() { alert(NO_CLOUD_MSG); }
+
 function showToast(msg, ms = 1800) {
     let el = document.getElementById('toastMsg');
     if (!el) {
@@ -715,7 +723,7 @@ function buildRecord() {
 
 async function saveRecord() {
     if (!isCloudReady()) {
-        alert('尚未設定雲端：請在 app.js 頂端的 SUPABASE_CONFIG 填入 url + anonKey。');
+        warnNoCloud();
         return;
     }
     const recordName = prompt('請為此記錄命名:', document.getElementById('name').value || '');
@@ -824,7 +832,7 @@ function applyRecord(record) {
 
 async function loadRecord() {
     if (!isCloudReady()) {
-        alert('尚未設定雲端：請在 app.js 頂端的 SUPABASE_CONFIG 填入 url + anonKey。');
+        warnNoCloud();
         return;
     }
     const id = document.getElementById('recordList').value;
@@ -843,7 +851,7 @@ async function loadRecord() {
 
 async function deleteRecord() {
     if (!isCloudReady()) {
-        alert('尚未設定雲端：請在 app.js 頂端的 SUPABASE_CONFIG 填入 url + anonKey。');
+        warnNoCloud();
         return;
     }
     const sel = document.getElementById('recordList');
