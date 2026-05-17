@@ -299,7 +299,7 @@ function wrapAccordionItem(key, label, icon, body) {
             <button class="accordion-button collapsed" type="button"
                     data-bs-toggle="collapse" data-bs-target="#collapse_${key}"
                     aria-expanded="false" aria-controls="collapse_${key}">
-                ${iconHtml}<span>${label}</span>
+                ${iconHtml}<span class="eval-label">${label}</span>
                 <span id="${key}_summary" class="eval-summary"></span>
             </button>
         </h2>

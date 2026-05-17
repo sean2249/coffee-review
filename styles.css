@@ -339,6 +339,9 @@ button.card-title {
 
 .accordion-flush > .accordion-item .accordion-button,
 .accordion-flush > .accordion-item .accordion-button:not(.collapsed) {
+    display: flex;
+    align-items: center;
+    width: 100%;
     background-color: transparent;
     color: var(--text-primary);
     box-shadow: none;
@@ -374,10 +377,14 @@ button.card-title {
     flex-shrink: 0;
 }
 
+.eval-label {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
 .eval-summary {
     color: var(--text-muted);
     font-size: 0.78rem;
-    margin-left: auto;
     padding-right: 0.45rem;
     font-weight: 400;
     text-align: right;
