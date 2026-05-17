@@ -261,11 +261,13 @@ function getSelectedFlavorIds(containerId) {
 
 // ─── Notes slot — collapsed by default, expand on demand ───────────────────
 function notesSlotHtml(textareaId, { rows = 2 } = {}) {
+    const bodyId = `${textareaId}_body`;
     return `<div class="notes-slot" data-notes-slot="${textareaId}">
-        <button type="button" class="notes-toggle" data-notes-target="${textareaId}">
+        <button type="button" class="notes-toggle" data-notes-target="${textareaId}"
+                aria-controls="${bodyId}" aria-expanded="false">
             <i class="bi bi-plus-circle"></i> 加上備註
         </button>
-        <div class="notes-body" hidden>
+        <div id="${bodyId}" class="notes-body" hidden>
             <label class="form-label" for="${textareaId}">備註:</label>
             <textarea id="${textareaId}" class="form-control" rows="${rows}"></textarea>
         </div>
@@ -276,6 +278,7 @@ function expandNotesSlot(textareaId, { focus = true } = {}) {
     const slot = document.querySelector(`[data-notes-slot="${textareaId}"]`);
     if (!slot || slot.classList.contains('is-open')) return;
     slot.classList.add('is-open');
+    slot.querySelector('.notes-toggle')?.setAttribute('aria-expanded', 'true');
     const body = slot.querySelector('.notes-body');
     if (body) body.hidden = false;
     if (focus) slot.querySelector('textarea')?.focus();
@@ -285,6 +288,7 @@ function collapseNotesSlot(textareaId) {
     const slot = document.querySelector(`[data-notes-slot="${textareaId}"]`);
     if (!slot) return;
     slot.classList.remove('is-open');
+    slot.querySelector('.notes-toggle')?.setAttribute('aria-expanded', 'false');
     const body = slot.querySelector('.notes-body');
     if (body) body.hidden = true;
 }
