@@ -64,7 +64,7 @@ alter default privileges in schema coffee
 alter default privileges in schema coffee
     grant all on sequences to anon, authenticated, service_role;
 
--- 紀錄表
+-- 紀錄表（自己沖煮）
 create table coffee.coffee_records (
   id uuid primary key default gen_random_uuid(),
   title text,
@@ -77,6 +77,7 @@ create table coffee.coffee_records (
   ratio text,
   method text,
   extraction_time text,
+  shop_name text,            -- 豆源店家
   defects text,
   notes text,
   coe_total numeric,
@@ -86,11 +87,52 @@ create table coffee.coffee_records (
   schema_version int,
   created_at timestamptz default now()
 );
+create index coffee_records_shop_name_idx on coffee.coffee_records (shop_name);
+
+-- 紀錄表（店家探訪）
+create table coffee.visit_records (
+  id uuid primary key default gen_random_uuid(),
+  title text,
+  shop_name text,
+  shop_location text,
+  visit_date date,
+  item_ordered text,
+  price numeric,
+  atmosphere_notes text,
+  decor_notes text,
+  service_notes text,
+  photo_paths text[] default '{}',
+  defects text,
+  notes text,
+  coe_total numeric,
+  coe_tier_id text,
+  evaluations jsonb,
+  observation jsonb,
+  schema_version int default 1,
+  created_at timestamptz default now()
+);
 
 -- 開啟 RLS 並設定政策（個人用 = open access；多人用務必改）
 alter table coffee.coffee_records enable row level security;
 create policy "open access" on coffee.coffee_records
     for all using (true) with check (true);
+
+alter table coffee.visit_records enable row level security;
+create policy "open access" on coffee.visit_records
+    for all using (true) with check (true);
+
+-- Storage bucket：店家探訪照片
+insert into storage.buckets (id, name, public)
+values ('visit-photos', 'visit-photos', true)
+on conflict (id) do nothing;
+create policy "visit-photos read"   on storage.objects for select
+    using (bucket_id = 'visit-photos');
+create policy "visit-photos write"  on storage.objects for insert
+    with check (bucket_id = 'visit-photos');
+create policy "visit-photos update" on storage.objects for update
+    using (bucket_id = 'visit-photos');
+create policy "visit-photos delete" on storage.objects for delete
+    using (bucket_id = 'visit-photos');
 ```
 
 B. **曝光 schema 給 API**：Dashboard → Settings → API → 找 *Exposed schemas* → 加入 `coffee`。否則前端會 404。

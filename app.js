@@ -123,10 +123,7 @@ let appMode = 'beans';
 // Visit-mode photo staging: new File 物件待上傳 + 已存在 Storage 的路徑
 const visitPhotos = [];
 const visitPhotoPaths = [];
-
-function currentTable() {
-    return appMode === 'visit' ? SUPABASE_CONFIG.visitTable : SUPABASE_CONFIG.table;
-}
+let isSavingVisit = false;
 
 function setAppMode(mode) {
     if (mode === appMode) return;
@@ -135,7 +132,7 @@ function setAppMode(mode) {
     document.querySelectorAll('.mode-tab').forEach(btn => {
         const active = btn.dataset.mode === mode;
         btn.classList.toggle('active', active);
-        btn.setAttribute('aria-selected', active);
+        btn.setAttribute('aria-pressed', String(active));
     });
     resetFormToDefaults();
     updateRecordList();
@@ -785,6 +782,7 @@ function buildEvaluationPayload() {
 function buildBeansRecord() {
     const record = { schema_version: 3, ...buildEvaluationPayload() };
     BEANS_BASIC_FIELDS.forEach(id => { record[id] = document.getElementById(id).value; });
+    record.shop_name = document.getElementById('source_shop_name').value.trim() || null;
     return record;
 }
 
@@ -802,36 +800,100 @@ function buildVisitRecord() {
     return record;
 }
 
-function buildRecord() {
-    return appMode === 'visit' ? buildVisitRecord() : buildBeansRecord();
-}
-
 async function saveRecord() {
     if (!isCloudReady()) {
         warnNoCloud();
         return;
     }
-    const defaultName = appMode === 'visit'
+    const mode = appMode;
+    const table = mode === 'visit' ? SUPABASE_CONFIG.visitTable : SUPABASE_CONFIG.table;
+    const defaultName = mode === 'visit'
         ? document.getElementById('shop_name').value
         : document.getElementById('name').value;
     const recordName = prompt('請為此記錄命名:', defaultName || '');
     if (!recordName) return;
 
+    // Snapshot photo state synchronously before any await, and lock photo
+    // controls during the save so users can't mid-flight remove a thumb
+    // whose file is already being uploaded.
+    const snapshotPaths = mode === 'visit' ? [...visitPhotoPaths] : [];
+    const snapshotFiles = mode === 'visit' ? [...visitPhotos] : [];
+    const saveBtn = document.getElementById('saveBtn');
+    const photoInput = document.getElementById('visitPhotoInput');
+    if (saveBtn) saveBtn.disabled = true;
+    if (mode === 'visit') {
+        isSavingVisit = true;
+        if (photoInput) photoInput.disabled = true;
+        renderVisitPhotoPreviews();
+    }
+
+    let uploadedPaths = [];
     try {
-        const data = buildRecord();
+        const data = mode === 'visit' ? buildVisitRecord() : buildBeansRecord();
         data.title = recordName;
-        if (appMode === 'visit') {
-            data.photo_paths = await uploadVisitPhotos();
+        if (mode === 'visit') {
+            uploadedPaths = await uploadVisitPhotos(snapshotFiles);
+            data.photo_paths = [...snapshotPaths, ...uploadedPaths];
         }
         // created_at 交給 Supabase 的 now() 預設值，避免使用者本機時鐘錯誤
 
         const sb = await ensureSupabase();
-        const { error } = await sb.from(currentTable()).insert(data);
-        if (error) throw error;
+        const { error } = await sb.from(table).insert(data);
+        if (error) {
+            if (uploadedPaths.length) {
+                await sb.storage.from(SUPABASE_CONFIG.visitBucket)
+                    .remove(uploadedPaths).catch(() => {});
+            }
+            throw error;
+        }
+
+        // Promote uploaded paths to local state only if user is still on
+        // visit mode; remove the just-uploaded File objects by reference
+        // (snapshotFiles may have been spliced from visitPhotos meanwhile).
+        if (mode === 'visit' && uploadedPaths.length && appMode === 'visit') {
+            for (const file of snapshotFiles) {
+                const idx = visitPhotos.indexOf(file);
+                if (idx >= 0) visitPhotos.splice(idx, 1);
+            }
+            visitPhotoPaths.push(...uploadedPaths);
+        }
+
         showToast(`✓ 已儲存到雲端 — ${recordName}`);
         updateRecordList();
+        loadShopOptions();
     } catch (e) {
         alert('儲存失敗: ' + (e.message || e));
+    } finally {
+        if (saveBtn) saveBtn.disabled = false;
+        if (mode === 'visit') {
+            isSavingVisit = false;
+            if (photoInput) photoInput.disabled = false;
+            if (appMode === 'visit') renderVisitPhotoPreviews();
+        }
+    }
+}
+
+async function loadShopOptions() {
+    if (!isCloudReady()) return;
+    try {
+        const sb = await ensureSupabase();
+        const [visitRes, beansRes] = await Promise.all([
+            sb.from(SUPABASE_CONFIG.visitTable)
+                .select('shop_name').not('shop_name', 'is', null),
+            sb.from(SUPABASE_CONFIG.table)
+                .select('shop_name').not('shop_name', 'is', null),
+        ]);
+        const names = new Set();
+        (visitRes.data || []).forEach(r => r.shop_name && names.add(r.shop_name));
+        (beansRes.data || []).forEach(r => r.shop_name && names.add(r.shop_name));
+        const dl = document.getElementById('shopOptions');
+        if (!dl) return;
+        dl.innerHTML = [...names].sort().map(n => {
+            const safe = n.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+            return `<option value="${safe}"></option>`;
+        }).join('');
+    } catch (e) {
+        console.warn('loadShopOptions failed:', e);
     }
 }
 
@@ -858,6 +920,8 @@ function resetFormToDefaults() {
     });
     collapseNotesSlot('notes');
     document.getElementById('ocrPreview').classList.remove('active');
+    const srcShop = document.getElementById('source_shop_name');
+    if (srcShop) srcShop.value = '';
     resetVisitFields();
 
     coeState.coeTotal = 82;
@@ -901,6 +965,11 @@ function applyRecord(record) {
     });
     if (document.getElementById('notes')?.value) {
         expandNotesSlot('notes', { focus: false });
+    }
+
+    if (appMode !== 'visit') {
+        const srcShop = document.getElementById('source_shop_name');
+        if (srcShop) srcShop.value = record.shop_name || '';
     }
 
     if (appMode === 'visit') {
@@ -978,14 +1047,18 @@ async function loadRecord() {
     }
     const id = document.getElementById('recordList').value;
     if (!id) return;
+    const requestMode = appMode;
+    const requestTable = requestMode === 'visit' ? SUPABASE_CONFIG.visitTable : SUPABASE_CONFIG.table;
     try {
         const sb = await ensureSupabase();
-        const { data, error } = await sb.from(currentTable()).select('*').eq('id', id).single();
+        const { data, error } = await sb.from(requestTable).select('*').eq('id', id).single();
+        if (requestMode !== appMode) return;
         if (error) throw error;
         resetFormToDefaults();
         applyRecord(data);
         showToast(`✓ 已讀取 — ${data.title}`);
     } catch (e) {
+        if (requestMode !== appMode) return;
         alert('讀取失敗: ' + (e.message || e));
     }
 }
@@ -1000,15 +1073,50 @@ async function deleteRecord() {
     if (!id) return;
     const title = sel.options[sel.selectedIndex]?.textContent || '';
     if (!confirm(`刪除 "${title}"？`)) return;
+    const mode = appMode;
+    const table = mode === 'visit' ? SUPABASE_CONFIG.visitTable : SUPABASE_CONFIG.table;
     try {
         const sb = await ensureSupabase();
-        const { error } = await sb.from(currentTable()).delete().eq('id', id);
+        let candidatePhotoPaths = [];
+        if (mode === 'visit') {
+            const { data, error: fetchErr } = await sb.from(table)
+                .select('photo_paths').eq('id', id).single();
+            if (!fetchErr && Array.isArray(data?.photo_paths)) {
+                candidatePhotoPaths = data.photo_paths;
+            }
+        }
+        const { error } = await sb.from(table).delete().eq('id', id);
         if (error) throw error;
+        if (candidatePhotoPaths.length) {
+            const orphans = await findOrphanPhotoPaths(sb, table, candidatePhotoPaths);
+            if (orphans.length) {
+                await sb.storage.from(SUPABASE_CONFIG.visitBucket)
+                    .remove(orphans)
+                    .catch(err => console.warn('orphan photo cleanup failed:', err));
+            }
+        }
         showToast('✓ 已刪除');
         updateRecordList();
     } catch (e) {
         alert('刪除失敗: ' + (e.message || e));
     }
+}
+
+async function findOrphanPhotoPaths(sb, table, paths) {
+    const orphans = [];
+    for (const path of paths) {
+        try {
+            const { data, error } = await sb.from(table)
+                .select('id')
+                .contains('photo_paths', [path])
+                .limit(1);
+            if (error) continue;
+            if (!data || data.length === 0) orphans.push(path);
+        } catch {
+            // skip on error — better to leave a possibly-shared file than break a sibling
+        }
+    }
+    return orphans;
 }
 
 function refreshRecordActionButtons() {
@@ -1020,8 +1128,12 @@ function refreshRecordActionButtons() {
 
 async function updateRecordList() {
     const sel = document.getElementById('recordList');
+    const requestMode = appMode;
+    const requestTable = requestMode === 'visit' ? SUPABASE_CONFIG.visitTable : SUPABASE_CONFIG.table;
     sel.innerHTML = '';
     const placeholder = (text) => {
+        if (requestMode !== appMode) return;
+        sel.innerHTML = '';
         const opt = document.createElement('option');
         opt.textContent = text;
         opt.disabled = true;
@@ -1036,9 +1148,10 @@ async function updateRecordList() {
     }
     try {
         const sb = await ensureSupabase();
-        const { data, error } = await sb.from(currentTable())
+        const { data, error } = await sb.from(requestTable)
             .select('id, title, created_at')
             .order('created_at', { ascending: false });
+        if (requestMode !== appMode) return;
         if (error) throw error;
         if (!data || data.length === 0) {
             placeholder('— 尚無記錄 —');
@@ -1052,32 +1165,16 @@ async function updateRecordList() {
             });
         }
     } catch (e) {
+        if (requestMode !== appMode) return;
         console.error(e);
         placeholder('— 載入失敗 —');
     }
-    refreshRecordActionButtons();
+    if (requestMode === appMode) refreshRecordActionButtons();
 }
 
 // ─── Markdown export ─────────────────────────────────────────────────────────
-function generateMarkdown() {
-    const v = id => document.getElementById(id).value;
+function appendEvaluationMarkdown(lines, v) {
     const tier = tierById(coeState.selectedTierId);
-    const lines = [];
-
-    lines.push(`# 咖啡杯測報告: ${v('name')}`, '');
-
-    lines.push('## 基本資訊');
-    lines.push(`* **產地:** ${v('origin')}`);
-    lines.push(`* **處理法:** ${v('process')}`);
-    lines.push(`* **烘焙度:** ${v('roast')}`, '');
-
-    lines.push('## 沖煮參數');
-    lines.push(`* **研磨度:** ${v('grind')}`);
-    lines.push(`* **水溫:** ${v('water_temp')}°C`);
-    lines.push(`* **粉水比:** ${v('ratio')}`);
-    lines.push(`* **沖煮方法:** ${v('method')}`);
-    lines.push(`* **萃取時間:** ${v('extraction_time')}s`, '');
-
     lines.push(`## CoE 總分: ${coeState.coeTotal.toFixed(1)} / 100  [ ${tier.badgeName} ] ${tier.name}`);
     lines.push(`> ${tier.description}`, '');
 
@@ -1128,8 +1225,61 @@ function generateMarkdown() {
     if (defects) lines.push('## 瑕疵記錄', defects, '');
     const finalNotes = v('notes');
     if (finalNotes) lines.push('## 最終備註', finalNotes, '');
+}
 
+function generateBeansMarkdown() {
+    const v = id => document.getElementById(id).value;
+    const lines = [];
+
+    lines.push(`# 咖啡杯測報告: ${v('name')}`, '');
+
+    lines.push('## 基本資訊');
+    lines.push(`* **產地:** ${v('origin')}`);
+    lines.push(`* **處理法:** ${v('process')}`);
+    lines.push(`* **烘焙度:** ${v('roast')}`);
+    if (v('source_shop_name')) lines.push(`* **豆源:** ${v('source_shop_name')}`);
+    lines.push('');
+
+    lines.push('## 沖煮參數');
+    lines.push(`* **研磨度:** ${v('grind')}`);
+    lines.push(`* **水溫:** ${v('water_temp')}°C`);
+    lines.push(`* **粉水比:** ${v('ratio')}`);
+    lines.push(`* **沖煮方法:** ${v('method')}`);
+    lines.push(`* **萃取時間:** ${v('extraction_time')}s`, '');
+
+    appendEvaluationMarkdown(lines, v);
     document.getElementById('markdownOutput').textContent = lines.join('\n');
+}
+
+function generateVisitMarkdown() {
+    const v = id => document.getElementById(id).value;
+    const lines = [];
+
+    lines.push(`# 店家探訪：${v('shop_name')}`, '');
+
+    lines.push('## 店家資訊');
+    if (v('shop_location')) lines.push(`* **位置:** ${v('shop_location')}`);
+    if (v('visit_date')) lines.push(`* **日期:** ${v('visit_date')}`);
+    if (v('item_ordered')) lines.push(`* **點用:** ${v('item_ordered')}`);
+    if (v('price')) lines.push(`* **價格:** ${v('price')}`);
+    lines.push('');
+
+    const atmo = v('atmosphere_notes'), decor = v('decor_notes'), service = v('service_notes');
+    if (atmo || decor || service) {
+        lines.push('## 探訪心得');
+        if (atmo) lines.push(`* **氛圍:** ${atmo}`);
+        if (decor) lines.push(`* **裝潢:** ${decor}`);
+        if (service) lines.push(`* **服務:** ${service}`);
+        lines.push('');
+    }
+
+    appendEvaluationMarkdown(lines, v);
+    document.getElementById('markdownOutput').textContent = lines.join('\n');
+}
+
+function generateMarkdown() {
+    if (appMode === 'visit') generateVisitMarkdown();
+    else generateBeansMarkdown();
 }
 
 function copyToClipboard() {
@@ -1141,22 +1291,27 @@ function copyToClipboard() {
 }
 
 // ─── Visit photos — upload + preview ────────────────────────────────────────
-async function uploadVisitPhotos() {
-    const merged = [...visitPhotoPaths];
-    if (visitPhotos.length === 0) return merged;
+async function uploadVisitPhotos(files) {
+    if (!files || files.length === 0) return [];
     const sb = await ensureSupabase();
-    for (const file of visitPhotos) {
+    const newPaths = [];
+    for (const file of files) {
         const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
         const safeExt = /^[a-z0-9]{1,5}$/.test(ext) ? ext : 'jpg';
         const path = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${safeExt}`;
         const { error } = await sb.storage
             .from(SUPABASE_CONFIG.visitBucket)
             .upload(path, file, { contentType: file.type || undefined });
-        if (error) throw error;
-        merged.push(path);
+        if (error) {
+            if (newPaths.length) {
+                await sb.storage.from(SUPABASE_CONFIG.visitBucket)
+                    .remove(newPaths).catch(() => {});
+            }
+            throw error;
+        }
+        newPaths.push(path);
     }
-    visitPhotos.length = 0;
-    return merged;
+    return newPaths;
 }
 
 function visitPhotoUrl(path) {
@@ -1170,31 +1325,38 @@ function visitPhotoUrl(path) {
 function renderVisitPhotoPreviews() {
     const container = document.getElementById('visitPhotoPreviews');
     if (!container) return;
-    const html = [];
-    visitPhotoPaths.forEach((path, i) => {
-        html.push(
-            `<div class="thumb">
-                <img src="${visitPhotoUrl(path)}" alt="">
-                <button type="button" class="thumb-remove"
-                        data-kind="stored" data-idx="${i}" aria-label="移除照片">✕</button>
-            </div>`
-        );
-    });
-    visitPhotos.forEach((file, i) => {
-        const url = URL.createObjectURL(file);
-        html.push(
-            `<div class="thumb" data-object-url="${url}">
-                <img src="${url}" alt="">
-                <button type="button" class="thumb-remove"
-                        data-kind="pending" data-idx="${i}" aria-label="移除照片">✕</button>
-            </div>`
-        );
-    });
-    // Revoke any old object URLs before swapping innerHTML
+
     container.querySelectorAll('.thumb[data-object-url]').forEach(t => {
         URL.revokeObjectURL(t.dataset.objectUrl);
     });
-    container.innerHTML = html.join('');
+    container.replaceChildren();
+
+    const appendThumb = ({ src, kind, idx, objectUrl }) => {
+        const div = document.createElement('div');
+        div.className = 'thumb';
+        if (objectUrl) div.dataset.objectUrl = objectUrl;
+        const img = document.createElement('img');
+        img.src = src;
+        img.alt = '';
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'thumb-remove';
+        btn.dataset.kind = kind;
+        btn.dataset.idx = String(idx);
+        btn.disabled = isSavingVisit;
+        btn.setAttribute('aria-label', '移除照片');
+        btn.textContent = '✕';
+        div.append(img, btn);
+        container.append(div);
+    };
+
+    visitPhotoPaths.forEach((path, i) => appendThumb({
+        src: visitPhotoUrl(path), kind: 'stored', idx: i,
+    }));
+    visitPhotos.forEach((file, i) => {
+        const url = URL.createObjectURL(file);
+        appendThumb({ src: url, kind: 'pending', idx: i, objectUrl: url });
+    });
 }
 
 // ─── Init ────────────────────────────────────────────────────────────────────
@@ -1249,4 +1411,5 @@ document.addEventListener('DOMContentLoaded', () => {
     initializeEvaluationAccordion();
     bindStaticListeners();
     updateRecordList();
+    loadShopOptions();
 });
