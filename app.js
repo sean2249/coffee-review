@@ -785,6 +785,7 @@ function buildEvaluationPayload() {
 function buildBeansRecord() {
     const record = { schema_version: 3, ...buildEvaluationPayload() };
     BEANS_BASIC_FIELDS.forEach(id => { record[id] = document.getElementById(id).value; });
+    record.shop_name = document.getElementById('source_shop_name').value.trim() || null;
     return record;
 }
 
@@ -830,8 +831,33 @@ async function saveRecord() {
         if (error) throw error;
         showToast(`✓ 已儲存到雲端 — ${recordName}`);
         updateRecordList();
+        loadShopOptions();
     } catch (e) {
         alert('儲存失敗: ' + (e.message || e));
+    }
+}
+
+async function loadShopOptions() {
+    if (!isCloudReady()) return;
+    try {
+        const sb = await ensureSupabase();
+        const [visitRes, beansRes] = await Promise.all([
+            sb.from(SUPABASE_CONFIG.visitTable)
+                .select('shop_name').not('shop_name', 'is', null),
+            sb.from(SUPABASE_CONFIG.table)
+                .select('shop_name').not('shop_name', 'is', null),
+        ]);
+        const names = new Set();
+        (visitRes.data || []).forEach(r => r.shop_name && names.add(r.shop_name));
+        (beansRes.data || []).forEach(r => r.shop_name && names.add(r.shop_name));
+        const dl = document.getElementById('shopOptions');
+        if (!dl) return;
+        dl.innerHTML = [...names].sort().map(n => {
+            const safe = n.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+            return `<option value="${safe}"></option>`;
+        }).join('');
+    } catch (e) {
+        console.warn('loadShopOptions failed:', e);
     }
 }
 
@@ -858,6 +884,8 @@ function resetFormToDefaults() {
     });
     collapseNotesSlot('notes');
     document.getElementById('ocrPreview').classList.remove('active');
+    const srcShop = document.getElementById('source_shop_name');
+    if (srcShop) srcShop.value = '';
     resetVisitFields();
 
     coeState.coeTotal = 82;
@@ -901,6 +929,11 @@ function applyRecord(record) {
     });
     if (document.getElementById('notes')?.value) {
         expandNotesSlot('notes', { focus: false });
+    }
+
+    if (appMode !== 'visit') {
+        const srcShop = document.getElementById('source_shop_name');
+        if (srcShop) srcShop.value = record.shop_name || '';
     }
 
     if (appMode === 'visit') {
@@ -1249,4 +1282,5 @@ document.addEventListener('DOMContentLoaded', () => {
     initializeEvaluationAccordion();
     bindStaticListeners();
     updateRecordList();
+    loadShopOptions();
 });
