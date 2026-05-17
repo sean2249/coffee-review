@@ -339,6 +339,9 @@ button.card-title {
 
 .accordion-flush > .accordion-item .accordion-button,
 .accordion-flush > .accordion-item .accordion-button:not(.collapsed) {
+    display: flex;
+    align-items: center;
+    width: 100%;
     background-color: transparent;
     color: var(--text-primary);
     box-shadow: none;
@@ -374,10 +377,14 @@ button.card-title {
     flex-shrink: 0;
 }
 
+.eval-label {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
 .eval-summary {
     color: var(--text-muted);
     font-size: 0.78rem;
-    margin-left: auto;
     padding-right: 0.45rem;
     font-weight: 400;
     text-align: right;
@@ -541,6 +548,29 @@ button.card-title {
     white-space: pre-wrap;
     word-break: break-word;
 }
+
+/* ───── Notes slot — collapsed by default, expand on demand ──────────── */
+.notes-slot .notes-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    width: 100%;
+    justify-content: center;
+    padding: 0.4rem 0.7rem;
+    background: transparent;
+    color: var(--text-muted);
+    border: 1px dashed var(--border-strong);
+    border-radius: var(--radius-sm);
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s, background-color 0.15s;
+}
+.notes-slot .notes-toggle:hover {
+    color: var(--accent);
+    border-color: var(--accent);
+    background-color: var(--accent-tint);
+}
+.notes-slot.is-open .notes-toggle { display: none; }
 
 /* ───── Misc ───────────────────────────────────────────────────────────── */
 .small-hint { font-size: 0.8rem; color: var(--text-muted); }
