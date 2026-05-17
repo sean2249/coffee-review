@@ -259,6 +259,36 @@ function getSelectedFlavorIds(containerId) {
     ).map(t => t.dataset.flavorId);
 }
 
+// ─── Notes slot — collapsed by default, expand on demand ───────────────────
+function notesSlotHtml(textareaId, { rows = 2 } = {}) {
+    return `<div class="notes-slot" data-notes-slot="${textareaId}">
+        <button type="button" class="notes-toggle" data-notes-target="${textareaId}">
+            <i class="bi bi-plus-circle"></i> 加上備註
+        </button>
+        <div class="notes-body" hidden>
+            <label class="form-label" for="${textareaId}">備註:</label>
+            <textarea id="${textareaId}" class="form-control" rows="${rows}"></textarea>
+        </div>
+    </div>`;
+}
+
+function expandNotesSlot(textareaId, { focus = true } = {}) {
+    const slot = document.querySelector(`[data-notes-slot="${textareaId}"]`);
+    if (!slot || slot.classList.contains('is-open')) return;
+    slot.classList.add('is-open');
+    const body = slot.querySelector('.notes-body');
+    if (body) body.hidden = false;
+    if (focus) slot.querySelector('textarea')?.focus();
+}
+
+function collapseNotesSlot(textareaId) {
+    const slot = document.querySelector(`[data-notes-slot="${textareaId}"]`);
+    if (!slot) return;
+    slot.classList.remove('is-open');
+    const body = slot.querySelector('.notes-body');
+    if (body) body.hidden = true;
+}
+
 // ─── Accordion ──────────────────────────────────────────────────────────────
 function wrapAccordionItem(key, label, icon, body) {
     const iconHtml = icon
@@ -322,8 +352,7 @@ function generateReferenceItem(field) {
             <div id="${key}_flavorList" class="flavor-wheel"></div>`;
     }
 
-    body += `<label class="form-label mt-3">備註:</label>
-        <textarea id="${key}_notes" class="form-control" rows="2"></textarea>`;
+    body += `<div class="mt-3">${notesSlotHtml(`${key}_notes`)}</div>`;
 
     return wrapAccordionItem(key, field.label, field.icon, body);
 }
@@ -342,8 +371,7 @@ function generateObservationItem(field) {
             <div id="${key}_flavorList" class="flavor-wheel"></div>`;
     }
 
-    body += `<label class="form-label mt-3">備註:</label>
-        <textarea id="${key}_notes" class="form-control" rows="2"></textarea>`;
+    body += `<div class="mt-3">${notesSlotHtml(`${key}_notes`)}</div>`;
 
     return wrapAccordionItem(key, field.label, field.icon, body);
 }
@@ -746,6 +774,7 @@ async function saveRecord() {
 
 function resetFormToDefaults() {
     BASIC_FIELDS.forEach(id => { document.getElementById(id).value = ''; });
+    collapseNotesSlot('notes');
     document.getElementById('ocrPreview').classList.remove('active');
 
     coeState.coeTotal = 82;
@@ -757,6 +786,7 @@ function resetFormToDefaults() {
     referenceFields.forEach(f => {
         setReferenceScore(f.key, 5);
         document.getElementById(`${f.key}_notes`).value = '';
+        collapseNotesSlot(`${f.key}_notes`);
         if (f.custom) {
             const pk = Object.keys(f.custom)[0], sk = Object.keys(f.custom)[1];
             document.querySelectorAll(
@@ -769,6 +799,7 @@ function resetFormToDefaults() {
 
     observationFields.forEach(f => {
         document.getElementById(`${f.key}_notes`).value = '';
+        collapseNotesSlot(`${f.key}_notes`);
         if (f.key === 'aroma') {
             document.getElementById(`${f.key}_dryAroma`).value = '';
             document.getElementById(`${f.key}_wetAroma`).value = '';
@@ -782,6 +813,9 @@ function applyRecord(record) {
     BASIC_FIELDS.forEach(id => {
         if (record[id] != null) document.getElementById(id).value = record[id];
     });
+    if (document.getElementById('notes')?.value) {
+        expandNotesSlot('notes', { focus: false });
+    }
 
     coeState.coeTotal = typeof record.coe_total === 'number' ? record.coe_total : 82;
     coeState.selectedTierId = record.coe_tier_id || tierFromScore(coeState.coeTotal).id;
@@ -795,6 +829,7 @@ function applyRecord(record) {
             if (!data) return;
             if (typeof data.score === 'number') setReferenceScore(f.key, data.score);
             document.getElementById(`${f.key}_notes`).value = data.notes || '';
+            if (data.notes) expandNotesSlot(`${f.key}_notes`, { focus: false });
             if (f.custom) {
                 const pk = Object.keys(f.custom)[0], sk = Object.keys(f.custom)[1];
                 if (data[pk]) {
@@ -818,6 +853,7 @@ function applyRecord(record) {
             const data = record.observation[f.key];
             if (!data) return;
             document.getElementById(`${f.key}_notes`).value = data.notes || '';
+            if (data.notes) expandNotesSlot(`${f.key}_notes`, { focus: false });
             if (f.key === 'aroma') {
                 document.getElementById(`${f.key}_dryAroma`).value = data.dryAroma || '';
                 document.getElementById(`${f.key}_wetAroma`).value = data.wetAroma || '';
@@ -1012,6 +1048,12 @@ function bindStaticListeners() {
         if (f) runOcr(f);
     });
     document.getElementById('recordList').addEventListener('change', refreshRecordActionButtons);
+
+    document.body.addEventListener('click', e => {
+        const toggle = e.target.closest('.notes-toggle');
+        if (!toggle) return;
+        expandNotesSlot(toggle.dataset.notesTarget);
+    });
 }
 
 document.addEventListener('DOMContentLoaded', () => {

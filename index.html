@@ -140,8 +140,15 @@
                 <label for="defects" class="form-label">瑕疵記錄</label>
                 <textarea id="defects" class="form-control mb-2" placeholder="記錄任何瑕疵，例如過度萃取、雜味等..." rows="2"></textarea>
 
-                <label for="notes" class="form-label">最終備註</label>
-                <textarea id="notes" class="form-control" placeholder="請輸入額外的備註..." rows="3"></textarea>
+                <div class="notes-slot" data-notes-slot="notes">
+                    <button type="button" class="notes-toggle" data-notes-target="notes">
+                        <i class="bi bi-plus-circle"></i> 加上最終備註
+                    </button>
+                    <div class="notes-body" hidden>
+                        <label for="notes" class="form-label">最終備註</label>
+                        <textarea id="notes" class="form-control" placeholder="請輸入額外的備註..." rows="3"></textarea>
+                    </div>
+                </div>
             </div>
         </div>
 

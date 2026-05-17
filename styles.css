@@ -542,6 +542,29 @@ button.card-title {
     word-break: break-word;
 }
 
+/* ───── Notes slot — collapsed by default, expand on demand ──────────── */
+.notes-slot .notes-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    width: 100%;
+    justify-content: center;
+    padding: 0.4rem 0.7rem;
+    background: transparent;
+    color: var(--text-muted);
+    border: 1px dashed var(--border-strong);
+    border-radius: var(--radius-sm);
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s, background-color 0.15s;
+}
+.notes-slot .notes-toggle:hover {
+    color: var(--accent);
+    border-color: var(--accent);
+    background-color: var(--accent-tint);
+}
+.notes-slot.is-open .notes-toggle { display: none; }
+
 /* ───── Misc ───────────────────────────────────────────────────────────── */
 .small-hint { font-size: 0.8rem; color: var(--text-muted); }
 hr { border-color: var(--border); opacity: 0.7; }
