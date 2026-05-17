@@ -818,17 +818,32 @@ async function saveRecord() {
     const recordName = prompt('請為此記錄命名:', defaultName || '');
     if (!recordName) return;
 
+    let uploadedPaths = [];
     try {
         const data = buildRecord();
         data.title = recordName;
         if (appMode === 'visit') {
-            data.photo_paths = await uploadVisitPhotos();
+            uploadedPaths = await uploadVisitPhotos();
+            data.photo_paths = [...visitPhotoPaths, ...uploadedPaths];
         }
         // created_at 交給 Supabase 的 now() 預設值，避免使用者本機時鐘錯誤
 
         const sb = await ensureSupabase();
         const { error } = await sb.from(currentTable()).insert(data);
-        if (error) throw error;
+        if (error) {
+            if (uploadedPaths.length) {
+                await sb.storage.from(SUPABASE_CONFIG.visitBucket)
+                    .remove(uploadedPaths).catch(() => {});
+            }
+            throw error;
+        }
+
+        if (appMode === 'visit' && uploadedPaths.length) {
+            visitPhotoPaths.push(...uploadedPaths);
+            visitPhotos.length = 0;
+            renderVisitPhotoPreviews();
+        }
+
         showToast(`✓ 已儲存到雲端 — ${recordName}`);
         updateRecordList();
         loadShopOptions();
@@ -1035,8 +1050,21 @@ async function deleteRecord() {
     if (!confirm(`刪除 "${title}"？`)) return;
     try {
         const sb = await ensureSupabase();
+        let photoPathsToCleanup = [];
+        if (appMode === 'visit') {
+            const { data, error: fetchErr } = await sb.from(currentTable())
+                .select('photo_paths').eq('id', id).single();
+            if (!fetchErr && Array.isArray(data?.photo_paths)) {
+                photoPathsToCleanup = data.photo_paths;
+            }
+        }
         const { error } = await sb.from(currentTable()).delete().eq('id', id);
         if (error) throw error;
+        if (photoPathsToCleanup.length) {
+            await sb.storage.from(SUPABASE_CONFIG.visitBucket)
+                .remove(photoPathsToCleanup)
+                .catch(err => console.warn('orphan photo cleanup failed:', err));
+        }
         showToast('✓ 已刪除');
         updateRecordList();
     } catch (e) {
@@ -1092,25 +1120,8 @@ async function updateRecordList() {
 }
 
 // ─── Markdown export ─────────────────────────────────────────────────────────
-function generateMarkdown() {
-    const v = id => document.getElementById(id).value;
+function appendEvaluationMarkdown(lines, v) {
     const tier = tierById(coeState.selectedTierId);
-    const lines = [];
-
-    lines.push(`# 咖啡杯測報告: ${v('name')}`, '');
-
-    lines.push('## 基本資訊');
-    lines.push(`* **產地:** ${v('origin')}`);
-    lines.push(`* **處理法:** ${v('process')}`);
-    lines.push(`* **烘焙度:** ${v('roast')}`, '');
-
-    lines.push('## 沖煮參數');
-    lines.push(`* **研磨度:** ${v('grind')}`);
-    lines.push(`* **水溫:** ${v('water_temp')}°C`);
-    lines.push(`* **粉水比:** ${v('ratio')}`);
-    lines.push(`* **沖煮方法:** ${v('method')}`);
-    lines.push(`* **萃取時間:** ${v('extraction_time')}s`, '');
-
     lines.push(`## CoE 總分: ${coeState.coeTotal.toFixed(1)} / 100  [ ${tier.badgeName} ] ${tier.name}`);
     lines.push(`> ${tier.description}`, '');
 
@@ -1161,8 +1172,61 @@ function generateMarkdown() {
     if (defects) lines.push('## 瑕疵記錄', defects, '');
     const finalNotes = v('notes');
     if (finalNotes) lines.push('## 最終備註', finalNotes, '');
+}
 
+function generateBeansMarkdown() {
+    const v = id => document.getElementById(id).value;
+    const lines = [];
+
+    lines.push(`# 咖啡杯測報告: ${v('name')}`, '');
+
+    lines.push('## 基本資訊');
+    lines.push(`* **產地:** ${v('origin')}`);
+    lines.push(`* **處理法:** ${v('process')}`);
+    lines.push(`* **烘焙度:** ${v('roast')}`);
+    if (v('source_shop_name')) lines.push(`* **豆源:** ${v('source_shop_name')}`);
+    lines.push('');
+
+    lines.push('## 沖煮參數');
+    lines.push(`* **研磨度:** ${v('grind')}`);
+    lines.push(`* **水溫:** ${v('water_temp')}°C`);
+    lines.push(`* **粉水比:** ${v('ratio')}`);
+    lines.push(`* **沖煮方法:** ${v('method')}`);
+    lines.push(`* **萃取時間:** ${v('extraction_time')}s`, '');
+
+    appendEvaluationMarkdown(lines, v);
     document.getElementById('markdownOutput').textContent = lines.join('\n');
+}
+
+function generateVisitMarkdown() {
+    const v = id => document.getElementById(id).value;
+    const lines = [];
+
+    lines.push(`# 店家探訪：${v('shop_name')}`, '');
+
+    lines.push('## 店家資訊');
+    if (v('shop_location')) lines.push(`* **位置:** ${v('shop_location')}`);
+    if (v('visit_date')) lines.push(`* **日期:** ${v('visit_date')}`);
+    if (v('item_ordered')) lines.push(`* **點用:** ${v('item_ordered')}`);
+    if (v('price')) lines.push(`* **價格:** ${v('price')}`);
+    lines.push('');
+
+    const atmo = v('atmosphere_notes'), decor = v('decor_notes'), service = v('service_notes');
+    if (atmo || decor || service) {
+        lines.push('## 探訪心得');
+        if (atmo) lines.push(`* **氛圍:** ${atmo}`);
+        if (decor) lines.push(`* **裝潢:** ${decor}`);
+        if (service) lines.push(`* **服務:** ${service}`);
+        lines.push('');
+    }
+
+    appendEvaluationMarkdown(lines, v);
+    document.getElementById('markdownOutput').textContent = lines.join('\n');
+}
+
+function generateMarkdown() {
+    if (appMode === 'visit') generateVisitMarkdown();
+    else generateBeansMarkdown();
 }
 
 function copyToClipboard() {
@@ -1175,9 +1239,9 @@ function copyToClipboard() {
 
 // ─── Visit photos — upload + preview ────────────────────────────────────────
 async function uploadVisitPhotos() {
-    const merged = [...visitPhotoPaths];
-    if (visitPhotos.length === 0) return merged;
+    if (visitPhotos.length === 0) return [];
     const sb = await ensureSupabase();
+    const newPaths = [];
     for (const file of visitPhotos) {
         const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
         const safeExt = /^[a-z0-9]{1,5}$/.test(ext) ? ext : 'jpg';
@@ -1185,11 +1249,16 @@ async function uploadVisitPhotos() {
         const { error } = await sb.storage
             .from(SUPABASE_CONFIG.visitBucket)
             .upload(path, file, { contentType: file.type || undefined });
-        if (error) throw error;
-        merged.push(path);
+        if (error) {
+            if (newPaths.length) {
+                await sb.storage.from(SUPABASE_CONFIG.visitBucket)
+                    .remove(newPaths).catch(() => {});
+            }
+            throw error;
+        }
+        newPaths.push(path);
     }
-    visitPhotos.length = 0;
-    return merged;
+    return newPaths;
 }
 
 function visitPhotoUrl(path) {
@@ -1203,31 +1272,37 @@ function visitPhotoUrl(path) {
 function renderVisitPhotoPreviews() {
     const container = document.getElementById('visitPhotoPreviews');
     if (!container) return;
-    const html = [];
-    visitPhotoPaths.forEach((path, i) => {
-        html.push(
-            `<div class="thumb">
-                <img src="${visitPhotoUrl(path)}" alt="">
-                <button type="button" class="thumb-remove"
-                        data-kind="stored" data-idx="${i}" aria-label="移除照片">✕</button>
-            </div>`
-        );
-    });
-    visitPhotos.forEach((file, i) => {
-        const url = URL.createObjectURL(file);
-        html.push(
-            `<div class="thumb" data-object-url="${url}">
-                <img src="${url}" alt="">
-                <button type="button" class="thumb-remove"
-                        data-kind="pending" data-idx="${i}" aria-label="移除照片">✕</button>
-            </div>`
-        );
-    });
-    // Revoke any old object URLs before swapping innerHTML
+
     container.querySelectorAll('.thumb[data-object-url]').forEach(t => {
         URL.revokeObjectURL(t.dataset.objectUrl);
     });
-    container.innerHTML = html.join('');
+    container.replaceChildren();
+
+    const appendThumb = ({ src, kind, idx, objectUrl }) => {
+        const div = document.createElement('div');
+        div.className = 'thumb';
+        if (objectUrl) div.dataset.objectUrl = objectUrl;
+        const img = document.createElement('img');
+        img.src = src;
+        img.alt = '';
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'thumb-remove';
+        btn.dataset.kind = kind;
+        btn.dataset.idx = String(idx);
+        btn.setAttribute('aria-label', '移除照片');
+        btn.textContent = '✕';
+        div.append(img, btn);
+        container.append(div);
+    };
+
+    visitPhotoPaths.forEach((path, i) => appendThumb({
+        src: visitPhotoUrl(path), kind: 'stored', idx: i,
+    }));
+    visitPhotos.forEach((file, i) => {
+        const url = URL.createObjectURL(file);
+        appendThumb({ src: url, kind: 'pending', idx: i, objectUrl: url });
+    });
 }
 
 // ─── Init ────────────────────────────────────────────────────────────────────
