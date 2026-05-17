@@ -1,0 +1,19 @@
+{
+  "name": "coffee-review",
+  "private": true,
+  "version": "0.0.0",
+  "description": "個人用咖啡杯測記錄工具 — CoE 風格評分介面",
+  "type": "module",
+  "scripts": {
+    "lint": "npm run lint:js && npm run lint:css",
+    "lint:js": "eslint .",
+    "lint:css": "stylelint \"**/*.css\""
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.18.0",
+    "eslint": "^9.18.0",
+    "globals": "^15.14.0",
+    "stylelint": "^16.13.0",
+    "stylelint-config-recommended": "^15.0.0"
+  }
+}
