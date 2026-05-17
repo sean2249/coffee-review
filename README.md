@@ -160,3 +160,16 @@ To set up GitHub Pages:
 6.  Your site will be published at an address like `https://sean2249.github.io/coffee-review/`.
 
 You can edit the `index.html` file to add your reviews and they will appear on your new website.
+
+## 開發者：Lint
+
+PR 與 push 到 `main` 時，GitHub Actions 會跑 ESLint（JS）+ Stylelint（CSS）以避免語法錯誤或未定義變數進入正式環境（`.github/workflows/lint.yml`）。本地驗證：
+
+```bash
+npm install
+npm run lint         # 跑全部
+npm run lint:js      # 只跑 ESLint
+npm run lint:css     # 只跑 Stylelint
+```
+
+規則設定刻意保守（ESLint `recommended` + Stylelint `recommended`），只擋真實錯誤、不挑剔風格。

@@ -457,7 +457,7 @@ function drawFlavorWheel(containerId) {
 
         l1.sub.forEach(l2 => {
             if (typeof l2 === 'string') {
-                const l2Id = `${l1Id}__l2-${l2.replace(/[\/\s]/g, '')}`;
+                const l2Id = `${l1Id}__l2-${l2.replace(/[/\s]/g, '')}`;
                 const tag = makeTag({
                     text: l2, id: l2Id, color: l1.color,
                     selected: state.selected.has(l2Id),
@@ -490,7 +490,7 @@ function drawFlavorWheel(containerId) {
             l3Row.className = 'flavor-row flavor-row-l3';
 
             l2.sub.forEach(l3 => {
-                const l3Id = `${l2Id}__l3-${l3.replace(/[\/\s]/g, '')}`;
+                const l3Id = `${l2Id}__l3-${l3.replace(/[/\s]/g, '')}`;
                 const tag = makeTag({
                     text: l3, id: l3Id, color: l2.color || l1.color,
                     selected: state.selected.has(l3Id),
