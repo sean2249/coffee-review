@@ -182,18 +182,73 @@ Settings → Pages → Source 選 **GitHub Actions**。
 ### ⚠️ 安全提醒
 
 `anon key` 會出現在前端 JS bundle 中，任何能打開頁面的人都拿得到。上面的 `open access` 政策表示
-*只要有 anon key 的人都能 CRUD 全部資料*。這對個人用工具是合理的；若有以下情況請強化：
+*只要有 anon key 的人都能 CRUD 全部資料*。這對純私人、未公開部署的工具是合理的；只要頁面公開可
+存取（例如 GitHub Pages），請改用下面的 **檢視/登入模式**。
 
-- **準備分享頁面或公開部署**：把 RLS 政策改為 `auth.uid()` 比對，並啟用 Supabase Auth（Email / OAuth）。
-- **多人共用一個 Supabase**：每筆記錄存 `user_id`，policy 限制 `user_id = auth.uid()`。
+## 檢視模式 + 登入寫入
+
+前端內建兩種狀態：
+
+- **檢視模式（預設）** — 任何人都能讀資料、匯出 Markdown，但 `儲存`／`刪除` 按鈕會隱藏。
+- **登入模式** — 點頁首右上角 `登入`，用 Supabase Auth 的 Email + 密碼登入後解鎖寫入。session
+  存在 `localStorage`，token 會自動 refresh，等同「記住登入」的 cookie 效果，下次造訪不必再登入。
+
+要啟用這個機制，請到 Supabase Dashboard 跑下面的 SQL，把寫入 / 刪除限制給 `authenticated` 角色，
+讀取維持公開：
 
 ```sql
--- 多人版本範例
-drop policy "open access" on coffee.coffee_records;
-alter table coffee.coffee_records add column user_id uuid references auth.users(id);
-create policy "own rows only" on coffee.coffee_records
-    for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+-- coffee_records：讀公開、寫需登入
+drop policy if exists "open access" on coffee.coffee_records;
+create policy "public read" on coffee.coffee_records
+    for select using (true);
+create policy "auth write" on coffee.coffee_records
+    for insert to authenticated with check (true);
+create policy "auth update" on coffee.coffee_records
+    for update to authenticated using (true) with check (true);
+create policy "auth delete" on coffee.coffee_records
+    for delete to authenticated using (true);
+
+-- visit_records：同上
+drop policy if exists "open access" on coffee.visit_records;
+create policy "public read" on coffee.visit_records
+    for select using (true);
+create policy "auth write" on coffee.visit_records
+    for insert to authenticated with check (true);
+create policy "auth update" on coffee.visit_records
+    for update to authenticated using (true) with check (true);
+create policy "auth delete" on coffee.visit_records
+    for delete to authenticated using (true);
+
+-- visit-photos bucket：讀公開、寫/改/刪需登入
+drop policy if exists "visit-photos read"   on storage.objects;
+drop policy if exists "visit-photos write"  on storage.objects;
+drop policy if exists "visit-photos update" on storage.objects;
+drop policy if exists "visit-photos delete" on storage.objects;
+create policy "visit-photos read" on storage.objects for select
+    using (bucket_id = 'visit-photos');
+create policy "visit-photos write" on storage.objects for insert to authenticated
+    with check (bucket_id = 'visit-photos');
+create policy "visit-photos update" on storage.objects for update to authenticated
+    using (bucket_id = 'visit-photos');
+create policy "visit-photos delete" on storage.objects for delete to authenticated
+    using (bucket_id = 'visit-photos');
 ```
+
+然後到 Dashboard 建立你的 admin 帳號：
+
+1. **Authentication → Providers**：確認 *Email* provider 為 enabled。把 *Confirm email* 關掉
+   會方便些（個人 admin 帳號）。
+2. **Authentication → Users → Add user → Create new user**：輸入 email + password，勾選
+   *Auto Confirm User*。
+3. （建議）**Authentication → Providers → Email → Disable new user signups**：關掉註冊，避免
+   有人用同一個 Supabase project 自己開帳號獲得寫入權限。
+
+接著回到網頁，點右上角 `登入`，輸入剛才那組 email / 密碼即可解鎖儲存功能。
+
+> **進階：多人共用 Supabase**
+>
+> 若每個使用者只能看自己的資料，把上面的 `for select using (true)` 改成
+> `using (user_id = auth.uid())`，並在表上加 `user_id uuid references auth.users(id)` 欄位。
 
 ## Using GitHub Pages
 

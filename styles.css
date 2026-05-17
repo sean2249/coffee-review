@@ -66,7 +66,82 @@ body {
 .container { max-width: 820px; }
 
 /* ───── Header ─────────────────────────────────────────────────────────── */
-.app-header { text-align: center; padding: 1.4rem 0 1rem; }
+.app-header { text-align: center; padding: 1.4rem 0 1rem; position: relative; }
+
+/* ───── Auth bar (top-right of header) ─────────────────────────────────── */
+.auth-bar {
+    position: absolute;
+    top: 0.6rem;
+    right: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.78rem;
+}
+.auth-status {
+    padding: 0.18rem 0.55rem;
+    border-radius: 999px;
+    background: var(--bg-muted);
+    color: var(--text-secondary);
+    border: 1px solid var(--border);
+    font-weight: 500;
+    line-height: 1.4;
+    white-space: nowrap;
+    max-width: 12rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.auth-status[data-state="edit"] {
+    background: #e8f3ec;
+    color: #2f7a4d;
+    border-color: #bcd9c4;
+}
+.auth-status[data-state="offline"] {
+    background: #f4ece0;
+    color: var(--text-muted);
+}
+.auth-btn {
+    padding: 0.22rem 0.7rem;
+    border-radius: 999px;
+    border: 1px solid var(--border-strong);
+    background: var(--bg-elevated);
+    color: var(--text-primary);
+    font-size: 0.78rem;
+    font-weight: 600;
+    cursor: pointer;
+    line-height: 1.4;
+}
+.auth-btn:hover { background: var(--bg-muted); }
+.auth-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* ───── View-mode banner ───────────────────────────────────────────────── */
+.view-mode-banner {
+    display: none;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.55rem 0.85rem;
+    margin-bottom: 0.85rem;
+    background: #fdf3e2;
+    border: 1px solid #e8d7b3;
+    color: #6b4f1f;
+    border-radius: var(--radius-md);
+    font-size: 0.85rem;
+}
+.view-mode-banner i { font-size: 1rem; }
+body[data-auth="view"] .view-mode-banner { display: flex; }
+body[data-auth="edit"] .view-mode-banner { display: none; }
+
+/* VIEW 模式下隱藏寫入動作 */
+body[data-auth="view"] #saveBtn,
+body[data-auth="view"] #deleteBtn { display: none; }
+
+/* ───── Login modal ────────────────────────────────────────────────────── */
+.login-hint {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    margin: 0 0 0.7rem;
+}
+
 .app-logo {
     display: inline-flex;
     align-items: center;

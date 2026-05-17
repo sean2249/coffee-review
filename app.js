@@ -116,6 +116,8 @@ const flavors = [
 // ─── State ───────────────────────────────────────────────────────────────────
 const coeState = { coeTotal: 82, selectedTierId: 'common' };
 let supabaseClient = null;
+// authState.user 為 null 代表未登入（檢視模式）；登入後存放 Supabase user 物件
+const authState = { user: null, ready: false };
 
 // 'beans' = 自己沖煮（coffee_records）；'visit' = 店家探訪（visit_records）
 let appMode = 'beans';
@@ -699,14 +701,25 @@ async function ensureSupabase() {
     if (!SUPABASE_CONFIG.url || !SUPABASE_CONFIG.anonKey) return null;
     if (supabaseClient) return supabaseClient;
     const mod = await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm');
+    // persistSession + autoRefreshToken：JWT 透過 localStorage 長期保留，
+    // refresh token 會在過期前自動換新，等同「記住登入」的 cookie 效果。
     supabaseClient = mod.createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.anonKey, {
         db: { schema: SUPABASE_CONFIG.schema || 'public' },
+        auth: {
+            persistSession: true,
+            autoRefreshToken: true,
+            storageKey: 'coffee-review-auth',
+        },
     });
     return supabaseClient;
 }
 
 function isCloudReady() {
     return !!(SUPABASE_CONFIG.url && SUPABASE_CONFIG.anonKey);
+}
+
+function isAuthed() {
+    return !!authState.user;
 }
 
 const NO_CLOUD_MSG = '尚未設定雲端。\n\n' +
@@ -729,6 +742,149 @@ function showToast(msg, ms = 1800) {
     el.classList.add('show');
     clearTimeout(el._t);
     el._t = setTimeout(() => el.classList.remove('show'), ms);
+}
+
+// ─── Auth ────────────────────────────────────────────────────────────────────
+function applyAuthUI() {
+    const authed = isAuthed();
+    document.body.dataset.auth = authed ? 'edit' : 'view';
+
+    const statusEl = document.getElementById('authStatus');
+    const btnEl = document.getElementById('authBtn');
+    if (!statusEl || !btnEl) return;
+
+    if (!isCloudReady()) {
+        statusEl.textContent = '雲端未設定';
+        statusEl.dataset.state = 'offline';
+        btnEl.hidden = true;
+        return;
+    }
+    btnEl.hidden = false;
+
+    if (authed) {
+        statusEl.textContent = authState.user.email || '已登入';
+        statusEl.dataset.state = 'edit';
+        btnEl.textContent = '登出';
+    } else {
+        statusEl.textContent = '檢視模式';
+        statusEl.dataset.state = 'view';
+        btnEl.textContent = '登入';
+    }
+}
+
+async function initAuth() {
+    applyAuthUI();
+    if (!isCloudReady()) {
+        authState.ready = true;
+        return;
+    }
+    const sb = await ensureSupabase();
+    if (!sb) {
+        authState.ready = true;
+        applyAuthUI();
+        return;
+    }
+    try {
+        const { data } = await sb.auth.getSession();
+        authState.user = data?.session?.user || null;
+    } catch (e) {
+        console.warn('getSession failed:', e);
+        authState.user = null;
+    }
+    authState.ready = true;
+    applyAuthUI();
+
+    sb.auth.onAuthStateChange((_event, session) => {
+        const next = session?.user || null;
+        const changed = (authState.user?.id || null) !== (next?.id || null);
+        authState.user = next;
+        applyAuthUI();
+        if (changed) {
+            // 切換登入狀態後重新拉一次列表，確保 RLS 變更後資料一致
+            updateRecordList();
+            loadShopOptions();
+        }
+    });
+}
+
+async function loginWithPassword(email, password) {
+    const sb = await ensureSupabase();
+    if (!sb) throw new Error('雲端未設定，無法登入');
+    const { data, error } = await sb.auth.signInWithPassword({ email, password });
+    if (error) throw error;
+    authState.user = data?.user || null;
+    applyAuthUI();
+    return data;
+}
+
+async function logout() {
+    const sb = await ensureSupabase();
+    if (!sb) return;
+    try {
+        await sb.auth.signOut();
+    } catch (e) {
+        console.warn('signOut failed:', e);
+    }
+    authState.user = null;
+    applyAuthUI();
+}
+
+function openLoginModal() {
+    const modalEl = document.getElementById('loginModal');
+    if (!modalEl || typeof bootstrap === 'undefined') return;
+    const err = document.getElementById('loginError');
+    if (err) { err.hidden = true; err.textContent = ''; }
+    const pw = document.getElementById('loginPassword');
+    if (pw) pw.value = '';
+    const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+    modal.show();
+    setTimeout(() => {
+        const email = document.getElementById('loginEmail');
+        if (email && !email.value) email.focus();
+        else if (pw) pw.focus();
+    }, 200);
+}
+
+function closeLoginModal() {
+    const modalEl = document.getElementById('loginModal');
+    if (!modalEl || typeof bootstrap === 'undefined') return;
+    bootstrap.Modal.getInstance(modalEl)?.hide();
+}
+
+async function handleLoginSubmit(e) {
+    e.preventDefault();
+    const emailInput = document.getElementById('loginEmail');
+    const pwInput = document.getElementById('loginPassword');
+    const errEl = document.getElementById('loginError');
+    const submitBtn = document.getElementById('loginSubmit');
+    const email = emailInput.value.trim();
+    const password = pwInput.value;
+    if (!email || !password) return;
+
+    if (errEl) { errEl.hidden = true; errEl.textContent = ''; }
+    if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = '登入中…'; }
+    try {
+        await loginWithPassword(email, password);
+        closeLoginModal();
+        showToast('✓ 已登入');
+    } catch (err) {
+        if (errEl) {
+            errEl.textContent = err.message || '登入失敗';
+            errEl.hidden = false;
+        }
+    } finally {
+        if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = '登入'; }
+    }
+}
+
+async function handleAuthButtonClick() {
+    if (isAuthed()) {
+        if (!confirm('要登出嗎？登出後將切回檢視模式。')) return;
+        await logout();
+        showToast('已登出');
+    } else {
+        openLoginModal();
+    }
 }
 
 // ─── Save / Load ─────────────────────────────────────────────────────────────
@@ -803,6 +959,11 @@ function buildVisitRecord() {
 async function saveRecord() {
     if (!isCloudReady()) {
         warnNoCloud();
+        return;
+    }
+    if (!isAuthed()) {
+        alert('請先登入才能儲存記錄。');
+        openLoginModal();
         return;
     }
     const mode = appMode;
@@ -1066,6 +1227,11 @@ async function loadRecord() {
 async function deleteRecord() {
     if (!isCloudReady()) {
         warnNoCloud();
+        return;
+    }
+    if (!isAuthed()) {
+        alert('請先登入才能刪除記錄。');
+        openLoginModal();
         return;
     }
     const sel = document.getElementById('recordList');
@@ -1383,6 +1549,11 @@ function bindStaticListeners() {
         btn.addEventListener('click', () => setAppMode(btn.dataset.mode));
     });
 
+    const authBtn = document.getElementById('authBtn');
+    if (authBtn) authBtn.addEventListener('click', handleAuthButtonClick);
+    const loginForm = document.getElementById('loginForm');
+    if (loginForm) loginForm.addEventListener('submit', handleLoginSubmit);
+
     const photoInput = document.getElementById('visitPhotoInput');
     if (photoInput) {
         photoInput.addEventListener('change', e => {
@@ -1410,6 +1581,8 @@ document.addEventListener('DOMContentLoaded', () => {
     refreshTotalDisplay();
     initializeEvaluationAccordion();
     bindStaticListeners();
+    applyAuthUI();
+    initAuth();
     updateRecordList();
     loadShopOptions();
 });

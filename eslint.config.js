@@ -14,6 +14,7 @@ export default [
             globals: {
                 ...globals.browser,
                 Tesseract: 'readonly',
+                bootstrap: 'readonly',
             },
         },
         rules: {
