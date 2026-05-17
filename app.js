@@ -11,7 +11,6 @@ const SUPABASE_CONFIG = Object.assign({
     schema: 'coffee',
     table: 'coffee_records',
     visitTable: 'visit_records',
-    bucket: 'bean-photos',
     visitBucket: 'visit-photos',
 }, (typeof window !== 'undefined' && window.SUPABASE_CONFIG) || {});
 
@@ -772,18 +771,21 @@ function applyAuthUI() {
     }
 }
 
+// 把預設 list / shop options 拉取放在 session 還原後執行，避免
+// data-auth="loading" → "view" / "edit" 之間的 FOUC，也避免未來 SELECT
+// 收緊時遇到首次 401。
 async function initAuth() {
-    applyAuthUI();
-    if (!isCloudReady()) {
-        authState.ready = true;
-        return;
-    }
-    const sb = await ensureSupabase();
-    if (!sb) {
+    const finish = () => {
         authState.ready = true;
         applyAuthUI();
-        return;
-    }
+        updateRecordList();
+        loadShopOptions();
+    };
+
+    if (!isCloudReady()) { finish(); return; }
+    const sb = await ensureSupabase();
+    if (!sb) { finish(); return; }
+
     try {
         const { data } = await sb.auth.getSession();
         authState.user = data?.session?.user || null;
@@ -791,8 +793,7 @@ async function initAuth() {
         console.warn('getSession failed:', e);
         authState.user = null;
     }
-    authState.ready = true;
-    applyAuthUI();
+    finish();
 
     sb.auth.onAuthStateChange((_event, session) => {
         const next = session?.user || null;
@@ -1581,8 +1582,6 @@ document.addEventListener('DOMContentLoaded', () => {
     refreshTotalDisplay();
     initializeEvaluationAccordion();
     bindStaticListeners();
-    applyAuthUI();
+    // initAuth 內部會在 session 還原後呼叫 applyAuthUI + updateRecordList + loadShopOptions
     initAuth();
-    updateRecordList();
-    loadShopOptions();
 });

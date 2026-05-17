@@ -129,11 +129,12 @@ body {
 }
 .view-mode-banner i { font-size: 1rem; }
 body[data-auth="view"] .view-mode-banner { display: flex; }
-body[data-auth="edit"] .view-mode-banner { display: none; }
 
-/* VIEW 模式下隱藏寫入動作 */
-body[data-auth="view"] #saveBtn,
-body[data-auth="view"] #deleteBtn { display: none; }
+/* 非 edit（loading + view）一律藏寫入動作；loading 期間連 auth-bar 一起藏，
+   避免「檢視模式」chip 在 session 還原前先閃一下 */
+body:not([data-auth="edit"]) #saveBtn,
+body:not([data-auth="edit"]) #deleteBtn { display: none; }
+body[data-auth="loading"] .auth-bar { visibility: hidden; }
 
 /* ───── Login modal ────────────────────────────────────────────────────── */
 .login-hint {
