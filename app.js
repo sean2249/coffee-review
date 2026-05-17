@@ -10,7 +10,9 @@ const SUPABASE_CONFIG = Object.assign({
     anonKey: '',
     schema: 'coffee',
     table: 'coffee_records',
+    visitTable: 'visit_records',
     bucket: 'bean-photos',
+    visitBucket: 'visit-photos',
 }, (typeof window !== 'undefined' && window.SUPABASE_CONFIG) || {});
 
 // ─── Tier definitions — flat medal, professional naming ─────────────────────
@@ -114,6 +116,30 @@ const flavors = [
 // ─── State ───────────────────────────────────────────────────────────────────
 const coeState = { coeTotal: 82, selectedTierId: 'common' };
 let supabaseClient = null;
+
+// 'beans' = 自己沖煮（coffee_records）；'visit' = 店家探訪（visit_records）
+let appMode = 'beans';
+
+// Visit-mode photo staging: new File 物件待上傳 + 已存在 Storage 的路徑
+const visitPhotos = [];
+const visitPhotoPaths = [];
+
+function currentTable() {
+    return appMode === 'visit' ? SUPABASE_CONFIG.visitTable : SUPABASE_CONFIG.table;
+}
+
+function setAppMode(mode) {
+    if (mode === appMode) return;
+    appMode = mode;
+    document.body.dataset.mode = mode;
+    document.querySelectorAll('.mode-tab').forEach(btn => {
+        const active = btn.dataset.mode === mode;
+        btn.classList.toggle('active', active);
+        btn.setAttribute('aria-selected', active);
+    });
+    resetFormToDefaults();
+    updateRecordList();
+}
 
 // ─── CoE Medal Card — render & interaction ───────────────────────────────────
 function renderTierMedals() {
@@ -709,18 +735,21 @@ function showToast(msg, ms = 1800) {
 }
 
 // ─── Save / Load ─────────────────────────────────────────────────────────────
-const BASIC_FIELDS = ['name', 'origin', 'process', 'roast', 'grind', 'water_temp',
-                      'ratio', 'method', 'extraction_time', 'defects', 'notes'];
+const BEANS_BASIC_FIELDS = ['name', 'origin', 'process', 'roast', 'grind', 'water_temp',
+                            'ratio', 'method', 'extraction_time'];
+const SHARED_BASIC_FIELDS = ['defects', 'notes'];
+const BASIC_FIELDS = [...BEANS_BASIC_FIELDS, ...SHARED_BASIC_FIELDS];
+const VISIT_BASIC_FIELDS = ['shop_name', 'shop_location', 'visit_date', 'item_ordered', 'price'];
+const VISIT_NOTE_FIELDS = ['atmosphere_notes', 'decor_notes', 'service_notes'];
 
-function buildRecord() {
-    const record = {
-        schema_version: 3,
+function buildEvaluationPayload() {
+    const payload = {
         coe_total: coeState.coeTotal,
         coe_tier_id: coeState.selectedTierId,
         evaluations: {},
         observation: {},
     };
-    BASIC_FIELDS.forEach(id => { record[id] = document.getElementById(id).value; });
+    SHARED_BASIC_FIELDS.forEach(id => { payload[id] = document.getElementById(id).value; });
 
     referenceFields.forEach(f => {
         const entry = {
@@ -735,7 +764,7 @@ function buildRecord() {
         if (f.hasFlavorWheel) {
             entry.flavors = getSelectedFlavorIds(`${f.key}_flavorList`);
         }
-        record.evaluations[f.key] = entry;
+        payload.evaluations[f.key] = entry;
     });
 
     observationFields.forEach(f => {
@@ -747,10 +776,34 @@ function buildRecord() {
         if (f.hasFlavorWheel) {
             entry.flavors = getSelectedFlavorIds(`${f.key}_flavorList`);
         }
-        record.observation[f.key] = entry;
+        payload.observation[f.key] = entry;
     });
 
+    return payload;
+}
+
+function buildBeansRecord() {
+    const record = { schema_version: 3, ...buildEvaluationPayload() };
+    BEANS_BASIC_FIELDS.forEach(id => { record[id] = document.getElementById(id).value; });
     return record;
+}
+
+function buildVisitRecord() {
+    const record = { schema_version: 1, ...buildEvaluationPayload() };
+    VISIT_BASIC_FIELDS.forEach(id => {
+        const el = document.getElementById(id);
+        let val = el.value;
+        if (id === 'price') val = val === '' ? null : Number(val);
+        else if (id === 'visit_date') val = val === '' ? null : val;
+        record[id] = val;
+    });
+    VISIT_NOTE_FIELDS.forEach(id => { record[id] = document.getElementById(id).value; });
+    record.photo_paths = [];
+    return record;
+}
+
+function buildRecord() {
+    return appMode === 'visit' ? buildVisitRecord() : buildBeansRecord();
 }
 
 async function saveRecord() {
@@ -758,16 +811,22 @@ async function saveRecord() {
         warnNoCloud();
         return;
     }
-    const recordName = prompt('請為此記錄命名:', document.getElementById('name').value || '');
+    const defaultName = appMode === 'visit'
+        ? document.getElementById('shop_name').value
+        : document.getElementById('name').value;
+    const recordName = prompt('請為此記錄命名:', defaultName || '');
     if (!recordName) return;
 
-    const data = buildRecord();
-    data.title = recordName;
-    // created_at 交給 Supabase 的 now() 預設值，避免使用者本機時鐘錯誤
-
     try {
+        const data = buildRecord();
+        data.title = recordName;
+        if (appMode === 'visit') {
+            data.photo_paths = await uploadVisitPhotos();
+        }
+        // created_at 交給 Supabase 的 now() 預設值，避免使用者本機時鐘錯誤
+
         const sb = await ensureSupabase();
-        const { error } = await sb.from(SUPABASE_CONFIG.table).insert(data);
+        const { error } = await sb.from(currentTable()).insert(data);
         if (error) throw error;
         showToast(`✓ 已儲存到雲端 — ${recordName}`);
         updateRecordList();
@@ -776,10 +835,30 @@ async function saveRecord() {
     }
 }
 
+function resetVisitFields() {
+    VISIT_BASIC_FIELDS.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.value = '';
+    });
+    VISIT_NOTE_FIELDS.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.value = '';
+    });
+    visitPhotos.length = 0;
+    visitPhotoPaths.length = 0;
+    const fileInput = document.getElementById('visitPhotoInput');
+    if (fileInput) fileInput.value = '';
+    renderVisitPhotoPreviews();
+}
+
 function resetFormToDefaults() {
-    BASIC_FIELDS.forEach(id => { document.getElementById(id).value = ''; });
+    BASIC_FIELDS.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.value = '';
+    });
     collapseNotesSlot('notes');
     document.getElementById('ocrPreview').classList.remove('active');
+    resetVisitFields();
 
     coeState.coeTotal = 82;
     coeState.selectedTierId = 'common';
@@ -815,10 +894,32 @@ function resetFormToDefaults() {
 
 function applyRecord(record) {
     BASIC_FIELDS.forEach(id => {
-        if (record[id] != null) document.getElementById(id).value = record[id];
+        if (record[id] != null) {
+            const el = document.getElementById(id);
+            if (el) el.value = record[id];
+        }
     });
     if (document.getElementById('notes')?.value) {
         expandNotesSlot('notes', { focus: false });
+    }
+
+    if (appMode === 'visit') {
+        VISIT_BASIC_FIELDS.forEach(id => {
+            if (record[id] != null) {
+                const el = document.getElementById(id);
+                if (el) el.value = record[id];
+            }
+        });
+        VISIT_NOTE_FIELDS.forEach(id => {
+            if (record[id] != null) {
+                const el = document.getElementById(id);
+                if (el) el.value = record[id];
+            }
+        });
+        visitPhotoPaths.length = 0;
+        visitPhotos.length = 0;
+        (record.photo_paths || []).forEach(p => visitPhotoPaths.push(p));
+        renderVisitPhotoPreviews();
     }
 
     coeState.coeTotal = typeof record.coe_total === 'number' ? record.coe_total : 82;
@@ -879,7 +980,7 @@ async function loadRecord() {
     if (!id) return;
     try {
         const sb = await ensureSupabase();
-        const { data, error } = await sb.from(SUPABASE_CONFIG.table).select('*').eq('id', id).single();
+        const { data, error } = await sb.from(currentTable()).select('*').eq('id', id).single();
         if (error) throw error;
         resetFormToDefaults();
         applyRecord(data);
@@ -901,7 +1002,7 @@ async function deleteRecord() {
     if (!confirm(`刪除 "${title}"？`)) return;
     try {
         const sb = await ensureSupabase();
-        const { error } = await sb.from(SUPABASE_CONFIG.table).delete().eq('id', id);
+        const { error } = await sb.from(currentTable()).delete().eq('id', id);
         if (error) throw error;
         showToast('✓ 已刪除');
         updateRecordList();
@@ -935,7 +1036,7 @@ async function updateRecordList() {
     }
     try {
         const sb = await ensureSupabase();
-        const { data, error } = await sb.from(SUPABASE_CONFIG.table)
+        const { data, error } = await sb.from(currentTable())
             .select('id, title, created_at')
             .order('created_at', { ascending: false });
         if (error) throw error;
@@ -1039,6 +1140,63 @@ function copyToClipboard() {
         .catch(() => alert('複製失敗'));
 }
 
+// ─── Visit photos — upload + preview ────────────────────────────────────────
+async function uploadVisitPhotos() {
+    const merged = [...visitPhotoPaths];
+    if (visitPhotos.length === 0) return merged;
+    const sb = await ensureSupabase();
+    for (const file of visitPhotos) {
+        const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
+        const safeExt = /^[a-z0-9]{1,5}$/.test(ext) ? ext : 'jpg';
+        const path = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${safeExt}`;
+        const { error } = await sb.storage
+            .from(SUPABASE_CONFIG.visitBucket)
+            .upload(path, file, { contentType: file.type || undefined });
+        if (error) throw error;
+        merged.push(path);
+    }
+    visitPhotos.length = 0;
+    return merged;
+}
+
+function visitPhotoUrl(path) {
+    if (/^https?:\/\//.test(path)) return path;
+    if (!supabaseClient) return '';
+    return supabaseClient.storage
+        .from(SUPABASE_CONFIG.visitBucket)
+        .getPublicUrl(path).data.publicUrl;
+}
+
+function renderVisitPhotoPreviews() {
+    const container = document.getElementById('visitPhotoPreviews');
+    if (!container) return;
+    const html = [];
+    visitPhotoPaths.forEach((path, i) => {
+        html.push(
+            `<div class="thumb">
+                <img src="${visitPhotoUrl(path)}" alt="">
+                <button type="button" class="thumb-remove"
+                        data-kind="stored" data-idx="${i}" aria-label="移除照片">✕</button>
+            </div>`
+        );
+    });
+    visitPhotos.forEach((file, i) => {
+        const url = URL.createObjectURL(file);
+        html.push(
+            `<div class="thumb" data-object-url="${url}">
+                <img src="${url}" alt="">
+                <button type="button" class="thumb-remove"
+                        data-kind="pending" data-idx="${i}" aria-label="移除照片">✕</button>
+            </div>`
+        );
+    });
+    // Revoke any old object URLs before swapping innerHTML
+    container.querySelectorAll('.thumb[data-object-url]').forEach(t => {
+        URL.revokeObjectURL(t.dataset.objectUrl);
+    });
+    container.innerHTML = html.join('');
+}
+
 // ─── Init ────────────────────────────────────────────────────────────────────
 function bindStaticListeners() {
     document.getElementById('loadBtn').addEventListener('click', loadRecord);
@@ -1058,6 +1216,30 @@ function bindStaticListeners() {
         if (!toggle) return;
         expandNotesSlot(toggle.dataset.notesTarget);
     });
+
+    document.querySelectorAll('.mode-tab').forEach(btn => {
+        btn.addEventListener('click', () => setAppMode(btn.dataset.mode));
+    });
+
+    const photoInput = document.getElementById('visitPhotoInput');
+    if (photoInput) {
+        photoInput.addEventListener('change', e => {
+            for (const f of e.target.files) visitPhotos.push(f);
+            e.target.value = '';
+            renderVisitPhotoPreviews();
+        });
+    }
+    const photoContainer = document.getElementById('visitPhotoPreviews');
+    if (photoContainer) {
+        photoContainer.addEventListener('click', e => {
+            const btn = e.target.closest('.thumb-remove');
+            if (!btn) return;
+            const idx = Number(btn.dataset.idx);
+            if (btn.dataset.kind === 'pending') visitPhotos.splice(idx, 1);
+            else if (btn.dataset.kind === 'stored') visitPhotoPaths.splice(idx, 1);
+            renderVisitPhotoPreviews();
+        });
+    }
 }
 
 document.addEventListener('DOMContentLoaded', () => {
