@@ -803,16 +803,14 @@ function buildVisitRecord() {
     return record;
 }
 
-function buildRecord() {
-    return appMode === 'visit' ? buildVisitRecord() : buildBeansRecord();
-}
-
 async function saveRecord() {
     if (!isCloudReady()) {
         warnNoCloud();
         return;
     }
-    const defaultName = appMode === 'visit'
+    const mode = appMode;
+    const table = mode === 'visit' ? SUPABASE_CONFIG.visitTable : SUPABASE_CONFIG.table;
+    const defaultName = mode === 'visit'
         ? document.getElementById('shop_name').value
         : document.getElementById('name').value;
     const recordName = prompt('請為此記錄命名:', defaultName || '');
@@ -820,16 +818,16 @@ async function saveRecord() {
 
     let uploadedPaths = [];
     try {
-        const data = buildRecord();
+        const data = mode === 'visit' ? buildVisitRecord() : buildBeansRecord();
         data.title = recordName;
-        if (appMode === 'visit') {
+        if (mode === 'visit') {
             uploadedPaths = await uploadVisitPhotos();
             data.photo_paths = [...visitPhotoPaths, ...uploadedPaths];
         }
         // created_at 交給 Supabase 的 now() 預設值，避免使用者本機時鐘錯誤
 
         const sb = await ensureSupabase();
-        const { error } = await sb.from(currentTable()).insert(data);
+        const { error } = await sb.from(table).insert(data);
         if (error) {
             if (uploadedPaths.length) {
                 await sb.storage.from(SUPABASE_CONFIG.visitBucket)
@@ -838,14 +836,14 @@ async function saveRecord() {
             throw error;
         }
 
-        if (appMode === 'visit' && uploadedPaths.length) {
+        if (mode === 'visit' && uploadedPaths.length && appMode === 'visit') {
             visitPhotoPaths.push(...uploadedPaths);
             visitPhotos.length = 0;
             renderVisitPhotoPreviews();
         }
 
         showToast(`✓ 已儲存到雲端 — ${recordName}`);
-        updateRecordList();
+        if (mode === appMode) updateRecordList();
         loadShopOptions();
     } catch (e) {
         alert('儲存失敗: ' + (e.message || e));
@@ -1048,28 +1046,50 @@ async function deleteRecord() {
     if (!id) return;
     const title = sel.options[sel.selectedIndex]?.textContent || '';
     if (!confirm(`刪除 "${title}"？`)) return;
+    const mode = appMode;
+    const table = mode === 'visit' ? SUPABASE_CONFIG.visitTable : SUPABASE_CONFIG.table;
     try {
         const sb = await ensureSupabase();
-        let photoPathsToCleanup = [];
-        if (appMode === 'visit') {
-            const { data, error: fetchErr } = await sb.from(currentTable())
+        let candidatePhotoPaths = [];
+        if (mode === 'visit') {
+            const { data, error: fetchErr } = await sb.from(table)
                 .select('photo_paths').eq('id', id).single();
             if (!fetchErr && Array.isArray(data?.photo_paths)) {
-                photoPathsToCleanup = data.photo_paths;
+                candidatePhotoPaths = data.photo_paths;
             }
         }
-        const { error } = await sb.from(currentTable()).delete().eq('id', id);
+        const { error } = await sb.from(table).delete().eq('id', id);
         if (error) throw error;
-        if (photoPathsToCleanup.length) {
-            await sb.storage.from(SUPABASE_CONFIG.visitBucket)
-                .remove(photoPathsToCleanup)
-                .catch(err => console.warn('orphan photo cleanup failed:', err));
+        if (candidatePhotoPaths.length) {
+            const orphans = await findOrphanPhotoPaths(sb, table, candidatePhotoPaths);
+            if (orphans.length) {
+                await sb.storage.from(SUPABASE_CONFIG.visitBucket)
+                    .remove(orphans)
+                    .catch(err => console.warn('orphan photo cleanup failed:', err));
+            }
         }
         showToast('✓ 已刪除');
-        updateRecordList();
+        if (mode === appMode) updateRecordList();
     } catch (e) {
         alert('刪除失敗: ' + (e.message || e));
     }
+}
+
+async function findOrphanPhotoPaths(sb, table, paths) {
+    const orphans = [];
+    for (const path of paths) {
+        try {
+            const { data, error } = await sb.from(table)
+                .select('id')
+                .contains('photo_paths', [path])
+                .limit(1);
+            if (error) continue;
+            if (!data || data.length === 0) orphans.push(path);
+        } catch {
+            // skip on error — better to leave a possibly-shared file than break a sibling
+        }
+    }
+    return orphans;
 }
 
 function refreshRecordActionButtons() {
