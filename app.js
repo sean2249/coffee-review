@@ -123,6 +123,7 @@ let appMode = 'beans';
 // Visit-mode photo staging: new File 物件待上傳 + 已存在 Storage 的路徑
 const visitPhotos = [];
 const visitPhotoPaths = [];
+let isSavingVisit = false;
 
 function setAppMode(mode) {
     if (mode === appMode) return;
@@ -812,11 +813,19 @@ async function saveRecord() {
     const recordName = prompt('請為此記錄命名:', defaultName || '');
     if (!recordName) return;
 
-    // Snapshot photo state synchronously before any await — UI remains
-    // interactive during upload, so visitPhotos/visitPhotoPaths could be
-    // mutated by tab switch (resetVisitFields) or thumb-remove clicks.
+    // Snapshot photo state synchronously before any await, and lock photo
+    // controls during the save so users can't mid-flight remove a thumb
+    // whose file is already being uploaded.
     const snapshotPaths = mode === 'visit' ? [...visitPhotoPaths] : [];
     const snapshotFiles = mode === 'visit' ? [...visitPhotos] : [];
+    const saveBtn = document.getElementById('saveBtn');
+    const photoInput = document.getElementById('visitPhotoInput');
+    if (saveBtn) saveBtn.disabled = true;
+    if (mode === 'visit') {
+        isSavingVisit = true;
+        if (photoInput) photoInput.disabled = true;
+        renderVisitPhotoPreviews();
+    }
 
     let uploadedPaths = [];
     try {
@@ -847,7 +856,6 @@ async function saveRecord() {
                 if (idx >= 0) visitPhotos.splice(idx, 1);
             }
             visitPhotoPaths.push(...uploadedPaths);
-            renderVisitPhotoPreviews();
         }
 
         showToast(`✓ 已儲存到雲端 — ${recordName}`);
@@ -855,6 +863,13 @@ async function saveRecord() {
         loadShopOptions();
     } catch (e) {
         alert('儲存失敗: ' + (e.message || e));
+    } finally {
+        if (saveBtn) saveBtn.disabled = false;
+        if (mode === 'visit') {
+            isSavingVisit = false;
+            if (photoInput) photoInput.disabled = false;
+            if (appMode === 'visit') renderVisitPhotoPreviews();
+        }
     }
 }
 
@@ -1328,6 +1343,7 @@ function renderVisitPhotoPreviews() {
         btn.className = 'thumb-remove';
         btn.dataset.kind = kind;
         btn.dataset.idx = String(idx);
+        btn.disabled = isSavingVisit;
         btn.setAttribute('aria-label', '移除照片');
         btn.textContent = '✕';
         div.append(img, btn);
