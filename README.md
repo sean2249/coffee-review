@@ -1,6 +1,12 @@
 # Coffee Review
 
+[![Deploy](https://github.com/sean2249/coffee-review/actions/workflows/deploy.yml/badge.svg)](https://github.com/sean2249/coffee-review/actions/workflows/deploy.yml)
+[![Lint](https://github.com/sean2249/coffee-review/actions/workflows/lint.yml/badge.svg)](https://github.com/sean2249/coffee-review/actions/workflows/lint.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 個人用咖啡杯測記錄工具，視覺呈現參考 **CoE (Cup of Excellence)** 國際精品咖啡比賽格式，但評分流程做了個人化客製：使用者直接決定總分，下方各項僅供對照印象。
+
+**線上 Demo**：<https://sean2249.github.io/coffee-review/>
 
 ## Project Purpose
 
