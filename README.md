@@ -99,17 +99,37 @@ C. **取得連線資訊**：Settings → API 複製 *Project URL* 與 *anon publ
 
 ### 2. 前端配置
 
-打開 `app.js`，把頂端的 `SUPABASE_CONFIG` 填好：
+連線資訊**不放在 repo**，避免公開暴露。兩種來源擇一：
 
-```js
-const SUPABASE_CONFIG = {
-    url: 'https://xxxxx.supabase.co',
-    anonKey: 'eyJ...',
-    schema: 'coffee',         // 或 'public'，看你怎麼建
-    table: 'coffee_records',
-    bucket: 'bean-photos',    // 預留給 OCR 照片上傳
-};
+**A. 本地開發 / 本機跑測試**
+
+```bash
+cp config.example.js config.js
+# 編輯 config.js 填入 url + anonKey
 ```
+
+`config.js` 已寫進 `.gitignore`，不會 commit。
+
+**B. 部署到 GitHub Pages**
+
+在 repo Settings 加 2 個 secret：
+
+| Name | Value |
+|---|---|
+| `SUPABASE_URL` | `https://xxxxx.supabase.co` |
+| `SUPABASE_ANON_KEY` | `sb_publishable_...`（或舊版 anon JWT）|
+
+Settings → Pages → Source 選 **GitHub Actions**。
+
+之後 push 到 `main` 時 `.github/workflows/deploy.yml` 會：
+1. 用 secret 產生 `config.js`
+2. 把整個專案 upload 為 Pages artifact
+3. 自動部署
+
+最終 URL 通常是 `https://<username>.github.io/<repo>/`。
+
+> 進階：如果想 schema/table/bucket 也走 secret，把 workflow 裡的
+> `config.js` 產生段加上對應的 secret 即可。
 
 ### ⚠️ 安全提醒
 

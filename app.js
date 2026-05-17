@@ -2,16 +2,16 @@
    Coffee Review — CoE evaluation app
    ========================================================================== */
 
-// ─── Supabase config (paste your URL + anon key here once set up) ────────────
-// 與其他專案共用 Supabase？把所有資料放在獨立 schema 即可。
-// 記得在 Supabase Dashboard → Settings → API → "Exposed schemas" 加上 schema 名稱。
-const SUPABASE_CONFIG = {
-    url: '',                  // e.g. 'https://xxxxx.supabase.co'
-    anonKey: '',              // anon/public key
-    schema: 'coffee',         // 自訂 schema 名稱（與其他專案隔離）
+// ─── Supabase config ─────────────────────────────────────────────────────────
+// 真正的 URL / anonKey 不放在這裡。本地開發請 cp config.example.js → config.js；
+// GitHub Pages 由 .github/workflows/deploy.yml 用 secrets 自動產生 config.js。
+const SUPABASE_CONFIG = Object.assign({
+    url: '',
+    anonKey: '',
+    schema: 'coffee',
     table: 'coffee_records',
     bucket: 'bean-photos',
-};
+}, (typeof window !== 'undefined' && window.SUPABASE_CONFIG) || {});
 
 // ─── Tier definitions — flat medal, professional naming ─────────────────────
 const totalScoreTiers = [
