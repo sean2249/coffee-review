@@ -1,51 +1,54 @@
 /* =============================================================================
    Coffee Review — CoE evaluation app
-   Theme: Coffee Warm — Flat & SCA-professional
+   Theme: Specialty Lab — clean, neutral, instrument-grade
    ========================================================================== */
 
 :root {
     /* Surfaces */
-    --bg-page: #f7f0e3;
-    --bg-card: #fffaf2;
-    --bg-soft: #f0e6d3;
+    --bg-page: #f6f7f8;
+    --bg-card: #ffffff;
+    --bg-soft: #f0f2f4;
     --bg-elevated: #ffffff;
-    --bg-muted: #ecebe7;
-    --bg-muted-hover: #dedcd2;
+    --bg-muted: #eef0f2;
+    --bg-muted-hover: #e3e6ea;
 
     /* Text */
-    --text-primary: #3a2418;
-    --text-secondary: #6b4f3d;
-    --text-muted: #9a8473;
-    --text-dim: #b3a796;
+    --text-primary: #111418;
+    --text-secondary: #4b5563;
+    --text-muted: #6b7280;
+    --text-dim: #9ca3af;
 
     /* Borders */
-    --border: #e6d9c0;
-    --border-strong: #d4c0a0;
+    --border: #e5e7eb;
+    --border-strong: #d1d5db;
 
-    /* Accent (terracotta) */
-    --accent: #b8623c;
-    --accent-hover: #9b4f2e;
-    --accent-soft: #f3d9c8;
-    --accent-tint: rgba(184, 98, 60, 0.15);
+    /* Accent (deep teal — instrument / lab) */
+    --accent: #0e4d4d;
+    --accent-hover: #073a3a;
+    --accent-soft: #d3e3e3;
+    --accent-tint: rgba(14, 77, 77, 0.10);
 
-    /* Shadow */
-    --shadow-sm: 0 1px 3px rgba(58, 36, 24, 0.08);
-    --shadow-md: 0 4px 14px rgba(58, 36, 24, 0.10);
-    --shadow-lg: 0 10px 28px rgba(58, 36, 24, 0.16);
+    /* Shadow — minimal, cool */
+    --shadow-sm: 0 1px 2px rgba(17, 20, 24, 0.05);
+    --shadow-md: 0 2px 8px rgba(17, 20, 24, 0.06);
+    --shadow-lg: 0 8px 24px rgba(17, 20, 24, 0.10);
 
-    /* Radius */
-    --radius-sm: 0.4rem;
-    --radius-md: 0.65rem;
-    --radius-lg: 0.95rem;
+    /* Radius — tighter, precise */
+    --radius-sm: 0.25rem;
+    --radius-md: 0.4rem;
+    --radius-lg: 0.55rem;
 
-    /* Medal flat palettes — single solid color per tier */
-    --t1-bg: #6c757d; --t1-fg: #ffffff;
-    --t2-bg: #6e5640; --t2-fg: #ffffff;
-    --t3-bg: #b86826; --t3-fg: #ffffff;
-    --t4-bg: #9e9e9e; --t4-fg: #ffffff;
-    --t5-bg: #d4a017; --t5-fg: #3a2418;
-    --t6-bg: #6c83a3; --t6-fg: #ffffff;
-    --t7-bg: #5a2ea0; --t7-fg: #ffffff;
+    /* Mono stack for tabular numerals */
+    --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+
+    /* Medal flat palettes — desaturated data legend */
+    --t1-bg: #6b7280; --t1-fg: #ffffff;
+    --t2-bg: #78716c; --t2-fg: #ffffff;
+    --t3-bg: #a86b3c; --t3-fg: #ffffff;
+    --t4-bg: #94a3b8; --t4-fg: #111418;
+    --t5-bg: #c08c2a; --t5-fg: #111418;
+    --t6-bg: #3b7a8c; --t6-fg: #ffffff;
+    --t7-bg: #5d4ba6; --t7-fg: #ffffff;
 }
 
 /* ───── Base ───────────────────────────────────────────────────────────── */
@@ -53,10 +56,6 @@
 
 body {
     background-color: var(--bg-page);
-    background-image:
-        radial-gradient(at 0% 0%, rgba(184, 98, 60, 0.06) 0px, transparent 40%),
-        radial-gradient(at 100% 100%, rgba(140, 92, 56, 0.05) 0px, transparent 50%);
-    background-attachment: fixed;
     color: var(--text-primary);
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang TC",
                  "Noto Sans TC", "Helvetica Neue", sans-serif;
@@ -72,9 +71,9 @@ body {
     align-items: center;
     justify-content: center;
     width: 52px; height: 52px;
-    border-radius: 16px;
-    background: linear-gradient(135deg, #6b3e26 0%, #3a2418 100%);
-    color: #f7f0e3;
+    border-radius: 12px;
+    background: linear-gradient(135deg, var(--accent) 0%, var(--accent-hover) 100%);
+    color: #ffffff;
     font-size: 1.65rem;
     margin-bottom: 0.55rem;
     box-shadow: var(--shadow-md);
@@ -232,10 +231,10 @@ button.card-title {
 .btn { border-radius: var(--radius-sm); font-weight: 500; font-size: 0.9rem; transition: all 0.15s ease; }
 .btn-primary { background-color: var(--accent); border-color: var(--accent); }
 .btn-primary:hover, .btn-primary:focus { background-color: var(--accent-hover); border-color: var(--accent-hover); }
-.btn-info { background-color: #b48a5e; border-color: #b48a5e; color: #fff; }
-.btn-info:hover { background-color: #9b7148; border-color: #9b7148; color: #fff; }
-.btn-success { background-color: #6b8e4e; border-color: #6b8e4e; }
-.btn-success:hover { background-color: #557339; border-color: #557339; }
+.btn-info { background-color: #475569; border-color: #475569; color: #fff; }
+.btn-info:hover { background-color: #334155; border-color: #334155; color: #fff; }
+.btn-success { background-color: #3a7a5a; border-color: #3a7a5a; }
+.btn-success:hover { background-color: #2e6448; border-color: #2e6448; }
 .btn-outline-secondary { color: var(--text-secondary); border-color: var(--border-strong); }
 .btn-outline-secondary:hover { background-color: var(--bg-soft); color: var(--text-primary); border-color: var(--border-strong); }
 .btn-outline-danger:hover { background-color: #d9534f; border-color: #d9534f; }
@@ -249,7 +248,7 @@ button.card-title {
 
 /* ───── CoE Total Card — Flat medal style ──────────────────────────────── */
 .coe-card {
-    background: linear-gradient(135deg, var(--bg-card) 0%, var(--bg-soft) 100%);
+    background: var(--bg-card);
     border: 1px solid var(--border-strong);
 }
 
@@ -332,7 +331,7 @@ button.card-title {
     justify-content: center;
     gap: 0.4rem;
     padding: 0.65rem 0.85rem;
-    background-color: rgba(255, 255, 255, 0.55);
+    background-color: var(--bg-page);
     border: 1px dashed var(--border-strong);
     border-radius: var(--radius-md);
     margin-bottom: 1rem;
@@ -373,8 +372,9 @@ button.card-title {
     padding-top: 0.3rem;
 }
 .coe-total-display {
+    font-family: var(--font-mono);
     font-size: 2.2rem;
-    font-weight: 800;
+    font-weight: 700;
     line-height: 1;
     color: var(--text-primary);
     font-variant-numeric: tabular-nums;
@@ -433,7 +433,7 @@ button.card-title {
 }
 
 .accordion-button::after {
-    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='%236b4f3d'%3e%3cpath fill-rule='evenodd' d='M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708z'/%3e%3c/svg%3e");
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='%234b5563'%3e%3cpath fill-rule='evenodd' d='M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708z'/%3e%3c/svg%3e");
     transition: transform 0.2s ease;
 }
 
@@ -472,7 +472,8 @@ button.card-title {
 .ref-slider-value {
     min-width: 2.6rem;
     text-align: right;
-    font-weight: 700;
+    font-family: var(--font-mono);
+    font-weight: 600;
     font-size: 1.05rem;
     color: var(--text-primary);
     font-variant-numeric: tabular-nums;
@@ -494,7 +495,7 @@ button.card-title {
     border-radius: 3px;
     background:
         linear-gradient(to right, var(--accent), var(--accent)) no-repeat,
-        #e6d9c0;
+        var(--border);
     background-size: var(--slider-fill, 25%) 100%;
 }
 .form-range::-webkit-slider-thumb {
@@ -505,7 +506,7 @@ button.card-title {
     background: var(--accent);
     border: 3px solid #ffffff;
     border-radius: 50%;
-    box-shadow: 0 2px 6px rgba(58, 36, 24, 0.22);
+    box-shadow: 0 2px 6px rgba(17, 20, 24, 0.18);
     cursor: pointer;
     transition: transform 0.1s ease;
 }
@@ -514,7 +515,7 @@ button.card-title {
 
 /* Firefox */
 .form-range::-moz-range-track {
-    height: 6px; border-radius: 3px; background: #e6d9c0;
+    height: 6px; border-radius: 3px; background: var(--border);
 }
 .form-range::-moz-range-progress {
     height: 6px; border-radius: 3px; background: var(--accent);
@@ -524,7 +525,7 @@ button.card-title {
     background: var(--accent);
     border: 3px solid #ffffff;
     border-radius: 50%;
-    box-shadow: 0 2px 6px rgba(58, 36, 24, 0.22);
+    box-shadow: 0 2px 6px rgba(17, 20, 24, 0.18);
     cursor: pointer;
 }
 
@@ -610,7 +611,7 @@ button.card-title {
     background-color: var(--bg-soft) !important;
     color: var(--text-primary);
     border-radius: var(--radius-md);
-    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-family: var(--font-mono);
     font-size: 0.82rem;
     line-height: 1.55;
     max-height: 460px;
