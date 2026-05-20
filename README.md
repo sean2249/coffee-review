@@ -101,7 +101,7 @@ create trigger shops_touch_updated_at
 create table coffee.cupping_records (
     id              uuid primary key default gen_random_uuid(),
     shop_id         uuid references coffee.shops(id) on delete set null,
-    title           text not null,
+    title           text,
     bean_name       text,
     origin          text,
     process         text,
@@ -127,7 +127,7 @@ create index cupping_created_at_idx on coffee.cupping_records(created_at desc);
 create table coffee.tasting_records (
     id                uuid primary key default gen_random_uuid(),
     shop_id           uuid not null references coffee.shops(id) on delete cascade,
-    title             text not null,
+    title             text,
     visit_date        date,
     item_ordered      text,
     price             numeric,
