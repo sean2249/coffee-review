@@ -12,7 +12,8 @@ window.SUPABASE_CONFIG = {
     url: '',                  // e.g. 'https://xxxxx.supabase.co'
     anonKey: '',              // 'sb_publishable_...' 或舊版 anon JWT
     // 以下欄位有預設值（app.js 內），需要改才寫
-    // schema: 'coffee',
-    // table:  'coffee_records',
-    // bucket: 'bean-photos',
+    // schema:       'coffee',
+    // cuppingTable: 'cupping_records',
+    // tastingTable: 'tasting_records',
+    // shopsTable:   'shops',
 };
