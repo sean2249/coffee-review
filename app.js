@@ -241,17 +241,19 @@ const api = {
     async listRecords({ type = 'all', shopId = '' } = {}) {
         const sb = await ensureSupabase();
         if (!sb) return [];
-        const selectCols = 'id, title, shop_id, coe_total, coe_tier_id, created_at';
+        const baseCols = 'id, shop_id, coe_total, coe_tier_id, created_at';
         const tasks = [];
 
         if (type === 'all' || type === 'cupping') {
-            let q = sb.from(SUPABASE_CONFIG.cuppingTable).select(selectCols);
+            let q = sb.from(SUPABASE_CONFIG.cuppingTable)
+                .select(`${baseCols}, bean_name, origin`);
             if (shopId) q = q.eq('shop_id', shopId);
             tasks.push(q.order('created_at', { ascending: false })
                 .then(r => (r.data || []).map(x => ({ ...x, _type: 'cupping' }))));
         }
         if (type === 'all' || type === 'tasting') {
-            let q = sb.from(SUPABASE_CONFIG.tastingTable).select(selectCols + ', visit_date');
+            let q = sb.from(SUPABASE_CONFIG.tastingTable)
+                .select(`${baseCols}, visit_date, item_ordered, bean_name`);
             if (shopId) q = q.eq('shop_id', shopId);
             tasks.push(q.order('created_at', { ascending: false })
                 .then(r => (r.data || []).map(x => ({ ...x, _type: 'tasting' }))));
@@ -453,12 +455,20 @@ async function loadAndRenderCards() {
     }
 }
 
+function deriveTitle(r) {
+    if (r._type === 'cupping') {
+        return r.bean_name || r.origin || '(未命名杯測)';
+    }
+    return r.item_ordered || r.bean_name || '(未指定品項)';
+}
+
 function renderRecordCard(r) {
     const type = r._type;
     const tier = r.coe_tier_id ? tierById(r.coe_tier_id) : null;
     const score = typeof r.coe_total === 'number' ? r.coe_total.toFixed(1) : '—';
     const shop = shopName(r.shop_id);
     const date = type === 'tasting' && r.visit_date ? fmtDate(r.visit_date) : fmtDate(r.created_at);
+    const title = deriveTitle(r);
     return `
         <a class="record-card" href="#/${type}/${r.id}">
             <div class="record-card-medal ${tier ? tier.cssClass : ''}">
@@ -468,7 +478,7 @@ function renderRecordCard(r) {
             <div class="record-card-body">
                 <div class="record-card-top">
                     <span class="record-card-type-badge type-${type}">${type === 'tasting' ? '品鑑' : '杯測'}</span>
-                    <span class="record-card-title">${escapeHtml(r.title || '(未命名)')}</span>
+                    <span class="record-card-title">${escapeHtml(title)}</span>
                 </div>
                 <div class="record-card-meta">
                     ${shop ? `<span><i class="bi bi-shop"></i>${escapeHtml(shop)}</span>` : ''}
@@ -532,8 +542,6 @@ function setFormMode(mode) {
     document.querySelectorAll('[data-mode-text]').forEach(el => {
         el.style.display = el.dataset.modeText === mode ? '' : 'none';
     });
-    const titleInput = document.getElementById('f-title');
-    titleInput.placeholder = titleInput.dataset[`placeholder${mode.charAt(0).toUpperCase()}${mode.slice(1)}`] || '';
     const shopSel = document.getElementById('f-shop');
     if (shopSel) shopSel.required = mode === 'tasting';
 }
@@ -1178,7 +1186,6 @@ function buildEvaluationPayload() {
 }
 
 function buildFormPayload(mode) {
-    const title = document.getElementById('f-title').value.trim();
     const shopId = document.getElementById('f-shop').value || null;
     const defects = document.getElementById('f-defects').value;
     const notes = document.getElementById('f-notes').value;
@@ -1186,9 +1193,10 @@ function buildFormPayload(mode) {
     const ev = buildEvaluationPayload();
 
     if (mode === 'cupping') {
+        const beanName = document.getElementById('f-cupping-bean').value.trim() || null;
         return {
-            title,
             shop_id: shopId,
+            bean_name: beanName,
             origin: document.getElementById('f-origin').value || null,
             process: document.getElementById('f-process').value || null,
             roast: document.getElementById('f-roast').value || null,
@@ -1208,12 +1216,11 @@ function buildFormPayload(mode) {
     const priceRaw = document.getElementById('f-price').value;
     const dateRaw = document.getElementById('f-visit_date').value;
     return {
-        title,
         shop_id: shopId,
         visit_date: dateRaw || null,
         price: priceRaw === '' ? null : Number(priceRaw),
-        item_ordered: document.getElementById('f-item_ordered').value || null,
-        bean_name: document.getElementById('f-bean_name').value || null,
+        item_ordered: document.getElementById('f-item_ordered').value.trim() || null,
+        bean_name: document.getElementById('f-tasting-bean').value.trim() || null,
         brewing_method: document.getElementById('f-brewing_method').value || null,
         atmosphere_tags: getTagValues('atmosphere'),
         decor_tags:      getTagValues('decor'),
@@ -1231,11 +1238,14 @@ function buildFormPayload(mode) {
 async function submitForm() {
     if (!state.currentForm) return;
     const { mode, recordId } = state.currentForm;
-    const title = document.getElementById('f-title').value.trim();
-    if (!title) {
-        document.getElementById('f-title').focus();
-        showToast('請輸入名稱');
-        return;
+
+    if (mode === 'cupping') {
+        const beanEl = document.getElementById('f-cupping-bean');
+        if (!beanEl.value.trim()) {
+            beanEl.focus();
+            showToast('請輸入咖啡名稱 / 豆名');
+            return;
+        }
     }
     const shopId = document.getElementById('f-shop').value;
     if (mode === 'tasting' && !shopId) {
@@ -1268,8 +1278,12 @@ async function submitForm() {
 async function deleteCurrentRecord() {
     if (!state.currentForm || !state.currentForm.recordId) return;
     const { mode, recordId } = state.currentForm;
-    const title = document.getElementById('f-title').value || '此記錄';
-    if (!confirm(`刪除「${title}」？此操作無法復原。`)) return;
+    const display = mode === 'cupping'
+        ? (document.getElementById('f-cupping-bean').value.trim() || '此杯測記錄')
+        : (document.getElementById('f-item_ordered').value.trim()
+            || document.getElementById('f-tasting-bean').value.trim()
+            || '此品鑑記錄');
+    if (!confirm(`刪除「${display}」？此操作無法復原。`)) return;
     try {
         await api.deleteRecord(mode, recordId);
         showToast('✓ 已刪除');
@@ -1287,7 +1301,6 @@ async function loadRecordIntoForm(mode, recordId) {
             navigate('/records');
             return;
         }
-        document.getElementById('f-title').value = r.title || '';
 
         // shop
         const shopSel = document.getElementById('f-shop');
@@ -1306,6 +1319,7 @@ async function loadRecordIntoForm(mode, recordId) {
         if (r.notes) expandNotesSlot('f-notes', { focus: false });
 
         if (mode === 'cupping') {
+            document.getElementById('f-cupping-bean').value = r.bean_name || '';
             ['origin', 'process', 'roast', 'grind', 'water_temp', 'ratio', 'method', 'extraction_time']
                 .forEach(k => {
                     const el = document.getElementById(`f-${k}`);
@@ -1316,7 +1330,7 @@ async function loadRecordIntoForm(mode, recordId) {
             set('f-visit_date', r.visit_date || '');
             set('f-price', r.price ?? '');
             set('f-item_ordered', r.item_ordered || '');
-            set('f-bean_name', r.bean_name || '');
+            set('f-tasting-bean', r.bean_name || '');
             set('f-brewing_method', r.brewing_method || '');
 
             setTagValues('atmosphere', r.atmosphere_tags || []);

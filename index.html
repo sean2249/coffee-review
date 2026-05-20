@@ -52,21 +52,10 @@
                 </div>
             </div>
 
-            <!-- Title + shop selector (shared) -->
+            <!-- Shop selector (shared) -->
             <div class="card">
                 <div class="card-body">
-                    <h3 class="card-title"><i class="bi bi-card-heading"></i>基本資訊</h3>
-
-                    <div class="mb-2">
-                        <label for="f-title" class="form-label">
-                            <span data-mode-text="cupping">咖啡名稱 *</span>
-                            <span data-mode-text="tasting">記錄名稱 *</span>
-                        </label>
-                        <input type="text" class="form-control" id="f-title" required
-                               data-placeholder-cupping="例：衣索比亞 耶加雪菲 G1"
-                               data-placeholder-tasting="例：山小盆 — 拿鐵">
-                    </div>
-
+                    <h3 class="card-title"><i class="bi bi-shop"></i>店家</h3>
                     <div class="mb-2">
                         <label for="f-shop" class="form-label">
                             <span data-mode-text="cupping">豆源（店家）</span>
@@ -88,6 +77,11 @@
                 <div class="card-body">
                     <h3 class="card-title"><i class="bi bi-info-circle"></i>咖啡資訊</h3>
                     <div class="row g-2">
+                        <div class="col-12">
+                            <label for="f-cupping-bean" class="form-label">咖啡名稱 / 豆名 *</label>
+                            <input type="text" class="form-control" id="f-cupping-bean"
+                                   placeholder="例：衣索比亞 耶加雪菲 G1">
+                        </div>
                         <div class="col-md-4 col-6">
                             <label for="f-origin" class="form-label">產地</label>
                             <input type="text" class="form-control" id="f-origin">
@@ -160,8 +154,8 @@
                                    placeholder="例：V60 衣索比亞耶加雪菲 / 拿鐵">
                         </div>
                         <div class="col-md-6 col-12">
-                            <label for="f-bean_name" class="form-label">品項豆子名</label>
-                            <input type="text" class="form-control" id="f-bean_name"
+                            <label for="f-tasting-bean" class="form-label">品項豆子名</label>
+                            <input type="text" class="form-control" id="f-tasting-bean"
                                    placeholder="例：衣索比亞 耶加雪菲">
                         </div>
                         <div class="col-md-6 col-12">
