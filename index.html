@@ -109,9 +109,30 @@
                             <textarea class="form-control" id="f-blend_composition" rows="2"
                                       placeholder="例：50% 巴西黃波旁 + 30% 衣索比亞耶加雪菲 + 20% 哥倫比亞蕙蘭"></textarea>
                         </div>
-                        <div class="col-md-4 col-12">
-                            <label for="f-roast" class="form-label">烘焙度</label>
-                            <input type="text" class="form-control" id="f-roast">
+                        <div class="col-12">
+                            <label class="form-label d-block">烘焙度</label>
+                            <div class="roast-radio-row" role="radiogroup" aria-label="烘焙度">
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input" type="radio" name="roast" id="f-roast-light" value="淺焙">
+                                    <label class="form-check-label" for="f-roast-light">淺焙</label>
+                                </div>
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input" type="radio" name="roast" id="f-roast-medium-light" value="中淺焙">
+                                    <label class="form-check-label" for="f-roast-medium-light">中淺焙</label>
+                                </div>
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input" type="radio" name="roast" id="f-roast-medium" value="中焙">
+                                    <label class="form-check-label" for="f-roast-medium">中焙</label>
+                                </div>
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input" type="radio" name="roast" id="f-roast-medium-dark" value="中深焙">
+                                    <label class="form-check-label" for="f-roast-medium-dark">中深焙</label>
+                                </div>
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input" type="radio" name="roast" id="f-roast-dark" value="深焙">
+                                    <label class="form-check-label" for="f-roast-dark">深焙</label>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
