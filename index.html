@@ -39,19 +39,6 @@
     <template id="tpl-form">
         <form class="record-form" novalidate>
 
-            <div class="card">
-                <div class="card-body">
-                    <div class="form-mode-tabs" role="group" aria-label="記錄類型">
-                        <button type="button" class="form-mode-tab" data-form-mode="cupping">
-                            <i class="bi bi-cup-hot"></i><span>杯測</span>
-                        </button>
-                        <button type="button" class="form-mode-tab" data-form-mode="tasting">
-                            <i class="bi bi-shop"></i><span>品鑑</span>
-                        </button>
-                    </div>
-                </div>
-            </div>
-
             <!-- Shop selector (shared) -->
             <div class="card">
                 <div class="card-body">
@@ -150,6 +137,21 @@
                     </button>
                     <div id="brewingParams" class="collapse">
                         <div class="row g-2 pt-2">
+                            <div class="col-12">
+                                <label class="form-label">方法</label>
+                                <div class="brewing-method-chip-row" role="group" aria-label="沖煮方法">
+                                    <button type="button" class="brewing-method-chip"
+                                            data-method="耳掛包" aria-pressed="false">
+                                        <i class="bi bi-bag"></i>耳掛包
+                                    </button>
+                                    <button type="button" class="brewing-method-chip"
+                                            data-method="手沖" aria-pressed="false">
+                                        <i class="bi bi-cup-hot"></i>手沖
+                                    </button>
+                                </div>
+                                <input type="text" class="form-control mt-2" id="f-method"
+                                       placeholder="或自行輸入（V60、義式、冰滴⋯）">
+                            </div>
                             <div class="col-md-4 col-6">
                                 <label for="f-grind" class="form-label">研磨度</label>
                                 <input type="text" class="form-control" id="f-grind">
@@ -163,10 +165,6 @@
                                 <input type="text" class="form-control" id="f-ratio">
                             </div>
                             <div class="col-md-4 col-6">
-                                <label for="f-method" class="form-label">方法</label>
-                                <input type="text" class="form-control" id="f-method">
-                            </div>
-                            <div class="col-md-4 col-12">
                                 <label for="f-extraction_time" class="form-label">萃取時間 (s)</label>
                                 <input type="number" class="form-control" id="f-extraction_time">
                             </div>
@@ -248,29 +246,14 @@
             <div class="card">
                 <div class="card-body">
                     <h3 class="card-title"><i class="bi bi-bookmark-star-fill"></i>感官評估</h3>
-                    <div class="accordion accordion-flush" id="evaluationAccordion"></div>
-                </div>
-            </div>
-
-            <!-- Defects + final notes (shared) -->
-            <div class="card">
-                <div class="card-body">
-                    <h3 class="card-title"><i class="bi bi-exclamation-diamond"></i>瑕疵與備註</h3>
-                    <label for="f-defects" class="form-label">瑕疵記錄</label>
-                    <textarea id="f-defects" class="form-control mb-2" rows="2"
-                              placeholder="記錄任何瑕疵，例如過度萃取、雜味等..."></textarea>
-
-                    <div class="notes-slot" data-notes-slot="f-notes">
-                        <button type="button" class="notes-toggle" data-notes-target="f-notes"
-                                aria-controls="f-notes-body" aria-expanded="false">
-                            <i class="bi bi-plus-circle"></i> 加上最終備註
-                        </button>
-                        <div id="f-notes-body" class="notes-body" hidden>
-                            <label for="f-notes" class="form-label">最終備註</label>
-                            <textarea id="f-notes" class="form-control" rows="3"
-                                      placeholder="請輸入額外的備註..."></textarea>
-                        </div>
+                    <div class="evaluation-estimated-total">
+                        <span class="evaluation-estimated-label">預估總分</span>
+                        <span class="evaluation-estimated-value" id="evalEstimatedValue">76.0</span>
+                        <span class="evaluation-estimated-of">/ 100</span>
+                        <span class="evaluation-estimated-tier" id="evalEstimatedTier"></span>
+                        <span class="evaluation-estimated-hint">參考用，依下方 8 項分數估算（36 + 加總）</span>
                     </div>
+                    <div class="accordion accordion-flush" id="evaluationAccordion"></div>
                 </div>
             </div>
 

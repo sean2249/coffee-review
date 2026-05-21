@@ -187,34 +187,56 @@ button.card-title {
 .btn-outline-secondary:hover { background-color: var(--bg-soft); color: var(--text-primary); border-color: var(--border-strong); }
 .btn-outline-danger:hover { background-color: #d9534f; border-color: #d9534f; }
 
-/* ───── Form mode tabs ─────────────────────────────────────────────────── */
-.form-mode-tabs {
-    display: flex;
-    gap: 0.5rem;
+/* ───── New record mode picker ─────────────────────────────────────────── */
+.new-mode-picker-card .new-mode-picker-hint {
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    margin: 0 0 1rem;
 }
-.form-mode-tab {
-    flex: 1;
+.new-mode-picker {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 0.85rem;
+}
+.new-mode-picker-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 1.4rem 1rem;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-md);
+    color: var(--text-primary);
+    text-decoration: none;
+    text-align: center;
+    transition: border-color 0.15s, background-color 0.15s, transform 0.1s;
+}
+.new-mode-picker-btn:hover {
+    border-color: var(--accent);
+    background-color: var(--accent-tint);
+    color: var(--text-primary);
+}
+.new-mode-picker-icon {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 0.4rem;
-    padding: 0.65rem 0.8rem;
-    background: var(--bg-elevated);
-    color: var(--text-secondary);
-    border: 1px solid var(--border-strong);
-    border-radius: var(--radius-md);
-    font-weight: 600;
-    font-size: 0.95rem;
-    cursor: pointer;
-    transition: background-color 0.15s, color 0.15s, border-color 0.15s;
-}
-.form-mode-tab:hover { color: var(--accent); border-color: var(--accent); }
-.form-mode-tab.active {
+    width: 3rem;
+    height: 3rem;
+    border-radius: 50%;
     background: var(--accent-tint);
     color: var(--accent);
-    border-color: var(--accent);
+    font-size: 1.4rem;
 }
-.form-mode-tab .bi { font-size: 1.05rem; }
+.new-mode-picker-label {
+    font-size: 1.15rem;
+    font-weight: 700;
+}
+.new-mode-picker-desc {
+    font-size: 0.82rem;
+    color: var(--text-muted);
+    line-height: 1.45;
+}
 
 /* ───── Shop picker (select + add button) ──────────────────────────────── */
 .shop-picker {
@@ -780,6 +802,78 @@ button.card-title {
     box-shadow: 0 0 0 3px var(--accent-tint);
 }
 
+/* ───── Brewing method chips (耳掛包 / 手沖) ───────────────────────────── */
+.brewing-method-chip-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+.brewing-method-chip {
+    flex: 1 1 0;
+    min-width: 110px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.45rem;
+    padding: 0.7rem 1rem;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-strong);
+    background: var(--bg-elevated);
+    color: var(--text-secondary);
+    font-size: 0.98rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.12s ease;
+    font-family: inherit;
+}
+.brewing-method-chip:hover { color: var(--accent); border-color: var(--accent); }
+.brewing-method-chip.selected {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+}
+.brewing-method-chip:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px var(--accent-tint);
+}
+
+/* ───── Estimated total (sensory eval) ─────────────────────────────────── */
+.evaluation-estimated-total {
+    display: flex;
+    align-items: baseline;
+    gap: 0.4rem;
+    flex-wrap: wrap;
+    padding: 0.6rem 0.8rem;
+    margin-bottom: 0.6rem;
+    background: var(--bg-soft);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+}
+.evaluation-estimated-label {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    font-weight: 600;
+}
+.evaluation-estimated-value {
+    font-family: var(--font-mono);
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.02em;
+}
+.evaluation-estimated-of { font-size: 0.78rem; color: var(--text-dim); }
+.evaluation-estimated-tier {
+    font-size: 0.92rem;
+    font-weight: 700;
+    padding-left: 0.4rem;
+}
+.evaluation-estimated-hint {
+    flex-basis: 100%;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+
 /* ───── Notes slot ─────────────────────────────────────────────────────── */
 .notes-slot .notes-toggle {
     display: inline-flex;
@@ -808,6 +902,16 @@ button.card-title {
     display: flex;
     justify-content: flex-end;
     margin-bottom: 0.85rem;
+}
+.page-action-bar.shops-action-bar {
+    justify-content: space-between;
+    gap: 0.6rem;
+    align-items: center;
+}
+.shops-search-input {
+    flex: 1;
+    min-width: 0;
+    max-width: 360px;
 }
 
 /* ───── Action bar (form submit) ───────────────────────────────────────── */
@@ -1001,6 +1105,152 @@ hr { border-color: var(--border); opacity: 0.7; }
 }
 .toast-msg.show { opacity: 1; }
 
+/* ───── Read-only record detail view ──────────────────────────────────── */
+.detail-back-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.6rem;
+    margin-bottom: 0.85rem;
+}
+.detail-back-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    color: var(--text-secondary);
+    text-decoration: none;
+    font-size: 0.92rem;
+}
+.detail-back-link:hover { color: var(--accent); }
+.detail-header-card .detail-title {
+    font-size: 1.35rem;
+    font-weight: 700;
+    margin: 0 0 0.45rem;
+    color: var(--text-primary);
+}
+.detail-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem 0.85rem;
+    color: var(--text-muted);
+    font-size: 0.88rem;
+}
+.detail-meta .bi { margin-right: 0.25rem; color: var(--text-dim); }
+.detail-list {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    column-gap: 0.85rem;
+    row-gap: 0.4rem;
+    margin: 0;
+}
+.detail-list dt {
+    color: var(--text-muted);
+    font-weight: 500;
+    font-size: 0.88rem;
+}
+.detail-list dd {
+    margin: 0;
+    color: var(--text-primary);
+    font-size: 0.95rem;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+.detail-eval-section {
+    padding: 0.65rem 0;
+    border-bottom: 1px solid var(--border);
+}
+.detail-eval-section:last-child { border-bottom: none; }
+.detail-eval-section-title {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    margin: 0 0 0.45rem;
+    font-size: 0.96rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+.detail-eval-section-label { flex: 1; }
+.detail-eval-score {
+    font-family: var(--font-mono);
+    font-weight: 700;
+    color: var(--accent);
+    font-variant-numeric: tabular-nums;
+}
+.detail-eval-row {
+    display: flex;
+    gap: 0.55rem;
+    align-items: baseline;
+    margin: 0.2rem 0;
+}
+.detail-eval-key {
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    min-width: 4.5rem;
+}
+.detail-eval-val {
+    color: var(--text-primary);
+    font-size: 0.92rem;
+    flex: 1;
+    overflow-wrap: anywhere;
+}
+.detail-eval-notes {
+    margin: 0.45rem 0 0;
+    padding: 0.5rem 0.7rem;
+    background: var(--bg-soft);
+    border-left: 3px solid var(--accent);
+    border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+    color: var(--text-secondary);
+    font-size: 0.88rem;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+.detail-flavor-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    margin: 0.45rem 0 0.2rem;
+}
+.detail-flavor-chip {
+    display: inline-block;
+    padding: 0.2rem 0.65rem;
+    border-radius: 999px;
+    background: var(--ft-color, var(--accent));
+    color: #fff;
+    font-size: 0.82rem;
+    font-weight: 500;
+}
+.detail-tag-section { margin-bottom: 0.85rem; }
+.detail-tag-section:last-child { margin-bottom: 0; }
+.detail-tag-section-title {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    color: var(--text-secondary);
+    font-size: 0.88rem;
+    font-weight: 600;
+    margin-bottom: 0.35rem;
+}
+.detail-tag-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+    margin-bottom: 0.3rem;
+}
+.detail-tag-pill {
+    padding: 0.18rem 0.65rem;
+    background: var(--accent-tint);
+    color: var(--accent);
+    border-radius: 999px;
+    font-size: 0.82rem;
+    font-weight: 500;
+}
+.detail-tag-notes {
+    color: var(--text-secondary);
+    font-size: 0.88rem;
+    margin: 0;
+    white-space: pre-wrap;
+}
+
 /* ───── Responsive ─────────────────────────────────────────────────────── */
 @media (max-width: 576px) {
     .card-body { padding: 0.95rem; }
@@ -1019,4 +1269,8 @@ hr { border-color: var(--border); opacity: 0.7; }
     .record-card-medal { width: 48px; height: 48px; }
     .record-card-medal-text { font-size: 0.95rem; }
     .shop-detail-name { font-size: 1.2rem; }
+    .page-action-bar.shops-action-bar { flex-wrap: wrap; }
+    .shops-search-input { max-width: none; flex-basis: 100%; }
+    .new-mode-picker-btn { padding: 1.1rem 0.8rem; }
+    .detail-header-card .detail-title { font-size: 1.15rem; }
 }

@@ -2,12 +2,12 @@
    Coffee Review — single-page app
    Pages (hash routes):
      #/records             list (filter chips + cards)         [default]
-     #/cupping/<id>        edit 杯測
-     #/tasting/<id>        edit 品鑑
-     #/new                 new record (defaults to cupping)
+     #/cupping/<id>        read-only detail 杯測
+     #/tasting/<id>        read-only detail 品鑑
+     #/new                 mode picker (杯測 / 品鑑)
      #/new/cupping         new 杯測
-     #/new/tasting         new 品鑑
-     #/shops               shop list / management
+     #/new/tasting         new 品鑑（可附 ?shop=<id>）
+     #/shops               shop list / management（含搜尋）
      #/shops/<id>          shop detail + linked records
    ========================================================================== */
 
@@ -330,9 +330,10 @@ function shopName(id) {
 // ─── Router ──────────────────────────────────────────────────────────────────
 function parseHash() {
     const raw = (location.hash || '#/records').replace(/^#\/?/, '');
-    const [pathPart] = raw.split('?');
+    const [pathPart, queryPart = ''] = raw.split('?');
     const parts = pathPart.split('/').filter(Boolean);
-    return { parts, raw };
+    const query = Object.fromEntries(new URLSearchParams(queryPart));
+    return { parts, raw, query };
 }
 
 function navigate(path) {
@@ -344,7 +345,7 @@ function navigate(path) {
 }
 
 async function renderRoute() {
-    const { parts } = parseHash();
+    const { parts, query } = parseHash();
     const root = document.getElementById('app');
 
     // Cleanup transient form state when leaving a form route
@@ -353,13 +354,14 @@ async function renderRoute() {
 
     if (parts.length === 0 || parts[0] === 'records') {
         await viewRecordsList(root);
-    } else if (parts[0] === 'new') {
-        const mode = parts[1] === 'tasting' ? 'tasting' : 'cupping';
-        await viewForm(root, { mode, recordId: null });
+    } else if (parts[0] === 'new' && !parts[1]) {
+        viewNewModePicker(root);
+    } else if (parts[0] === 'new' && (parts[1] === 'cupping' || parts[1] === 'tasting')) {
+        await viewForm(root, { mode: parts[1], recordId: null, prefillShopId: query.shop || null });
     } else if (parts[0] === 'cupping' && parts[1]) {
-        await viewForm(root, { mode: 'cupping', recordId: parts[1] });
+        await viewRecordDetail(root, { mode: 'cupping', recordId: parts[1] });
     } else if (parts[0] === 'tasting' && parts[1]) {
-        await viewForm(root, { mode: 'tasting', recordId: parts[1] });
+        await viewRecordDetail(root, { mode: 'tasting', recordId: parts[1] });
     } else if (parts[0] === 'shops' && !parts[1]) {
         await viewShopsList(root);
     } else if (parts[0] === 'shops' && parts[1]) {
@@ -509,8 +511,332 @@ function renderCloudWarning() {
     </div></div>`;
 }
 
+// ─── View: new record mode picker ───────────────────────────────────────────
+function viewNewModePicker(root) {
+    root.innerHTML = `
+        <div class="card new-mode-picker-card">
+            <div class="card-body">
+                <h3 class="card-title"><i class="bi bi-plus-circle"></i>新增記錄</h3>
+                <p class="new-mode-picker-hint">請先選擇記錄類型，建立後無法變更。</p>
+                <div class="new-mode-picker">
+                    <a class="new-mode-picker-btn" href="#/new/cupping">
+                        <span class="new-mode-picker-icon"><i class="bi bi-cup-hot"></i></span>
+                        <span class="new-mode-picker-label">杯測</span>
+                        <span class="new-mode-picker-desc">記錄自家或樣品豆，含沖煮參數與評分</span>
+                    </a>
+                    <a class="new-mode-picker-btn" href="#/new/tasting">
+                        <span class="new-mode-picker-icon"><i class="bi bi-shop"></i></span>
+                        <span class="new-mode-picker-label">品鑑</span>
+                        <span class="new-mode-picker-desc">記錄店家飲用體驗，含氛圍、裝潢、服務</span>
+                    </a>
+                </div>
+            </div>
+        </div>`;
+}
+
+// ─── View: record detail (read-only) ───────────────────────────────────────
+async function viewRecordDetail(root, { mode, recordId }) {
+    if (!isCloudReady()) {
+        root.innerHTML = renderCloudWarning();
+        return;
+    }
+    root.innerHTML = '<div class="empty-state"><i class="bi bi-hourglass-split"></i>讀取中…</div>';
+    try {
+        await refreshShopsCache();
+        const r = await api.getRecord(mode, recordId);
+        if (!r) {
+            root.innerHTML = `<div class="card"><div class="card-body">
+                <h3 class="card-title"><i class="bi bi-exclamation-circle"></i>找不到記錄</h3>
+                <a class="btn btn-primary" href="#/records">回到記錄列表</a>
+            </div></div>`;
+            return;
+        }
+        root.innerHTML = renderRecordDetail(mode, r);
+    } catch (e) {
+        console.error(e);
+        root.innerHTML = `<div class="empty-state error">
+            <i class="bi bi-exclamation-triangle"></i>讀取失敗：${escapeHtml(e.message || String(e))}
+        </div>`;
+    }
+}
+
+function renderRecordDetail(mode, r) {
+    const tier = r.coe_tier_id ? tierById(r.coe_tier_id)
+        : (typeof r.coe_total === 'number' ? tierFromScore(r.coe_total) : null);
+    const score = typeof r.coe_total === 'number' ? r.coe_total.toFixed(1) : '—';
+    const title = deriveTitle({ ...r, _type: mode });
+    const shop = shopName(r.shop_id);
+    const date = mode === 'tasting' && r.visit_date ? fmtDate(r.visit_date) : fmtDate(r.created_at);
+
+    const estTotal = computeEstimatedTotalFromRecord(r);
+    const estTier = estTotal != null ? tierFromScore(estTotal) : null;
+
+    return `
+        <div class="detail-back-bar">
+            <a class="detail-back-link" href="#/records">
+                <i class="bi bi-chevron-left"></i>返回記錄列表
+            </a>
+            <span class="record-card-type-badge type-${mode}">${mode === 'tasting' ? '品鑑' : '杯測'}</span>
+        </div>
+
+        <div class="card detail-header-card">
+            <div class="card-body">
+                <h2 class="detail-title">${escapeHtml(title)}</h2>
+                <div class="detail-meta">
+                    ${shop ? `<span><i class="bi bi-shop"></i>${escapeHtml(shop)}</span>` : ''}
+                    ${date ? `<span><i class="bi bi-calendar3"></i>${escapeHtml(date)}</span>` : ''}
+                    ${mode === 'tasting' && r.price != null
+                        ? `<span><i class="bi bi-cash-coin"></i>$${escapeHtml(String(r.price))}</span>`
+                        : ''}
+                </div>
+            </div>
+        </div>
+
+        ${renderDetailBasicCard(mode, r)}
+        ${mode === 'cupping' ? renderDetailBrewingCard(r) : ''}
+        ${mode === 'tasting' ? renderDetailTastingTagsCard(r) : ''}
+
+        <div class="card coe-card">
+            <div class="card-body">
+                <h3 class="card-title"><i class="bi bi-award-fill"></i>CoE 總分</h3>
+                <div class="coe-total-block">
+                    <span class="coe-total-display">${score}</span>
+                    <span class="coe-total-of">/ 100</span>
+                    ${tier ? `<span class="coe-total-tier-badge" style="color:${tier.color}">[ ${tier.badgeName} ]</span>` : ''}
+                    ${tier ? `<span class="coe-total-desc">${escapeHtml(tier.description)}</span>` : ''}
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-body">
+                <h3 class="card-title"><i class="bi bi-bookmark-star-fill"></i>感官評估</h3>
+                ${estTotal != null ? `
+                    <div class="evaluation-estimated-total">
+                        <span class="evaluation-estimated-label">預估總分</span>
+                        <span class="evaluation-estimated-value">${estTotal.toFixed(1)}</span>
+                        <span class="evaluation-estimated-of">/ 100</span>
+                        ${estTier ? `<span class="evaluation-estimated-tier" style="color:${estTier.color}">[ ${estTier.badgeName} ]</span>` : ''}
+                        <span class="evaluation-estimated-hint">36 + 8 項分數加總</span>
+                    </div>` : ''}
+                ${renderDetailObservations(r)}
+                ${renderDetailReferences(r)}
+                ${renderDetailDefectsNotes(r)}
+            </div>
+        </div>`;
+}
+
+function renderDetailBasicCard(mode, r) {
+    if (mode === 'cupping') {
+        const rows = [];
+        if (r.bean_type) rows.push(['豆子類型', r.bean_type === 'blend' ? '配方豆' : '單品']);
+        if (r.bean_type !== 'blend') {
+            if (r.origin) rows.push(['產地', r.origin]);
+            if (r.process) rows.push(['處理法', r.process]);
+        } else if (r.blend_composition) {
+            rows.push(['配方組成', r.blend_composition]);
+        }
+        if (r.roast) rows.push(['烘焙度', r.roast]);
+        if (rows.length === 0) return '';
+        return `
+            <div class="card">
+                <div class="card-body">
+                    <h3 class="card-title"><i class="bi bi-info-circle"></i>咖啡資訊</h3>
+                    <dl class="detail-list">
+                        ${rows.map(([k, v]) =>
+                            `<dt>${escapeHtml(k)}</dt><dd>${escapeHtml(String(v))}</dd>`).join('')}
+                    </dl>
+                </div>
+            </div>`;
+    }
+    // tasting
+    const rows = [];
+    if (r.bean_type) rows.push(['豆子類型', r.bean_type === 'blend' ? '配方豆' : '單品']);
+    if (r.item_ordered) rows.push(['點用品項', r.item_ordered]);
+    if (r.bean_name) rows.push(['品項豆子名', r.bean_name]);
+    if (r.brewing_method) rows.push(['沖煮方式', r.brewing_method]);
+    if (rows.length === 0) return '';
+    return `
+        <div class="card">
+            <div class="card-body">
+                <h3 class="card-title"><i class="bi bi-journal-text"></i>品鑑資訊</h3>
+                <dl class="detail-list">
+                    ${rows.map(([k, v]) =>
+                        `<dt>${escapeHtml(k)}</dt><dd>${escapeHtml(String(v))}</dd>`).join('')}
+                </dl>
+            </div>
+        </div>`;
+}
+
+function renderDetailBrewingCard(r) {
+    const rows = [];
+    if (r.method) rows.push(['方法', r.method]);
+    if (r.grind) rows.push(['研磨度', r.grind]);
+    if (r.water_temp) rows.push(['水溫', `${r.water_temp} °C`]);
+    if (r.ratio) rows.push(['粉水比', r.ratio]);
+    if (r.extraction_time) rows.push(['萃取時間', `${r.extraction_time} 秒`]);
+    if (rows.length === 0) return '';
+    return `
+        <div class="card">
+            <div class="card-body">
+                <h3 class="card-title"><i class="bi bi-sliders"></i>沖煮參數</h3>
+                <dl class="detail-list">
+                    ${rows.map(([k, v]) =>
+                        `<dt>${escapeHtml(k)}</dt><dd>${escapeHtml(String(v))}</dd>`).join('')}
+                </dl>
+            </div>
+        </div>`;
+}
+
+function renderDetailTastingTagsCard(r) {
+    const sections = tastingTagSections.map(sec => {
+        const tags = r[`${sec.key}_tags`] || [];
+        const notes = r[`${sec.key}_notes`] || '';
+        if (tags.length === 0 && !notes) return '';
+        return `
+            <div class="detail-tag-section">
+                <div class="detail-tag-section-title">
+                    <i class="bi ${sec.icon}"></i>${escapeHtml(sec.label)}
+                </div>
+                ${tags.length > 0 ? `<div class="detail-tag-row">
+                    ${tags.map(t => `<span class="detail-tag-pill">${escapeHtml(t)}</span>`).join('')}
+                </div>` : ''}
+                ${notes ? `<p class="detail-tag-notes">${escapeHtml(notes)}</p>` : ''}
+            </div>`;
+    }).filter(Boolean).join('');
+    if (!sections) return '';
+    return `
+        <div class="card">
+            <div class="card-body">
+                <h3 class="card-title"><i class="bi bi-emoji-smile"></i>探訪心得</h3>
+                ${sections}
+            </div>
+        </div>`;
+}
+
+function renderDetailObservations(r) {
+    if (!r.observation) return '';
+    return observationFields.map(f => {
+        const data = r.observation[f.key];
+        if (!data) return '';
+        const flavorChips = (data.flavors || [])
+            .map(decodeFlavorMeta).filter(Boolean)
+            .map(m => `<span class="detail-flavor-chip" style="--ft-color:${m.color}">${escapeHtml(m.name)}</span>`).join('');
+        const hasContent = data.dryAroma || data.wetAroma || data.notes || flavorChips;
+        if (!hasContent) return '';
+        return `
+            <div class="detail-eval-section">
+                <h4 class="detail-eval-section-title">
+                    <span class="eval-icon"><i class="bi ${f.icon}"></i></span>${escapeHtml(f.label)}
+                </h4>
+                ${data.dryAroma ? `<div class="detail-eval-row"><span class="detail-eval-key">乾香</span><span class="detail-eval-val">${escapeHtml(data.dryAroma)}</span></div>` : ''}
+                ${data.wetAroma ? `<div class="detail-eval-row"><span class="detail-eval-key">濕香</span><span class="detail-eval-val">${escapeHtml(data.wetAroma)}</span></div>` : ''}
+                ${flavorChips ? `<div class="detail-flavor-row">${flavorChips}</div>` : ''}
+                ${data.notes ? `<p class="detail-eval-notes">${escapeHtml(data.notes)}</p>` : ''}
+            </div>`;
+    }).join('');
+}
+
+function renderDetailReferences(r) {
+    if (!r.evaluations) return '';
+    return referenceFields.map(f => {
+        const data = r.evaluations[f.key];
+        if (!data) return '';
+        const score = typeof data.score === 'number' ? data.score.toFixed(1) : '—';
+        let customHtml = '';
+        if (f.custom) {
+            const pk = Object.keys(f.custom)[0], sk = Object.keys(f.custom)[1];
+            const pv = data[pk];
+            const sv = data[sk] || [];
+            if (pv) customHtml += `<div class="detail-eval-row"><span class="detail-eval-key">${escapeHtml(f.custom[pk].label)}</span><span class="detail-eval-val">${escapeHtml(pv)}</span></div>`;
+            if (sv.length > 0) customHtml += `<div class="detail-eval-row"><span class="detail-eval-key">${escapeHtml(f.custom[sk].label)}</span><span class="detail-eval-val">${sv.map(escapeHtml).join('、')}</span></div>`;
+        }
+        const flavorChips = (data.flavors || [])
+            .map(decodeFlavorMeta).filter(Boolean)
+            .map(m => `<span class="detail-flavor-chip" style="--ft-color:${m.color}">${escapeHtml(m.name)}</span>`).join('');
+        return `
+            <div class="detail-eval-section">
+                <h4 class="detail-eval-section-title">
+                    <span class="eval-icon"><i class="bi ${f.icon}"></i></span>
+                    <span class="detail-eval-section-label">${escapeHtml(f.label)}</span>
+                    <span class="detail-eval-score">${score} / 8</span>
+                </h4>
+                ${customHtml}
+                ${flavorChips ? `<div class="detail-flavor-row">${flavorChips}</div>` : ''}
+                ${data.notes ? `<p class="detail-eval-notes">${escapeHtml(data.notes)}</p>` : ''}
+            </div>`;
+    }).join('');
+}
+
+function renderDetailDefectsNotes(r) {
+    if (!r.defects && !r.notes) return '';
+    return `
+        <div class="detail-eval-section">
+            <h4 class="detail-eval-section-title">
+                <span class="eval-icon"><i class="bi bi-exclamation-diamond"></i></span>
+                <span class="detail-eval-section-label">瑕疵與備註</span>
+            </h4>
+            ${r.defects ? `<div class="detail-eval-row"><span class="detail-eval-key">瑕疵</span><span class="detail-eval-val">${escapeHtml(r.defects)}</span></div>` : ''}
+            ${r.notes ? `<p class="detail-eval-notes">${escapeHtml(r.notes)}</p>` : ''}
+        </div>`;
+}
+
+function computeEstimatedTotalFromRecord(r) {
+    if (!r.evaluations) return null;
+    let sum = 0;
+    let any = false;
+    for (const f of referenceFields) {
+        const s = r.evaluations[f.key]?.score;
+        if (typeof s === 'number') { sum += s; any = true; }
+        else sum += 5;
+    }
+    return any ? 36 + sum : null;
+}
+
+function decodeFlavorMeta(id) {
+    if (!id || typeof id !== 'string') return null;
+    const l1Start = id.indexOf('__l1-');
+    if (l1Start < 0) return null;
+    const rest = id.slice(l1Start + '__l1-'.length);
+    const l2Start = rest.indexOf('__l2-');
+    const l1Slug = l2Start < 0 ? rest : rest.slice(0, l2Start);
+    const l1 = flavors.find(f => f.id === l1Slug);
+    if (!l1) return null;
+    if (l2Start < 0) return { name: l1.name, color: l1.color };
+
+    const afterL2 = rest.slice(l2Start + '__l2-'.length);
+    const l3Start = afterL2.indexOf('__l3-');
+    const l2Slug = l3Start < 0 ? afterL2 : afterL2.slice(0, l3Start);
+
+    let l2Obj = null;
+    if (Array.isArray(l1.sub)) {
+        for (const s of l1.sub) {
+            if (typeof s === 'string') {
+                if (s.replace(/[/\s]/g, '') === l2Slug) {
+                    return { name: s, color: l1.color };
+                }
+            } else if (s.id === l2Slug) {
+                l2Obj = s;
+                break;
+            }
+        }
+    }
+    if (!l2Obj) return null;
+    if (l3Start < 0) return { name: l2Obj.name, color: l2Obj.color || l1.color };
+
+    const l3Slug = afterL2.slice(l3Start + '__l3-'.length);
+    if (Array.isArray(l2Obj.sub)) {
+        for (const s of l2Obj.sub) {
+            if (typeof s === 'string' && s.replace(/[/\s]/g, '') === l3Slug) {
+                return { name: s, color: l2Obj.color || l1.color };
+            }
+        }
+    }
+    return null;
+}
+
 // ─── View: record form (杯測 / 品鑑) ─────────────────────────────────────────
-async function viewForm(root, { mode, recordId }) {
+async function viewForm(root, { mode, recordId, prefillShopId = null }) {
     if (!isCloudReady()) {
         root.innerHTML = renderCloudWarning();
         return;
@@ -521,7 +847,7 @@ async function viewForm(root, { mode, recordId }) {
     root.innerHTML = '';
     root.appendChild(tpl.content.cloneNode(true));
 
-    state.currentForm = { mode, recordId };
+    state.currentForm = { mode, recordId, prefillShopId };
 
     setFormMode(mode);
     initCoeWidget();
@@ -531,6 +857,7 @@ async function viewForm(root, { mode, recordId }) {
 
     await refreshShopsCache();
     populateShopSelect(document.getElementById('f-shop'), mode === 'tasting');
+    applyShopPrefill(prefillShopId);
 
     if (recordId) {
         document.getElementById('f-save-label').textContent = '儲存變更';
@@ -542,12 +869,16 @@ async function viewForm(root, { mode, recordId }) {
     }
 }
 
+function applyShopPrefill(shopId) {
+    if (!shopId) return;
+    const sel = document.getElementById('f-shop');
+    if (!sel) return;
+    if ([...sel.options].some(o => o.value === shopId)) {
+        sel.value = shopId;
+    }
+}
+
 function setFormMode(mode) {
-    document.querySelectorAll('.form-mode-tab').forEach(btn => {
-        const active = btn.dataset.formMode === mode;
-        btn.classList.toggle('active', active);
-        btn.setAttribute('aria-pressed', String(active));
-    });
     document.querySelectorAll('[data-mode-only]').forEach(el => {
         el.style.display = el.dataset.modeOnly === mode ? '' : 'none';
     });
@@ -803,12 +1134,32 @@ function generateObservationItem(field) {
     return wrapAccordionItem(key, field.label, field.icon, body);
 }
 
+function generateDefectsItem() {
+    const body = `
+        <label for="f-defects" class="form-label">瑕疵記錄</label>
+        <textarea id="f-defects" class="form-control mb-2" rows="2"
+                  placeholder="記錄任何瑕疵，例如過度萃取、雜味等..."></textarea>
+        <div class="notes-slot" data-notes-slot="f-notes">
+            <button type="button" class="notes-toggle" data-notes-target="f-notes"
+                    aria-controls="f-notes-body" aria-expanded="false">
+                <i class="bi bi-plus-circle"></i> 加上最終備註
+            </button>
+            <div id="f-notes-body" class="notes-body" hidden>
+                <label for="f-notes" class="form-label">最終備註</label>
+                <textarea id="f-notes" class="form-control" rows="3"
+                          placeholder="請輸入額外的備註..."></textarea>
+            </div>
+        </div>`;
+    return wrapAccordionItem('defects', '瑕疵與備註', 'bi-exclamation-diamond', body);
+}
+
 function initEvaluationAccordion() {
     const accordion = document.getElementById('evaluationAccordion');
     if (!accordion) return;
     accordion.innerHTML = [
         ...observationFields.map(generateObservationItem),
         ...referenceFields.map(generateReferenceItem),
+        generateDefectsItem(),
     ].join('');
 
     observationFields.forEach(f => {
@@ -822,6 +1173,9 @@ function initEvaluationAccordion() {
         }
         setReferenceScore(f.key, 5);
     });
+
+    updateEstimatedTotalDisplay();
+    updateDefectsSummary();
 
     accordion.addEventListener('input', e => {
         const key = e.target.dataset.refScore;
@@ -841,6 +1195,41 @@ function onRefScoreInput(key) {
     const pct = ((v - 4) / 4) * 100;
     slider.style.setProperty('--slider-fill', `${pct}%`);
     updateRefSummary(key);
+    updateEstimatedTotalDisplay();
+}
+
+function calculateEstimatedTotal() {
+    return 36 + referenceFields.reduce((sum, f) => sum + getReferenceScore(f.key), 0);
+}
+
+function updateEstimatedTotalDisplay() {
+    const valueEl = document.getElementById('evalEstimatedValue');
+    if (!valueEl) return;
+    const v = calculateEstimatedTotal();
+    valueEl.textContent = v.toFixed(1);
+    const tier = tierFromScore(v);
+    const badge = document.getElementById('evalEstimatedTier');
+    if (badge) {
+        if (tier) {
+            badge.textContent = `[ ${tier.badgeName} ]`;
+            badge.style.color = tier.color;
+        } else {
+            badge.textContent = '';
+        }
+    }
+}
+
+function updateDefectsSummary() {
+    const summaryEl = document.getElementById('defects_summary');
+    if (!summaryEl) return;
+    const defects = document.getElementById('f-defects')?.value?.trim() || '';
+    const notes = document.getElementById('f-notes')?.value?.trim() || '';
+    const text = [defects, notes].filter(Boolean).join(' / ');
+    if (!text) {
+        summaryEl.textContent = '';
+        return;
+    }
+    summaryEl.textContent = text.length > 40 ? text.slice(0, 40) + '…' : text;
 }
 
 function setReferenceScore(key, value) {
@@ -1164,16 +1553,6 @@ function setTagValues(sectionKey, values) {
 function bindFormHandlers() {
     const form = document.querySelector('.record-form');
 
-    document.querySelectorAll('.form-mode-tab').forEach(btn => {
-        btn.addEventListener('click', () => {
-            const mode = btn.dataset.formMode;
-            if (!state.currentForm || state.currentForm.recordId) return; // can't change mode on existing record
-            state.currentForm.mode = mode;
-            setFormMode(mode);
-            populateShopSelect(document.getElementById('f-shop'), mode === 'tasting');
-        });
-    });
-
     document.querySelectorAll('.bean-type-chip-row').forEach(row => {
         const groupMode = row.dataset.beanTypeGroup;
         row.querySelectorAll('.bean-type-chip').forEach(chip => {
@@ -1182,6 +1561,23 @@ function bindFormHandlers() {
             });
         });
     });
+
+    document.querySelectorAll('.brewing-method-chip').forEach(chip => {
+        chip.addEventListener('click', () => {
+            const methodEl = document.getElementById('f-method');
+            methodEl.value = chip.dataset.method;
+            setBrewingMethodChip(chip.dataset.method);
+        });
+    });
+    const methodEl = document.getElementById('f-method');
+    if (methodEl) {
+        methodEl.addEventListener('input', e => setBrewingMethodChip(e.target.value));
+    }
+
+    const defectsEl = document.getElementById('f-defects');
+    const notesEl = document.getElementById('f-notes');
+    if (defectsEl) defectsEl.addEventListener('input', updateDefectsSummary);
+    if (notesEl) notesEl.addEventListener('input', updateDefectsSummary);
 
     // Scope notes-toggle delegation to the form so the listener is GC'd
     // when the form is replaced on navigation.
@@ -1198,6 +1594,14 @@ function bindFormHandlers() {
     });
 
     document.getElementById('f-delete').addEventListener('click', () => deleteCurrentRecord());
+}
+
+function setBrewingMethodChip(value) {
+    document.querySelectorAll('.brewing-method-chip').forEach(c => {
+        const sel = c.dataset.method === value;
+        c.classList.toggle('selected', sel);
+        c.setAttribute('aria-pressed', String(sel));
+    });
 }
 
 function buildEvaluationPayload() {
@@ -1381,6 +1785,7 @@ async function loadRecordIntoForm(mode, recordId) {
         document.getElementById('f-defects').value = r.defects || '';
         document.getElementById('f-notes').value = r.notes || '';
         if (r.notes) expandNotesSlot('f-notes', { focus: false });
+        updateDefectsSummary();
 
         if (mode === 'cupping') {
             document.getElementById('f-cupping-bean').value = r.bean_name || '';
@@ -1389,6 +1794,7 @@ async function loadRecordIntoForm(mode, recordId) {
                     const el = document.getElementById(`f-${k}`);
                     if (el && r[k] != null) el.value = r[k];
                 });
+            setBrewingMethodChip(r.method || '');
             if (r.roast != null) {
                 const roastRadio = document.querySelector(`input[name="roast"][value="${CSS.escape(r.roast)}"]`);
                 if (roastRadio) roastRadio.checked = true;
@@ -1482,6 +1888,8 @@ async function loadRecordIntoForm(mode, recordId) {
                 updateObservationSummary(f.key);
             });
         }
+
+        updateEstimatedTotalDisplay();
     } catch (e) {
         console.error(e);
         alert('讀取失敗：' + (e.message || e));
@@ -1567,7 +1975,9 @@ async function viewShopsList(root) {
         return;
     }
     root.innerHTML = `
-        <div class="page-action-bar">
+        <div class="page-action-bar shops-action-bar">
+            <input type="search" class="form-control shops-search-input" id="shops-search"
+                   placeholder="搜尋店名、位置或介紹…" autocomplete="off">
             <button class="btn btn-primary" id="shops-new">
                 <i class="bi bi-plus-lg me-1"></i>新增店家
             </button>
@@ -1578,21 +1988,12 @@ async function viewShopsList(root) {
 
     document.getElementById('shops-new').addEventListener('click', () => openShopModal());
 
-    try {
-        const shops = await api.listShops();
-        state.shops = shops;
-        state.shopsLoaded = true;
-        const grid = document.getElementById('shops-grid');
+    const grid = document.getElementById('shops-grid');
+    const renderGrid = (shops) => {
         if (shops.length === 0) {
             grid.innerHTML = `<div class="empty-state">
-                <i class="bi bi-shop"></i>
-                <p>還沒有店家</p>
-                <button class="btn btn-primary btn-sm" id="shops-new-inline">
-                    <i class="bi bi-plus-lg me-1"></i>新增第一個店家
-                </button>
+                <i class="bi bi-search"></i>沒有符合的店家
             </div>`;
-            document.getElementById('shops-new-inline')
-                .addEventListener('click', () => openShopModal());
             return;
         }
         grid.innerHTML = shops.map(s => `
@@ -1605,8 +2006,38 @@ async function viewShopsList(root) {
                 ${s.intro ? `<div class="shop-card-intro">${escapeHtml(s.intro)}</div>` : ''}
             </a>
         `).join('');
+    };
+
+    try {
+        const shops = await api.listShops();
+        state.shops = shops;
+        state.shopsLoaded = true;
+        if (shops.length === 0) {
+            grid.innerHTML = `<div class="empty-state">
+                <i class="bi bi-shop"></i>
+                <p>還沒有店家</p>
+                <button class="btn btn-primary btn-sm" id="shops-new-inline">
+                    <i class="bi bi-plus-lg me-1"></i>新增第一個店家
+                </button>
+            </div>`;
+            document.getElementById('shops-new-inline')
+                .addEventListener('click', () => openShopModal());
+            return;
+        }
+        renderGrid(shops);
+
+        document.getElementById('shops-search').addEventListener('input', e => {
+            const q = e.target.value.trim().toLowerCase();
+            const filtered = q
+                ? shops.filter(s =>
+                    (s.name || '').toLowerCase().includes(q) ||
+                    (s.location || '').toLowerCase().includes(q) ||
+                    (s.intro || '').toLowerCase().includes(q))
+                : shops;
+            renderGrid(filtered);
+        });
     } catch (e) {
-        document.getElementById('shops-grid').innerHTML =
+        grid.innerHTML =
             `<div class="empty-state error"><i class="bi bi-exclamation-triangle"></i>讀取失敗：${escapeHtml(e.message || String(e))}</div>`;
     }
 }
@@ -1637,6 +2068,9 @@ async function viewShopDetail(root, shopId) {
                     <div class="shop-detail-header">
                         <h2 class="shop-detail-name"><i class="bi bi-shop"></i>${escapeHtml(shop.name)}</h2>
                         <div class="shop-detail-actions">
+                            <button class="btn btn-primary btn-sm" id="shop-new-record">
+                                <i class="bi bi-plus-lg"></i>新增記錄
+                            </button>
                             <button class="btn btn-outline-secondary btn-sm" id="shop-edit">
                                 <i class="bi bi-pencil"></i>編輯
                             </button>
@@ -1664,6 +2098,9 @@ async function viewShopDetail(root, shopId) {
                 </div>
             </div>`;
 
+        document.getElementById('shop-new-record').addEventListener('click', () => {
+            navigate(`/new/tasting?shop=${encodeURIComponent(shopId)}`);
+        });
         document.getElementById('shop-edit').addEventListener('click', () =>
             openShopModal({ shop }));
         document.getElementById('shop-delete').addEventListener('click', async () => {
