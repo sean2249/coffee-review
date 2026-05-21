@@ -872,9 +872,11 @@ async function viewForm(root, { mode, recordId, prefillShopId = null }) {
     applyShopPrefill(prefillShopId);
 
     // Origin datalist + process chip row are cupping-only UI elements.
-    renderProcessChips();
-    loadKnownOrigins().then(populateOriginDatalist);
-    populateOriginDatalist();
+    if (mode === 'cupping') {
+        renderProcessChips();
+        loadKnownOrigins().then(populateOriginDatalist);
+        populateOriginDatalist();
+    }
 
     const initialShopId = document.getElementById('f-shop')?.value || '';
     refreshImportBeanForShop(mode, initialShopId);
@@ -946,8 +948,10 @@ async function loadKnownOrigins() {
     if (state.knownOriginsLoaded) return;
     const sb = await ensureSupabase();
     if (!sb) return;
+    // Defensive cap — distinct happens client-side. If the table grows past
+    // a few thousand rows, switch to a Postgres view/RPC returning DISTINCT.
     const { data, error } = await sb.from(SUPABASE_CONFIG.cuppingTable)
-        .select('origin').not('origin', 'is', null);
+        .select('origin').not('origin', 'is', null).limit(2000);
     if (error) {
         console.warn('loadKnownOrigins failed:', error);
         return;
@@ -1030,7 +1034,13 @@ async function refreshImportBeanForShop(mode, shopId) {
     }
     const beans = data || [];
 
-    if (!beans.length) {
+    // Exclude the record being edited first — otherwise it could "claim" its
+    // bean's signature in the dedupe pass below, hiding older duplicates and
+    // then disappearing itself, leaving the bean unavailable for import.
+    const currentId = state.currentForm?.recordId;
+    const candidates = currentId ? beans.filter(b => b.id !== currentId) : beans;
+
+    if (!candidates.length) {
         block.hidden = true;
         return;
     }
@@ -1038,7 +1048,7 @@ async function refreshImportBeanForShop(mode, shopId) {
     // Deduplicate by (bean_name + bean_type + origin/blend_composition) to avoid
     // listing the same bean once per cupping session.
     const seen = new Set();
-    beans.forEach(b => {
+    candidates.forEach(b => {
         const name = (b.bean_name || '').trim();
         if (!name) return;
         const sig = `${b.bean_type || ''}|${name}|${(b.origin || '').trim()}|${(b.blend_composition || '').trim()}`;
@@ -1054,12 +1064,6 @@ async function refreshImportBeanForShop(mode, shopId) {
     });
 
     block.hidden = sel.options.length <= 1;
-    // Keep current record's id out of its own import options when editing.
-    const currentId = state.currentForm?.recordId;
-    if (currentId) {
-        const opt = sel.querySelector(`option[value="${CSS.escape(currentId)}"]`);
-        if (opt) opt.remove();
-    }
 }
 
 async function applyImportedBean(mode, recordId) {
@@ -1901,6 +1905,15 @@ async function submitForm() {
     if (!state.currentForm) return;
     const { mode, recordId } = state.currentForm;
 
+    // Bean type must be validated first — bean-name inputs are now hidden
+    // until a type is chosen, so focusing them before that would be confusing.
+    if (!getBeanType(mode)) {
+        const firstChip = document.querySelector(
+            `.bean-type-chip-row[data-bean-type-group="${mode}"] .bean-type-chip`);
+        firstChip?.focus();
+        showToast('請選擇豆子類型（單品 / 配方豆）');
+        return;
+    }
     if (mode === 'cupping') {
         const beanEl = document.getElementById('f-cupping-bean');
         if (!beanEl.value.trim()) {
@@ -1913,13 +1926,6 @@ async function submitForm() {
     if (mode === 'tasting' && !shopId) {
         document.getElementById('f-shop').focus();
         showToast('品鑑記錄必須指定店家');
-        return;
-    }
-    if (!getBeanType(mode)) {
-        const firstChip = document.querySelector(
-            `.bean-type-chip-row[data-bean-type-group="${mode}"] .bean-type-chip`);
-        firstChip?.focus();
-        showToast('請選擇豆子類型（單品 / 配方豆）');
         return;
     }
 
