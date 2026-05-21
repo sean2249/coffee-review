@@ -748,6 +748,38 @@ button.card-title {
     color: #fff;
 }
 
+/* ───── Bean type chips (單品 / 配方豆) ─────────────────────────────────── */
+.bean-type-chip-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+}
+.bean-type-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.4rem 0.95rem;
+    border-radius: 999px;
+    border: 1px solid var(--border-strong);
+    background: var(--bg-elevated);
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.12s ease;
+    font-family: inherit;
+}
+.bean-type-chip:hover { color: var(--accent); border-color: var(--accent); }
+.bean-type-chip.selected {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+}
+.bean-type-chip:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px var(--accent-tint);
+}
+
 /* ───── Notes slot ─────────────────────────────────────────────────────── */
 .notes-slot .notes-toggle {
     display: inline-flex;

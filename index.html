@@ -82,13 +82,32 @@
                             <input type="text" class="form-control" id="f-cupping-bean"
                                    placeholder="例：衣索比亞 耶加雪菲 G1">
                         </div>
-                        <div class="col-md-4 col-6">
+                        <div class="col-12">
+                            <label class="form-label">豆子類型 *</label>
+                            <div class="bean-type-chip-row" data-bean-type-group="cupping"
+                                 role="group" aria-label="豆子類型">
+                                <button type="button" class="bean-type-chip"
+                                        data-bean-type="single" aria-pressed="false">
+                                    <i class="bi bi-droplet"></i>單品
+                                </button>
+                                <button type="button" class="bean-type-chip"
+                                        data-bean-type="blend" aria-pressed="false">
+                                    <i class="bi bi-collection"></i>配方豆
+                                </button>
+                            </div>
+                        </div>
+                        <div class="col-md-4 col-6" data-bean-type-only="cupping:single">
                             <label for="f-origin" class="form-label">產地</label>
                             <input type="text" class="form-control" id="f-origin">
                         </div>
-                        <div class="col-md-4 col-6">
+                        <div class="col-md-4 col-6" data-bean-type-only="cupping:single">
                             <label for="f-process" class="form-label">處理法</label>
                             <input type="text" class="form-control" id="f-process">
+                        </div>
+                        <div class="col-12" data-bean-type-only="cupping:blend">
+                            <label for="f-blend_composition" class="form-label">配方組成</label>
+                            <textarea class="form-control" id="f-blend_composition" rows="2"
+                                      placeholder="例：50% 巴西黃波旁 + 30% 衣索比亞耶加雪菲 + 20% 哥倫比亞蕙蘭"></textarea>
                         </div>
                         <div class="col-md-4 col-12">
                             <label for="f-roast" class="form-label">烘焙度</label>
@@ -162,6 +181,20 @@
                             <label for="f-brewing_method" class="form-label">沖煮方式</label>
                             <input type="text" class="form-control" id="f-brewing_method"
                                    placeholder="例：V60 / 義式 / 冰滴">
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">豆子類型 *</label>
+                            <div class="bean-type-chip-row" data-bean-type-group="tasting"
+                                 role="group" aria-label="豆子類型">
+                                <button type="button" class="bean-type-chip"
+                                        data-bean-type="single" aria-pressed="false">
+                                    <i class="bi bi-droplet"></i>單品
+                                </button>
+                                <button type="button" class="bean-type-chip"
+                                        data-bean-type="blend" aria-pressed="false">
+                                    <i class="bi bi-collection"></i>配方豆
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>

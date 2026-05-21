@@ -556,6 +556,32 @@ function setFormMode(mode) {
     });
     const shopSel = document.getElementById('f-shop');
     if (shopSel) shopSel.required = mode === 'tasting';
+    applyBeanTypeVisibility(mode);
+}
+
+function getBeanType(mode) {
+    const row = document.querySelector(`.bean-type-chip-row[data-bean-type-group="${mode}"]`);
+    return row?.querySelector('.bean-type-chip.selected')?.dataset.beanType || '';
+}
+
+function setBeanType(mode, value) {
+    const row = document.querySelector(`.bean-type-chip-row[data-bean-type-group="${mode}"]`);
+    if (!row) return;
+    row.querySelectorAll('.bean-type-chip').forEach(chip => {
+        const selected = chip.dataset.beanType === value;
+        chip.classList.toggle('selected', selected);
+        chip.setAttribute('aria-pressed', String(selected));
+    });
+    applyBeanTypeVisibility(mode);
+}
+
+function applyBeanTypeVisibility(mode) {
+    const beanType = getBeanType(mode);
+    document.querySelectorAll('[data-bean-type-only]').forEach(el => {
+        const [scope, type] = el.dataset.beanTypeOnly.split(':');
+        if (scope !== mode) return; // visibility for the other mode is governed by data-mode-only
+        el.style.display = beanType === type ? '' : 'none';
+    });
 }
 
 function populateShopSelect(sel, required) {
@@ -1148,6 +1174,15 @@ function bindFormHandlers() {
         });
     });
 
+    document.querySelectorAll('.bean-type-chip-row').forEach(row => {
+        const groupMode = row.dataset.beanTypeGroup;
+        row.querySelectorAll('.bean-type-chip').forEach(chip => {
+            chip.addEventListener('click', () => {
+                setBeanType(groupMode, chip.dataset.beanType);
+            });
+        });
+    });
+
     // Scope notes-toggle delegation to the form so the listener is GC'd
     // when the form is replaced on navigation.
     form.addEventListener('click', e => {
@@ -1206,11 +1241,18 @@ function buildFormPayload(mode) {
 
     if (mode === 'cupping') {
         const beanName = document.getElementById('f-cupping-bean').value.trim() || null;
+        const beanType = getBeanType('cupping');
+        const isBlend = beanType === 'blend';
         return {
             shop_id: shopId,
             bean_name: beanName,
-            origin: document.getElementById('f-origin').value || null,
-            process: document.getElementById('f-process').value || null,
+            bean_type: beanType || null,
+            // Clear origin/process when blend; clear blend_composition when single.
+            origin: isBlend ? null : (document.getElementById('f-origin').value || null),
+            process: isBlend ? null : (document.getElementById('f-process').value || null),
+            blend_composition: isBlend
+                ? (document.getElementById('f-blend_composition').value.trim() || null)
+                : null,
             roast: document.getElementById('f-roast').value || null,
             grind: document.getElementById('f-grind').value || null,
             water_temp: document.getElementById('f-water_temp').value || null,
@@ -1219,7 +1261,7 @@ function buildFormPayload(mode) {
             extraction_time: document.getElementById('f-extraction_time').value || null,
             defects: defects || null,
             notes: notes || null,
-            schema_version: 1,
+            schema_version: 2,
             ...ev,
         };
     }
@@ -1233,6 +1275,7 @@ function buildFormPayload(mode) {
         price: priceRaw === '' ? null : Number(priceRaw),
         item_ordered: document.getElementById('f-item_ordered').value.trim() || null,
         bean_name: document.getElementById('f-tasting-bean').value.trim() || null,
+        bean_type: getBeanType('tasting') || null,
         brewing_method: document.getElementById('f-brewing_method').value || null,
         atmosphere_tags: getTagValues('atmosphere'),
         decor_tags:      getTagValues('decor'),
@@ -1242,7 +1285,7 @@ function buildFormPayload(mode) {
         service_notes:    document.getElementById('f-tag-service-notes')?.value || null,
         defects: defects || null,
         notes: notes || null,
-        schema_version: 1,
+        schema_version: 2,
         ...ev,
     };
 }
@@ -1263,6 +1306,13 @@ async function submitForm() {
     if (mode === 'tasting' && !shopId) {
         document.getElementById('f-shop').focus();
         showToast('品鑑記錄必須指定店家');
+        return;
+    }
+    if (!getBeanType(mode)) {
+        const firstChip = document.querySelector(
+            `.bean-type-chip-row[data-bean-type-group="${mode}"] .bean-type-chip`);
+        firstChip?.focus();
+        showToast('請選擇豆子類型（單品 / 配方豆）');
         return;
     }
 
@@ -1334,11 +1384,16 @@ async function loadRecordIntoForm(mode, recordId) {
 
         if (mode === 'cupping') {
             document.getElementById('f-cupping-bean').value = r.bean_name || '';
-            ['origin', 'process', 'roast', 'grind', 'water_temp', 'ratio', 'method', 'extraction_time']
+            ['origin', 'process', 'roast', 'grind', 'water_temp', 'ratio', 'method', 'extraction_time', 'blend_composition']
                 .forEach(k => {
                     const el = document.getElementById(`f-${k}`);
                     if (el && r[k] != null) el.value = r[k];
                 });
+            // Legacy rows have no bean_type. Only auto-pick when there's an
+            // unambiguous signal (a blend_composition); otherwise force the
+            // user to choose on save.
+            const fallback = r.blend_composition ? 'blend' : '';
+            setBeanType('cupping', r.bean_type || fallback);
         } else {
             const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val ?? ''; };
             set('f-visit_date', r.visit_date || '');
@@ -1346,6 +1401,8 @@ async function loadRecordIntoForm(mode, recordId) {
             set('f-item_ordered', r.item_ordered || '');
             set('f-tasting-bean', r.bean_name || '');
             set('f-brewing_method', r.brewing_method || '');
+            // Legacy tasting rows have no bean_type — leave empty so the user picks one on edit.
+            setBeanType('tasting', r.bean_type || '');
 
             setTagValues('atmosphere', r.atmosphere_tags || []);
             setTagValues('decor',      r.decor_tags || []);
