@@ -65,11 +65,6 @@
                     <h3 class="card-title"><i class="bi bi-info-circle"></i>咖啡資訊</h3>
                     <div class="row g-2">
                         <div class="col-12">
-                            <label for="f-cupping-bean" class="form-label">咖啡名稱 / 豆名 *</label>
-                            <input type="text" class="form-control" id="f-cupping-bean"
-                                   placeholder="例：衣索比亞 耶加雪菲 G1">
-                        </div>
-                        <div class="col-12">
                             <label class="form-label">豆子類型 *</label>
                             <div class="bean-type-chip-row" data-bean-type-group="cupping"
                                  role="group" aria-label="豆子類型">
@@ -83,20 +78,41 @@
                                 </button>
                             </div>
                         </div>
-                        <div class="col-md-4 col-6" data-bean-type-only="cupping:single">
-                            <label for="f-origin" class="form-label">產地</label>
-                            <input type="text" class="form-control" id="f-origin">
+                        <div class="col-12" data-import-bean="cupping" hidden>
+                            <label for="f-import-bean-cupping" class="form-label">
+                                <i class="bi bi-arrow-down-square"></i>從此咖啡廳已記錄的豆子帶入
+                            </label>
+                            <select class="form-select" id="f-import-bean-cupping">
+                                <option value="">— 不帶入 —</option>
+                            </select>
+                            <div class="small-hint">沖煮參數不會帶入；只帶入豆子基本資訊。</div>
                         </div>
-                        <div class="col-md-4 col-6" data-bean-type-only="cupping:single">
-                            <label for="f-process" class="form-label">處理法</label>
-                            <input type="text" class="form-control" id="f-process">
+                        <div class="col-md-6 col-12" data-bean-type-only="cupping:single">
+                            <label for="f-origin" class="form-label">國家</label>
+                            <input type="text" class="form-control" id="f-origin"
+                                   list="origin-options" placeholder="選擇或輸入國家">
+                            <datalist id="origin-options"></datalist>
+                        </div>
+                        <div class="col-12" data-bean-type-only="cupping:single">
+                            <label class="form-label">處理法</label>
+                            <div class="process-chip-row" role="group" aria-label="處理法"></div>
+                            <input type="text" class="form-control mt-2" id="f-process"
+                                   placeholder="或自行輸入">
                         </div>
                         <div class="col-12" data-bean-type-only="cupping:blend">
                             <label for="f-blend_composition" class="form-label">配方組成</label>
                             <textarea class="form-control" id="f-blend_composition" rows="2"
                                       placeholder="例：50% 巴西黃波旁 + 30% 衣索比亞耶加雪菲 + 20% 哥倫比亞蕙蘭"></textarea>
                         </div>
-                        <div class="col-12">
+                        <div class="col-12" data-bean-type-only="cupping:any">
+                            <label for="f-cupping-bean" class="form-label">
+                                <span data-bean-type-text="cupping:single">咖啡名稱 / 豆名 *</span>
+                                <span data-bean-type-text="cupping:blend">配方名稱 *</span>
+                            </label>
+                            <input type="text" class="form-control" id="f-cupping-bean"
+                                   placeholder="例：衣索比亞 耶加雪菲 G1">
+                        </div>
+                        <div class="col-12" data-bean-type-only="cupping:any">
                             <label class="form-label d-block">烘焙度</label>
                             <div class="roast-radio-row" role="radiogroup" aria-label="烘焙度">
                                 <div class="form-check form-check-inline">
@@ -191,16 +207,6 @@
                             <input type="text" class="form-control" id="f-item_ordered"
                                    placeholder="例：V60 衣索比亞耶加雪菲 / 拿鐵">
                         </div>
-                        <div class="col-md-6 col-12">
-                            <label for="f-tasting-bean" class="form-label">品項豆子名</label>
-                            <input type="text" class="form-control" id="f-tasting-bean"
-                                   placeholder="例：衣索比亞 耶加雪菲">
-                        </div>
-                        <div class="col-md-6 col-12">
-                            <label for="f-brewing_method" class="form-label">沖煮方式</label>
-                            <input type="text" class="form-control" id="f-brewing_method"
-                                   placeholder="例：V60 / 義式 / 冰滴">
-                        </div>
                         <div class="col-12">
                             <label class="form-label">豆子類型 *</label>
                             <div class="bean-type-chip-row" data-bean-type-group="tasting"
@@ -214,6 +220,24 @@
                                     <i class="bi bi-collection"></i>配方豆
                                 </button>
                             </div>
+                        </div>
+                        <div class="col-12" data-import-bean="tasting" hidden>
+                            <label for="f-import-bean-tasting" class="form-label">
+                                <i class="bi bi-arrow-down-square"></i>從此咖啡廳已記錄的豆子帶入
+                            </label>
+                            <select class="form-select" id="f-import-bean-tasting">
+                                <option value="">— 不帶入 —</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6 col-12" data-bean-type-only="tasting:any">
+                            <label for="f-tasting-bean" class="form-label">品項豆子名</label>
+                            <input type="text" class="form-control" id="f-tasting-bean"
+                                   placeholder="例：衣索比亞 耶加雪菲">
+                        </div>
+                        <div class="col-md-6 col-12">
+                            <label for="f-brewing_method" class="form-label">沖煮方式</label>
+                            <input type="text" class="form-control" id="f-brewing_method"
+                                   placeholder="例：V60 / 義式 / 冰滴">
                         </div>
                     </div>
                 </div>
