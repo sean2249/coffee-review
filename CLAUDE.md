@@ -116,7 +116,7 @@ purpose.md, 口感.md design notes (Chinese)
 
 ## Architecture
 
-**Hash router** (`renderRoute` in app.js:346). Routes:
+**Hash router** (`renderRoute` in `app.js`; search by function name if needed). Routes:
 
 | Route | View |
 |---|---|
