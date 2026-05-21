@@ -347,6 +347,15 @@ async function renderRoute() {
     const { parts } = parseHash();
     const root = document.getElementById('app');
 
+    // Guard: warn before leaving a form with unsaved changes
+    if (state.currentForm && state.currentForm.dirty) {
+        if (!confirm('您有未儲存的資料，確定要離開嗎？')) {
+            history.replaceState(null, '', state.currentForm.hash);
+            updateTabbarActive();
+            return;
+        }
+    }
+
     // Cleanup transient form state when leaving a form route
     state.currentForm = null;
     wheelState.clear();
@@ -521,7 +530,7 @@ async function viewForm(root, { mode, recordId }) {
     root.innerHTML = '';
     root.appendChild(tpl.content.cloneNode(true));
 
-    state.currentForm = { mode, recordId };
+    state.currentForm = { mode, recordId, hash: location.hash, dirty: false };
 
     setFormMode(mode);
     initCoeWidget();
@@ -1168,7 +1177,10 @@ function bindFormHandlers() {
         btn.addEventListener('click', () => {
             const mode = btn.dataset.formMode;
             if (!state.currentForm || state.currentForm.recordId) return; // can't change mode on existing record
+            if (state.currentForm.mode === mode) return; // already in this mode
+            if (state.currentForm.dirty && !confirm('切換記錄類型後，目前已填入的資料將不會被儲存。確定切換嗎？')) return;
             state.currentForm.mode = mode;
+            state.currentForm.dirty = false;
             setFormMode(mode);
             populateShopSelect(document.getElementById('f-shop'), mode === 'tasting');
         });
@@ -1183,12 +1195,24 @@ function bindFormHandlers() {
         });
     });
 
+    const DATA_BTN_SELECTOR = '.bean-type-chip, .tag-chip, .tier-medal, .score-chip, .flavor-tag';
+
     // Scope notes-toggle delegation to the form so the listener is GC'd
     // when the form is replaced on navigation.
     form.addEventListener('click', e => {
         const toggle = e.target.closest('.notes-toggle');
         if (toggle) expandNotesSlot(toggle.dataset.notesTarget);
+        // Mark form dirty when user interacts with data-affecting buttons
+        if (state.currentForm && e.target.closest(DATA_BTN_SELECTOR)) {
+            state.currentForm.dirty = true;
+        }
     });
+
+    function markDirty() {
+        if (state.currentForm) state.currentForm.dirty = true;
+    }
+    form.addEventListener('input', markDirty);
+    form.addEventListener('change', markDirty);
 
     document.getElementById('f-shop-new').addEventListener('click', () => openShopModal());
 
@@ -1322,9 +1346,11 @@ async function submitForm() {
         const payload = buildFormPayload(mode);
         if (recordId) {
             await api.updateRecord(mode, recordId, payload);
+            if (state.currentForm) state.currentForm.dirty = false;
             showToast('✓ 已更新');
         } else {
             const created = await api.createRecord(mode, payload);
+            if (state.currentForm) state.currentForm.dirty = false;
             showToast('✓ 已儲存');
             navigate(`/${mode}/${created.id}`);
             return;
@@ -1348,6 +1374,7 @@ async function deleteCurrentRecord() {
     if (!confirm(`刪除「${display}」？此操作無法復原。`)) return;
     try {
         await api.deleteRecord(mode, recordId);
+        if (state.currentForm) state.currentForm.dirty = false;
         showToast('✓ 已刪除');
         navigate('/records');
     } catch (e) {
