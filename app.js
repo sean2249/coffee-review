@@ -1315,10 +1315,12 @@ async function loadRecordIntoForm(mode, recordId) {
         // shop
         const shopSel = document.getElementById('f-shop');
         if (r.shop_id && !state.shops.some(s => s.id === r.shop_id)) {
-            // shop deleted; add a placeholder option so the dropdown displays correctly
+            // Preserve the shop_id in the dropdown so saving doesn't drop the FK.
+            // Label depends on whether shops loaded successfully — if the cache
+            // never loaded, the shop might still exist; don't claim it's deleted.
             const opt = document.createElement('option');
             opt.value = r.shop_id;
-            opt.textContent = '(已刪除店家)';
+            opt.textContent = state.shopsLoaded ? '(已刪除店家)' : '(店家載入失敗)';
             shopSel.appendChild(opt);
         }
         shopSel.value = r.shop_id || '';
@@ -1516,6 +1518,7 @@ async function viewShopsList(root) {
     try {
         const shops = await api.listShops();
         state.shops = shops;
+        state.shopsLoaded = true;
         const grid = document.getElementById('shops-grid');
         if (shops.length === 0) {
             grid.innerHTML = `<div class="empty-state">
