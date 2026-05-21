@@ -140,7 +140,7 @@ const state = {
     shops: [],          // [{id, name, location, intro, ...}]
     shopsLoaded: false, // true after first successful fetch — distinguishes "deleted" from "not loaded yet"
     listFilter: { type: 'all', shopId: '' },
-    currentForm: null,  // { mode, recordId|null, dirty }
+    currentForm: null,  // { mode, recordId|null }
 };
 
 const coeState = { coeTotal: 82, selectedTierId: 'common' };
@@ -208,8 +208,10 @@ const api = {
     async getShop(id) {
         const sb = await ensureSupabase();
         if (!sb) return null;
+        // maybeSingle: missing row returns { data: null, error: null }
+        // (vs .single(), which throws PGRST116 and prevents the not-found UI from rendering)
         const { data, error } = await sb.from(SUPABASE_CONFIG.shopsTable)
-            .select('*').eq('id', id).single();
+            .select('*').eq('id', id).maybeSingle();
         if (error) throw error;
         return data;
     },
@@ -273,7 +275,7 @@ const api = {
         const sb = await ensureSupabase();
         if (!sb) return null;
         const table = type === 'tasting' ? SUPABASE_CONFIG.tastingTable : SUPABASE_CONFIG.cuppingTable;
-        const { data, error } = await sb.from(table).select('*').eq('id', id).single();
+        const { data, error } = await sb.from(table).select('*').eq('id', id).maybeSingle();
         if (error) throw error;
         return data;
     },
