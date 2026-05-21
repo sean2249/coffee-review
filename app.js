@@ -1071,8 +1071,13 @@ async function applyImportedBean(mode, recordId) {
     try {
         const r = await api.getRecord('cupping', recordId);
         if (!r) return;
+        // Legacy rows may lack bean_type. Only auto-derive 'blend' when there's an
+        // unambiguous signal (blend_composition present); otherwise leave the
+        // type empty so the user picks consciously — same policy as loadRecordIntoForm.
+        const fallbackType = r.blend_composition ? 'blend' : '';
+        const beanType = r.bean_type || fallbackType;
         if (mode === 'cupping') {
-            setBeanType('cupping', r.bean_type || (r.blend_composition ? 'blend' : 'single'));
+            setBeanType('cupping', beanType);
             document.getElementById('f-cupping-bean').value = r.bean_name || '';
             document.getElementById('f-origin').value = r.origin || '';
             const processEl = document.getElementById('f-process');
@@ -1085,7 +1090,7 @@ async function applyImportedBean(mode, recordId) {
             }
             populateOriginDatalist();
         } else {
-            setBeanType('tasting', r.bean_type || (r.blend_composition ? 'blend' : 'single'));
+            setBeanType('tasting', beanType);
             const beanEl = document.getElementById('f-tasting-bean');
             if (beanEl) beanEl.value = r.bean_name || '';
         }
