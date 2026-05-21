@@ -138,6 +138,7 @@ const tastingTagSections = [
 // ─── Lightweight in-memory state ─────────────────────────────────────────────
 const state = {
     shops: [],          // [{id, name, location, intro, ...}]
+    shopsLoaded: false, // true after first successful fetch — distinguishes "deleted" from "not loaded yet"
     listFilter: { type: 'all', shopId: '' },
     currentForm: null,  // { mode, recordId|null, dirty }
 };
@@ -243,20 +244,24 @@ const api = {
         if (!sb) return [];
         const baseCols = 'id, shop_id, coe_total, coe_tier_id, created_at';
         const tasks = [];
+        const unwrap = (r, _type) => {
+            if (r.error) throw r.error;
+            return (r.data || []).map(x => ({ ...x, _type }));
+        };
 
         if (type === 'all' || type === 'cupping') {
             let q = sb.from(SUPABASE_CONFIG.cuppingTable)
                 .select(`${baseCols}, bean_name, origin`);
             if (shopId) q = q.eq('shop_id', shopId);
             tasks.push(q.order('created_at', { ascending: false })
-                .then(r => (r.data || []).map(x => ({ ...x, _type: 'cupping' }))));
+                .then(r => unwrap(r, 'cupping')));
         }
         if (type === 'all' || type === 'tasting') {
             let q = sb.from(SUPABASE_CONFIG.tastingTable)
                 .select(`${baseCols}, visit_date, item_ordered, bean_name`);
             if (shopId) q = q.eq('shop_id', shopId);
             tasks.push(q.order('created_at', { ascending: false })
-                .then(r => (r.data || []).map(x => ({ ...x, _type: 'tasting' }))));
+                .then(r => unwrap(r, 'tasting')));
         }
         const results = await Promise.all(tasks);
         const merged = [].concat(...results);
@@ -304,6 +309,7 @@ async function refreshShopsCache() {
     if (!isCloudReady()) return;
     try {
         state.shops = await api.listShops();
+        state.shopsLoaded = true;
     } catch (e) {
         console.warn('refreshShopsCache failed:', e);
     }
@@ -312,7 +318,11 @@ async function refreshShopsCache() {
 function shopName(id) {
     if (!id) return '';
     const shop = state.shops.find(s => s.id === id);
-    return shop ? shop.name : '(已刪除店家)';
+    if (shop) return shop.name;
+    // Don't claim a shop is deleted until we've successfully loaded the
+    // shops list at least once — otherwise a transient fetch failure
+    // would mislabel every record.
+    return state.shopsLoaded ? '(已刪除店家)' : '';
 }
 
 // ─── Router ──────────────────────────────────────────────────────────────────
@@ -1473,7 +1483,8 @@ function openShopModal({ shop = null, onSaved = null } = {}) {
                 }
             }
         } catch (e2) {
-            if (String(e2.message || '').includes('duplicate')) {
+            // Postgres unique_violation — Supabase passes the SQLSTATE through .code
+            if (e2.code === '23505') {
                 alert('店家名稱已存在');
             } else {
                 alert('儲存失敗：' + (e2.message || e2));
