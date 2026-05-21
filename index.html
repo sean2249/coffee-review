@@ -4,13 +4,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>咖啡杯測記錄 (CoE)</title>
+    <title>咖啡記錄 (CoE)</title>
 
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#0e4d4d">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="咖啡杯測">
+    <meta name="apple-mobile-web-app-title" content="咖啡記錄">
     <link rel="apple-touch-icon" href="icons/icon-192.png">
     <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
     <link rel="icon" type="image/png" sizes="512x512" href="icons/icon-512.png">
@@ -20,213 +20,249 @@
     <link rel="stylesheet" href="styles.css">
 </head>
 
-<body data-mode="beans">
-    <div class="container py-3">
+<body>
+    <main id="app" class="container"></main>
 
-        <header class="app-header">
-            <div class="app-logo" aria-hidden="true"><i class="bi bi-cup-hot-fill"></i></div>
-            <h1>咖啡杯測記錄</h1>
-            <div class="app-subtitle">CoE 風格 · 獎牌徽章選分</div>
-        </header>
+    <nav class="tabbar" aria-label="主功能">
+        <a class="tabbar-btn" data-route="/records" href="#/records">
+            <i class="bi bi-collection"></i><span>記錄</span>
+        </a>
+        <a class="tabbar-btn" data-route="/new" href="#/new">
+            <i class="bi bi-plus-circle"></i><span>新增</span>
+        </a>
+        <a class="tabbar-btn" data-route="/shops" href="#/shops">
+            <i class="bi bi-shop"></i><span>店家</span>
+        </a>
+    </nav>
 
-        <div class="mode-tabs" role="group" aria-label="記錄模式">
-            <button type="button" class="mode-tab active" data-mode="beans" aria-pressed="true">
-                <i class="bi bi-cup-hot"></i><span>自己沖煮</span>
-            </button>
-            <button type="button" class="mode-tab" data-mode="visit" aria-pressed="false">
-                <i class="bi bi-shop"></i><span>店家探訪</span>
-            </button>
-        </div>
+    <!-- ─── Form template — used by both 杯測 and 品鑑 ─────────────────────── -->
+    <template id="tpl-form">
+        <form class="record-form" novalidate>
 
-        <div class="card">
-            <div class="card-body">
-                <h3 class="card-title"><i class="bi bi-folder2-open"></i>記錄管理</h3>
-                <div class="input-group">
-                    <select class="form-select" id="recordList" aria-label="選擇記錄"></select>
-                    <button class="btn btn-outline-secondary" type="button" id="loadBtn" disabled>
-                        <i class="bi bi-box-arrow-in-down me-1"></i>讀取
-                    </button>
-                    <button class="btn btn-outline-danger" type="button" id="deleteBtn" disabled
-                            aria-label="刪除選取的記錄" title="刪除選取的記錄">
-                        <i class="bi bi-trash"></i>
-                    </button>
+            <div class="card">
+                <div class="card-body">
+                    <div class="form-mode-tabs" role="group" aria-label="記錄類型">
+                        <button type="button" class="form-mode-tab" data-form-mode="cupping">
+                            <i class="bi bi-cup-hot"></i><span>杯測</span>
+                        </button>
+                        <button type="button" class="form-mode-tab" data-form-mode="tasting">
+                            <i class="bi bi-shop"></i><span>品鑑</span>
+                        </button>
+                    </div>
                 </div>
             </div>
-        </div>
 
-        <div class="card mode-only-beans">
-            <div class="card-body">
-                <h3 class="card-title"><i class="bi bi-info-circle"></i>咖啡資訊</h3>
-                <div class="row g-2">
-                    <div class="col-12 mb-2">
-                        <label for="name" class="form-label">咖啡名稱（可拍照辨識）</label>
-                        <div class="input-with-ocr">
-                            <input type="text" class="form-control" id="name" placeholder="例: 衣索比亞 耶加雪菲 G1">
-                            <button type="button" class="btn btn-ocr" id="ocrBtn">
-                                <i class="bi bi-camera"></i>拍照
+            <!-- Shop selector (shared) -->
+            <div class="card">
+                <div class="card-body">
+                    <h3 class="card-title"><i class="bi bi-shop"></i>店家</h3>
+                    <div class="mb-2">
+                        <label for="f-shop" class="form-label">
+                            <span data-mode-text="cupping">豆源（店家）</span>
+                            <span data-mode-text="tasting">店家 *</span>
+                        </label>
+                        <div class="shop-picker">
+                            <select class="form-select" id="f-shop"></select>
+                            <button type="button" class="btn btn-outline-secondary" id="f-shop-new" title="新增店家">
+                                <i class="bi bi-plus-lg"></i>
                             </button>
-                            <input type="file" id="ocrFile" accept="image/*" capture="environment" hidden>
                         </div>
-                        <div class="ocr-preview" id="ocrPreview"></div>
-                    </div>
-                    <div class="col-12 mb-2">
-                        <label for="source_shop_name" class="form-label">豆源（店家）</label>
-                        <input type="text" class="form-control" id="source_shop_name"
-                               list="shopOptions" placeholder="選擇或輸入店名（選填）">
-                        <datalist id="shopOptions"></datalist>
-                    </div>
-                    <div class="col-md-4 col-6">
-                        <label for="origin" class="form-label">產地</label>
-                        <input type="text" class="form-control" id="origin">
-                    </div>
-                    <div class="col-md-4 col-6">
-                        <label for="process" class="form-label">處理法</label>
-                        <input type="text" class="form-control" id="process">
-                    </div>
-                    <div class="col-md-4 col-12">
-                        <label for="roast" class="form-label">烘焙度</label>
-                        <input type="text" class="form-control" id="roast">
+                        <div class="small-hint" data-mode-text="cupping">未填表示自家或來源不明。</div>
                     </div>
                 </div>
             </div>
-        </div>
 
-        <div class="card mode-only-beans">
-            <div class="card-body">
-                <button type="button"
-                        class="card-title card-title-collapsible collapsed"
-                        data-bs-toggle="collapse" data-bs-target="#brewingParams"
-                        aria-expanded="false" aria-controls="brewingParams">
-                    <i class="bi bi-sliders"></i>
-                    <span>沖煮參數</span>
-                    <i class="bi bi-chevron-down card-toggle-chevron"></i>
-                </button>
-                <div id="brewingParams" class="collapse">
-                    <div class="row g-2 pt-2">
-                        <div class="col-md-4 col-6">
-                            <label for="grind" class="form-label">研磨度</label>
-                            <input type="text" class="form-control" id="grind">
+            <!-- Cupping-only: bean info + brewing params -->
+            <div class="card" data-mode-only="cupping">
+                <div class="card-body">
+                    <h3 class="card-title"><i class="bi bi-info-circle"></i>咖啡資訊</h3>
+                    <div class="row g-2">
+                        <div class="col-12">
+                            <label for="f-cupping-bean" class="form-label">咖啡名稱 / 豆名 *</label>
+                            <input type="text" class="form-control" id="f-cupping-bean"
+                                   placeholder="例：衣索比亞 耶加雪菲 G1">
                         </div>
                         <div class="col-md-4 col-6">
-                            <label for="water_temp" class="form-label">水溫 (°C)</label>
-                            <input type="number" class="form-control" id="water_temp">
+                            <label for="f-origin" class="form-label">產地</label>
+                            <input type="text" class="form-control" id="f-origin">
                         </div>
                         <div class="col-md-4 col-6">
-                            <label for="ratio" class="form-label">粉水比</label>
-                            <input type="text" class="form-control" id="ratio">
-                        </div>
-                        <div class="col-md-4 col-6">
-                            <label for="method" class="form-label">方法</label>
-                            <input type="text" class="form-control" id="method">
+                            <label for="f-process" class="form-label">處理法</label>
+                            <input type="text" class="form-control" id="f-process">
                         </div>
                         <div class="col-md-4 col-12">
-                            <label for="extraction_time" class="form-label">萃取時間 (s)</label>
-                            <input type="number" class="form-control" id="extraction_time">
+                            <label for="f-roast" class="form-label">烘焙度</label>
+                            <input type="text" class="form-control" id="f-roast">
                         </div>
                     </div>
                 </div>
             </div>
-        </div>
 
-        <div class="card mode-only-visit">
-            <div class="card-body">
-                <h3 class="card-title"><i class="bi bi-shop"></i>店家資訊</h3>
-                <div class="row g-2">
-                    <div class="col-12 mb-2">
-                        <label for="shop_name" class="form-label">店名</label>
-                        <input type="text" class="form-control" id="shop_name" placeholder="例：山小盆咖啡">
-                    </div>
-                    <div class="col-md-6 col-12">
-                        <label for="shop_location" class="form-label">位置</label>
-                        <input type="text" class="form-control" id="shop_location" placeholder="例：台北市大安區">
-                    </div>
-                    <div class="col-md-3 col-6">
-                        <label for="visit_date" class="form-label">日期</label>
-                        <input type="date" class="form-control" id="visit_date">
-                    </div>
-                    <div class="col-md-3 col-6">
-                        <label for="price" class="form-label">價格</label>
-                        <input type="number" class="form-control" id="price" min="0" step="1">
-                    </div>
-                    <div class="col-12">
-                        <label for="item_ordered" class="form-label">點用品項</label>
-                        <input type="text" class="form-control" id="item_ordered" placeholder="例：V60 衣索比亞耶加雪菲 / 拿鐵">
-                    </div>
-                    <div class="col-12 mt-2">
-                        <label for="visitPhotoInput" class="form-label">店面 / 飲品照片</label>
-                        <input type="file" class="form-control" id="visitPhotoInput" accept="image/*" multiple>
-                        <div id="visitPhotoPreviews" class="visit-photo-previews mt-2"></div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <div class="card mode-only-visit">
-            <div class="card-body">
-                <h3 class="card-title"><i class="bi bi-journal-text"></i>探訪心得</h3>
-                <label for="atmosphere_notes" class="form-label">氛圍</label>
-                <textarea id="atmosphere_notes" class="form-control mb-2" rows="2"></textarea>
-                <label for="decor_notes" class="form-label">裝潢</label>
-                <textarea id="decor_notes" class="form-control mb-2" rows="2"></textarea>
-                <label for="service_notes" class="form-label">服務</label>
-                <textarea id="service_notes" class="form-control" rows="2"></textarea>
-            </div>
-        </div>
-
-        <div class="card coe-card">
-            <div class="card-body">
-                <h3 class="card-title"><i class="bi bi-award-fill"></i>CoE 總分</h3>
-                <div id="medalRow" class="medal-row" role="group" aria-label="徽章等級"></div>
-                <div id="scoreChipRow" class="score-chip-row" role="group" aria-label="分數選擇"></div>
-                <div class="coe-total-block">
-                    <span class="coe-total-display" id="coeTotalDisplay">82.0</span>
-                    <span class="coe-total-of">/ 100</span>
-                    <span class="coe-total-tier-badge" id="coeTotalTierBadge">[ 銅獎 ]</span>
-                    <span class="coe-total-desc" id="coeTotalDesc">合格精品，日常品飲的選擇</span>
-                </div>
-            </div>
-        </div>
-
-        <div class="card">
-            <div class="card-body">
-                <h3 class="card-title"><i class="bi bi-bookmark-star-fill"></i>感官評估</h3>
-                <div class="accordion accordion-flush" id="evaluationAccordion"></div>
-            </div>
-        </div>
-
-        <div class="card">
-            <div class="card-body">
-                <h3 class="card-title"><i class="bi bi-exclamation-diamond"></i>瑕疵與備註</h3>
-                <label for="defects" class="form-label">瑕疵記錄</label>
-                <textarea id="defects" class="form-control mb-2" placeholder="記錄任何瑕疵，例如過度萃取、雜味等..." rows="2"></textarea>
-
-                <div class="notes-slot" data-notes-slot="notes">
-                    <button type="button" class="notes-toggle" data-notes-target="notes"
-                            aria-controls="notes_body" aria-expanded="false">
-                        <i class="bi bi-plus-circle"></i> 加上最終備註
+            <div class="card" data-mode-only="cupping">
+                <div class="card-body">
+                    <button type="button"
+                            class="card-title card-title-collapsible collapsed"
+                            data-bs-toggle="collapse" data-bs-target="#brewingParams"
+                            aria-expanded="false" aria-controls="brewingParams">
+                        <i class="bi bi-sliders"></i>
+                        <span>沖煮參數</span>
+                        <i class="bi bi-chevron-down card-toggle-chevron"></i>
                     </button>
-                    <div id="notes_body" class="notes-body" hidden>
-                        <label for="notes" class="form-label">最終備註</label>
-                        <textarea id="notes" class="form-control" placeholder="請輸入額外的備註..." rows="3"></textarea>
+                    <div id="brewingParams" class="collapse">
+                        <div class="row g-2 pt-2">
+                            <div class="col-md-4 col-6">
+                                <label for="f-grind" class="form-label">研磨度</label>
+                                <input type="text" class="form-control" id="f-grind">
+                            </div>
+                            <div class="col-md-4 col-6">
+                                <label for="f-water_temp" class="form-label">水溫 (°C)</label>
+                                <input type="number" class="form-control" id="f-water_temp">
+                            </div>
+                            <div class="col-md-4 col-6">
+                                <label for="f-ratio" class="form-label">粉水比</label>
+                                <input type="text" class="form-control" id="f-ratio">
+                            </div>
+                            <div class="col-md-4 col-6">
+                                <label for="f-method" class="form-label">方法</label>
+                                <input type="text" class="form-control" id="f-method">
+                            </div>
+                            <div class="col-md-4 col-12">
+                                <label for="f-extraction_time" class="form-label">萃取時間 (s)</label>
+                                <input type="number" class="form-control" id="f-extraction_time">
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
-        </div>
 
-        <div class="action-bar">
-            <button class="btn btn-info" id="saveBtn"><i class="bi bi-cloud-arrow-up me-1"></i>儲存到雲端</button>
-            <button class="btn btn-primary" id="generateBtn"><i class="bi bi-markdown me-1"></i>Markdown</button>
-            <button class="btn btn-success" id="copyBtn"><i class="bi bi-clipboard me-1"></i>複製</button>
-        </div>
+            <!-- Tasting-only: visit details -->
+            <div class="card" data-mode-only="tasting">
+                <div class="card-body">
+                    <h3 class="card-title"><i class="bi bi-journal-text"></i>品鑑資訊</h3>
+                    <div class="row g-2">
+                        <div class="col-md-4 col-6">
+                            <label for="f-visit_date" class="form-label">日期</label>
+                            <input type="date" class="form-control" id="f-visit_date">
+                        </div>
+                        <div class="col-md-4 col-6">
+                            <label for="f-price" class="form-label">價格</label>
+                            <input type="number" class="form-control" id="f-price" min="0" step="1">
+                        </div>
+                        <div class="col-12">
+                            <label for="f-item_ordered" class="form-label">點用品項</label>
+                            <input type="text" class="form-control" id="f-item_ordered"
+                                   placeholder="例：V60 衣索比亞耶加雪菲 / 拿鐵">
+                        </div>
+                        <div class="col-md-6 col-12">
+                            <label for="f-tasting-bean" class="form-label">品項豆子名</label>
+                            <input type="text" class="form-control" id="f-tasting-bean"
+                                   placeholder="例：衣索比亞 耶加雪菲">
+                        </div>
+                        <div class="col-md-6 col-12">
+                            <label for="f-brewing_method" class="form-label">沖煮方式</label>
+                            <input type="text" class="form-control" id="f-brewing_method"
+                                   placeholder="例：V60 / 義式 / 冰滴">
+                        </div>
+                    </div>
+                </div>
+            </div>
 
-        <div class="card">
-            <div class="card-body">
-                <h3 class="card-title"><i class="bi bi-filetype-md"></i>Markdown 輸出</h3>
-                <pre id="markdownOutput"></pre>
+            <!-- Tasting-only: vibe/decor/service chips + notes -->
+            <div class="card" data-mode-only="tasting">
+                <div class="card-body">
+                    <h3 class="card-title"><i class="bi bi-emoji-smile"></i>探訪心得</h3>
+                    <div id="tagSections"></div>
+                </div>
+            </div>
+
+            <!-- CoE total (shared) -->
+            <div class="card coe-card">
+                <div class="card-body">
+                    <h3 class="card-title"><i class="bi bi-award-fill"></i>CoE 總分</h3>
+                    <div id="medalRow" class="medal-row" role="group" aria-label="徽章等級"></div>
+                    <div id="scoreChipRow" class="score-chip-row" role="group" aria-label="分數選擇"></div>
+                    <div class="coe-total-block">
+                        <span class="coe-total-display" id="coeTotalDisplay">82.0</span>
+                        <span class="coe-total-of">/ 100</span>
+                        <span class="coe-total-tier-badge" id="coeTotalTierBadge">[ 銅獎 ]</span>
+                        <span class="coe-total-desc" id="coeTotalDesc">合格精品，日常品飲的選擇</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Sensory accordion (shared) -->
+            <div class="card">
+                <div class="card-body">
+                    <h3 class="card-title"><i class="bi bi-bookmark-star-fill"></i>感官評估</h3>
+                    <div class="accordion accordion-flush" id="evaluationAccordion"></div>
+                </div>
+            </div>
+
+            <!-- Defects + final notes (shared) -->
+            <div class="card">
+                <div class="card-body">
+                    <h3 class="card-title"><i class="bi bi-exclamation-diamond"></i>瑕疵與備註</h3>
+                    <label for="f-defects" class="form-label">瑕疵記錄</label>
+                    <textarea id="f-defects" class="form-control mb-2" rows="2"
+                              placeholder="記錄任何瑕疵，例如過度萃取、雜味等..."></textarea>
+
+                    <div class="notes-slot" data-notes-slot="f-notes">
+                        <button type="button" class="notes-toggle" data-notes-target="f-notes"
+                                aria-controls="f-notes-body" aria-expanded="false">
+                            <i class="bi bi-plus-circle"></i> 加上最終備註
+                        </button>
+                        <div id="f-notes-body" class="notes-body" hidden>
+                            <label for="f-notes" class="form-label">最終備註</label>
+                            <textarea id="f-notes" class="form-control" rows="3"
+                                      placeholder="請輸入額外的備註..."></textarea>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Action buttons -->
+            <div class="action-bar">
+                <button type="button" class="btn btn-outline-danger" id="f-delete" hidden>
+                    <i class="bi bi-trash me-1"></i>刪除
+                </button>
+                <button type="submit" class="btn btn-info" id="f-save">
+                    <i class="bi bi-cloud-arrow-up me-1"></i><span id="f-save-label">儲存</span>
+                </button>
+            </div>
+        </form>
+    </template>
+
+    <!-- ─── Shop modal ─────────────────────────────────────────────────────── -->
+    <template id="tpl-shop-modal">
+        <div class="modal-backdrop-custom">
+            <div class="modal-shell" role="dialog" aria-modal="true" aria-labelledby="shop-modal-title">
+                <header class="modal-header">
+                    <h3 id="shop-modal-title">新增店家</h3>
+                    <button type="button" class="modal-close" aria-label="關閉">
+                        <i class="bi bi-x-lg"></i>
+                    </button>
+                </header>
+                <form class="modal-body" id="shop-modal-form">
+                    <div class="mb-2">
+                        <label for="sm-name" class="form-label">店家名稱 *</label>
+                        <input type="text" class="form-control" id="sm-name" required maxlength="120">
+                    </div>
+                    <div class="mb-2">
+                        <label for="sm-location" class="form-label">位置</label>
+                        <input type="text" class="form-control" id="sm-location" placeholder="例：台北市大安區">
+                    </div>
+                    <div class="mb-2">
+                        <label for="sm-intro" class="form-label">介紹 / 備註</label>
+                        <textarea class="form-control" id="sm-intro" rows="3"></textarea>
+                    </div>
+                    <div class="modal-actions">
+                        <button type="button" class="btn btn-outline-secondary" data-action="cancel">取消</button>
+                        <button type="submit" class="btn btn-primary">儲存</button>
+                    </div>
+                </form>
             </div>
         </div>
-
-    </div>
+    </template>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="config.js" onerror="console.info('config.js 不存在，雲端儲存將停用')"></script>

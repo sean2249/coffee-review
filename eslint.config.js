@@ -13,7 +13,6 @@ export default [
             sourceType: 'script',
             globals: {
                 ...globals.browser,
-                Tesseract: 'readonly',
             },
         },
         rules: {
