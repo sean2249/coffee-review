@@ -570,7 +570,7 @@ function setBeanType(mode, value) {
     row.querySelectorAll('.bean-type-chip').forEach(chip => {
         const selected = chip.dataset.beanType === value;
         chip.classList.toggle('selected', selected);
-        chip.setAttribute('aria-checked', String(selected));
+        chip.setAttribute('aria-pressed', String(selected));
     });
     applyBeanTypeVisibility(mode);
 }
