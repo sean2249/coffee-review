@@ -1253,7 +1253,7 @@ function buildFormPayload(mode) {
             blend_composition: isBlend
                 ? (document.getElementById('f-blend_composition').value.trim() || null)
                 : null,
-            roast: document.getElementById('f-roast').value || null,
+            roast: document.querySelector('input[name="roast"]:checked')?.value || null,
             grind: document.getElementById('f-grind').value || null,
             water_temp: document.getElementById('f-water_temp').value || null,
             ratio: document.getElementById('f-ratio').value || null,
@@ -1384,11 +1384,15 @@ async function loadRecordIntoForm(mode, recordId) {
 
         if (mode === 'cupping') {
             document.getElementById('f-cupping-bean').value = r.bean_name || '';
-            ['origin', 'process', 'roast', 'grind', 'water_temp', 'ratio', 'method', 'extraction_time', 'blend_composition']
+            ['origin', 'process', 'grind', 'water_temp', 'ratio', 'method', 'extraction_time', 'blend_composition']
                 .forEach(k => {
                     const el = document.getElementById(`f-${k}`);
                     if (el && r[k] != null) el.value = r[k];
                 });
+            if (r.roast != null) {
+                const roastRadio = document.querySelector(`input[name="roast"][value="${CSS.escape(r.roast)}"]`);
+                if (roastRadio) roastRadio.checked = true;
+            }
             // Legacy rows have no bean_type. Only auto-pick when there's an
             // unambiguous signal (a blend_composition); otherwise force the
             // user to choose on save.
