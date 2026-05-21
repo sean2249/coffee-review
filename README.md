@@ -98,32 +98,37 @@ create trigger shops_touch_updated_at
     for each row execute function coffee.touch_updated_at();
 
 -- cupping_records — 杯測 (自家沖煮 / 豆評估)。shop_id 選填。
+-- bean_type: 'single' (單品) | 'blend' (配方豆)
+--   配方豆時 origin / process 留空，改用 blend_composition 描述組成。
 create table coffee.cupping_records (
-    id              uuid primary key default gen_random_uuid(),
-    shop_id         uuid references coffee.shops(id) on delete set null,
-    title           text,
-    bean_name       text,
-    origin          text,
-    process         text,
-    roast           text,
-    grind           text,
-    water_temp      text,
-    ratio           text,
-    method          text,
-    extraction_time text,
-    defects         text,
-    notes           text,
-    coe_total       numeric,
-    coe_tier_id     text,
-    evaluations     jsonb not null default '{}'::jsonb,
-    observation     jsonb not null default '{}'::jsonb,
-    schema_version  int   not null default 1,
-    created_at      timestamptz not null default now()
+    id                 uuid primary key default gen_random_uuid(),
+    shop_id            uuid references coffee.shops(id) on delete set null,
+    title              text,
+    bean_name          text,
+    bean_type          text check (bean_type in ('single', 'blend')),
+    origin             text,
+    process            text,
+    blend_composition  text,
+    roast              text,
+    grind              text,
+    water_temp         text,
+    ratio              text,
+    method             text,
+    extraction_time    text,
+    defects            text,
+    notes              text,
+    coe_total          numeric,
+    coe_tier_id        text,
+    evaluations        jsonb not null default '{}'::jsonb,
+    observation        jsonb not null default '{}'::jsonb,
+    schema_version     int   not null default 2,
+    created_at         timestamptz not null default now()
 );
 create index cupping_shop_id_idx    on coffee.cupping_records(shop_id);
 create index cupping_created_at_idx on coffee.cupping_records(created_at desc);
 
 -- tasting_records — 品鑑 (店家飲品)。shop_id 必填 + cascade delete。
+-- bean_type: 'single' (單品) | 'blend' (配方豆)
 create table coffee.tasting_records (
     id                uuid primary key default gen_random_uuid(),
     shop_id           uuid not null references coffee.shops(id) on delete cascade,
@@ -132,6 +137,7 @@ create table coffee.tasting_records (
     item_ordered      text,
     price             numeric,
     bean_name         text,
+    bean_type         text check (bean_type in ('single', 'blend')),
     brewing_method    text,
     atmosphere_tags   text[] not null default '{}',
     decor_tags        text[] not null default '{}',
@@ -145,7 +151,7 @@ create table coffee.tasting_records (
     coe_tier_id       text,
     evaluations       jsonb not null default '{}'::jsonb,
     observation       jsonb not null default '{}'::jsonb,
-    schema_version    int   not null default 1,
+    schema_version    int   not null default 2,
     created_at        timestamptz not null default now()
 );
 create index tasting_shop_id_idx    on coffee.tasting_records(shop_id);
@@ -163,6 +169,19 @@ create policy "open access" on coffee.tasting_records for all using (true) with 
 B. **曝光 schema 給 API**：Dashboard → Settings → API → 找 *Exposed schemas* → 加入 `coffee`。
 
 C. **取得連線資訊**：Settings → API 複製 *Project URL* 與 *anon public key*。
+
+D. **已部署的舊資料庫升級 (schema v1 → v2)**：若你的 schema 已經跑過 v1，請在 SQL Editor 執行：
+
+```sql
+alter table coffee.cupping_records
+    add column if not exists bean_type         text check (bean_type in ('single', 'blend')),
+    add column if not exists blend_composition text;
+
+alter table coffee.tasting_records
+    add column if not exists bean_type text check (bean_type in ('single', 'blend'));
+```
+
+舊紀錄 `bean_type` 會是 `NULL`；下次在 App 編輯儲存時會被要求補選類型。
 
 ### 2. 前端配置
 
