@@ -876,6 +876,40 @@ button.card-title {
     box-shadow: 0 0 0 3px var(--accent-tint);
 }
 
+/* ───── Process chips (處理法選擇) ─────────────────────────────────────── */
+.process-chip-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+.process-chip {
+    flex: 0 1 auto;
+    min-width: 80px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.55rem 0.9rem;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-strong);
+    background: var(--bg-elevated);
+    color: var(--text-secondary);
+    font-size: 0.95rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.12s ease;
+    font-family: inherit;
+}
+.process-chip:hover { color: var(--accent); border-color: var(--accent); }
+.process-chip.selected {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+}
+.process-chip:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px var(--accent-tint);
+}
+
 /* ───── Estimated total (sensory eval) ─────────────────────────────────── */
 .evaluation-estimated-total {
     display: flex;

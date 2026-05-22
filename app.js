@@ -217,7 +217,19 @@ const state = {
     shopsLoaded: false, // true after first successful fetch — distinguishes "deleted" from "not loaded yet"
     listFilter: { type: 'all', shopId: '' },
     currentForm: null,  // { mode, recordId|null }
+    knownOrigins: [],   // distinct origin strings from past cupping records
+    knownOriginsLoaded: false,
 };
+
+const COMMON_COUNTRIES = [
+    '衣索比亞', '哥倫比亞', '巴西', '肯亞', '瓜地馬拉',
+    '哥斯大黎加', '巴拿馬', '印尼', '葉門', '薩爾瓦多',
+    '宏都拉斯', '盧安達', '蒲隆地', '雲南', '台灣',
+];
+
+const COMMON_PROCESSES = [
+    '水洗', '日曬', '蜜處理', '厭氧發酵', '半水洗', '濕刨法',
+];
 
 const coeState = { coeTotal: 82, selectedTierId: 'common' };
 let supabaseClient = null;
@@ -963,6 +975,16 @@ async function viewForm(root, { mode, recordId, prefillShopId = null }) {
     populateShopSelect(document.getElementById('f-shop'), mode === 'tasting');
     applyShopPrefill(prefillShopId);
 
+    // Origin datalist + process chip row are cupping-only UI elements.
+    if (mode === 'cupping') {
+        renderProcessChips();
+        loadKnownOrigins().then(populateOriginDatalist);
+        populateOriginDatalist();
+    }
+
+    const initialShopId = document.getElementById('f-shop')?.value || '';
+    refreshImportBeanForShop(mode, initialShopId);
+
     if (recordId) {
         document.getElementById('f-save-label').textContent = '儲存變更';
         document.getElementById('f-delete').hidden = false;
@@ -1015,8 +1037,170 @@ function applyBeanTypeVisibility(mode) {
     document.querySelectorAll('[data-bean-type-only]').forEach(el => {
         const [scope, type] = el.dataset.beanTypeOnly.split(':');
         if (scope !== mode) return; // visibility for the other mode is governed by data-mode-only
+        const visible = type === 'any' ? !!beanType : beanType === type;
+        el.style.display = visible ? '' : 'none';
+    });
+    document.querySelectorAll('[data-bean-type-text]').forEach(el => {
+        const [scope, type] = el.dataset.beanTypeText.split(':');
+        if (scope !== mode) return;
         el.style.display = beanType === type ? '' : 'none';
     });
+}
+
+// ─── Origin datalist (country dropdown) ──────────────────────────────────────
+async function loadKnownOrigins() {
+    if (state.knownOriginsLoaded) return;
+    const sb = await ensureSupabase();
+    if (!sb) return;
+    // Defensive cap — distinct happens client-side. If the table grows past
+    // a few thousand rows, switch to a Postgres view/RPC returning DISTINCT.
+    const { data, error } = await sb.from(SUPABASE_CONFIG.cuppingTable)
+        .select('origin').not('origin', 'is', null).limit(2000);
+    if (error) {
+        console.warn('loadKnownOrigins failed:', error);
+        return;
+    }
+    const seen = new Set();
+    (data || []).forEach(row => {
+        const v = (row.origin || '').trim();
+        if (v) seen.add(v);
+    });
+    state.knownOrigins = Array.from(seen);
+    state.knownOriginsLoaded = true;
+}
+
+function populateOriginDatalist() {
+    const dl = document.getElementById('origin-options');
+    if (!dl) return;
+    const all = new Set([...COMMON_COUNTRIES, ...state.knownOrigins]);
+    dl.innerHTML = '';
+    all.forEach(v => {
+        const opt = document.createElement('option');
+        opt.value = v;
+        dl.appendChild(opt);
+    });
+}
+
+// ─── Process chip row ────────────────────────────────────────────────────────
+function renderProcessChips() {
+    const row = document.querySelector('.process-chip-row');
+    if (!row) return;
+    row.innerHTML = '';
+    COMMON_PROCESSES.forEach(p => {
+        const chip = document.createElement('button');
+        chip.type = 'button';
+        chip.className = 'process-chip';
+        chip.dataset.process = p;
+        chip.setAttribute('aria-pressed', 'false');
+        chip.textContent = p;
+        chip.addEventListener('click', () => {
+            const input = document.getElementById('f-process');
+            if (input) input.value = p;
+            setProcessChip(p);
+        });
+        row.appendChild(chip);
+    });
+}
+
+function setProcessChip(value) {
+    document.querySelectorAll('.process-chip').forEach(c => {
+        const sel = c.dataset.process === value;
+        c.classList.toggle('selected', sel);
+        c.setAttribute('aria-pressed', String(sel));
+    });
+}
+
+// ─── Import existing bean (per shop) ─────────────────────────────────────────
+async function refreshImportBeanForShop(mode, shopId) {
+    const block = document.querySelector(`[data-import-bean="${mode}"]`);
+    const sel = document.getElementById(`f-import-bean-${mode}`);
+    if (!block || !sel) return;
+
+    // Reset
+    sel.innerHTML = '<option value="">— 不帶入 —</option>';
+
+    if (!shopId) {
+        block.hidden = true;
+        return;
+    }
+
+    // Always pull from cupping_records (richer fields incl. origin/process/roast).
+    const sb = await ensureSupabase();
+    if (!sb) { block.hidden = true; return; }
+    const { data, error } = await sb.from(SUPABASE_CONFIG.cuppingTable)
+        .select('id, bean_name, bean_type, origin, blend_composition, created_at')
+        .eq('shop_id', shopId)
+        .order('created_at', { ascending: false });
+    if (error) {
+        console.warn('refreshImportBeanForShop failed:', error);
+        block.hidden = true;
+        return;
+    }
+    const beans = data || [];
+
+    // Exclude the record being edited first — otherwise it could "claim" its
+    // bean's signature in the dedupe pass below, hiding older duplicates and
+    // then disappearing itself, leaving the bean unavailable for import.
+    const currentId = state.currentForm?.recordId;
+    const candidates = currentId ? beans.filter(b => b.id !== currentId) : beans;
+
+    if (!candidates.length) {
+        block.hidden = true;
+        return;
+    }
+
+    // Deduplicate by (bean_name + bean_type + origin/blend_composition) to avoid
+    // listing the same bean once per cupping session.
+    const seen = new Set();
+    candidates.forEach(b => {
+        const name = (b.bean_name || '').trim();
+        if (!name) return;
+        const sig = `${b.bean_type || ''}|${name}|${(b.origin || '').trim()}|${(b.blend_composition || '').trim()}`;
+        if (seen.has(sig)) return;
+        seen.add(sig);
+        const detail = b.bean_type === 'blend'
+            ? '配方豆'
+            : (b.origin ? b.origin : '單品');
+        const opt = document.createElement('option');
+        opt.value = b.id;
+        opt.textContent = `${name}（${detail}）`;
+        sel.appendChild(opt);
+    });
+
+    block.hidden = sel.options.length <= 1;
+}
+
+async function applyImportedBean(mode, recordId) {
+    if (!recordId) return;
+    try {
+        const r = await api.getRecord('cupping', recordId);
+        if (!r) return;
+        // Legacy rows may lack bean_type. Only auto-derive 'blend' when there's an
+        // unambiguous signal (blend_composition present); otherwise leave the
+        // type empty so the user picks consciously — same policy as loadRecordIntoForm.
+        const fallbackType = r.blend_composition ? 'blend' : '';
+        const beanType = r.bean_type || fallbackType;
+        if (mode === 'cupping') {
+            setBeanType('cupping', beanType);
+            document.getElementById('f-cupping-bean').value = r.bean_name || '';
+            document.getElementById('f-origin').value = r.origin || '';
+            const processEl = document.getElementById('f-process');
+            if (processEl) processEl.value = r.process || '';
+            setProcessChip(r.process || '');
+            document.getElementById('f-blend_composition').value = r.blend_composition || '';
+            if (r.roast) {
+                const roastRadio = document.querySelector(`input[name="roast"][value="${CSS.escape(r.roast)}"]`);
+                if (roastRadio) roastRadio.checked = true;
+            }
+            populateOriginDatalist();
+        } else {
+            setBeanType('tasting', beanType);
+            const beanEl = document.getElementById('f-tasting-bean');
+            if (beanEl) beanEl.value = r.bean_name || '';
+        }
+    } catch (e) {
+        console.warn('applyImportedBean failed:', e);
+    }
 }
 
 function populateShopSelect(sel, required) {
@@ -1748,6 +1932,34 @@ function bindFormHandlers() {
         methodEl.addEventListener('input', e => setBrewingMethodChip(e.target.value));
     }
 
+    // Process method: chip row + free-text input two-way binding
+    const processEl = document.getElementById('f-process');
+    if (processEl) {
+        processEl.addEventListener('input', e => setProcessChip(e.target.value));
+    }
+
+    // Import existing bean — one selector per mode
+    ['cupping', 'tasting'].forEach(m => {
+        const importSel = document.getElementById(`f-import-bean-${m}`);
+        if (!importSel) return;
+        importSel.addEventListener('change', () => {
+            const id = importSel.value;
+            if (!id) return;
+            applyImportedBean(m, id);
+            // Reset so re-selecting the same option re-applies if needed.
+            importSel.value = '';
+        });
+    });
+
+    // Shop change → refresh import-bean selector for the current mode
+    const shopSel = document.getElementById('f-shop');
+    if (shopSel) {
+        shopSel.addEventListener('change', () => {
+            const mode = state.currentForm?.mode;
+            if (mode) refreshImportBeanForShop(mode, shopSel.value);
+        });
+    }
+
     const defectsEl = document.getElementById('f-defects');
     const notesEl = document.getElementById('f-notes');
     if (defectsEl) defectsEl.addEventListener('input', updateDefectsSummary);
@@ -1882,6 +2094,15 @@ async function submitForm() {
     if (!state.currentForm) return;
     const { mode, recordId } = state.currentForm;
 
+    // Bean type must be validated first — bean-name inputs are now hidden
+    // until a type is chosen, so focusing them before that would be confusing.
+    if (!getBeanType(mode)) {
+        const firstChip = document.querySelector(
+            `.bean-type-chip-row[data-bean-type-group="${mode}"] .bean-type-chip`);
+        firstChip?.focus();
+        showToast('請選擇豆子類型（單品 / 配方豆）');
+        return;
+    }
     if (mode === 'cupping') {
         const beanEl = document.getElementById('f-cupping-bean');
         if (!beanEl.value.trim()) {
@@ -1894,13 +2115,6 @@ async function submitForm() {
     if (mode === 'tasting' && !shopId) {
         document.getElementById('f-shop').focus();
         showToast('品鑑記錄必須指定店家');
-        return;
-    }
-    if (!getBeanType(mode)) {
-        const firstChip = document.querySelector(
-            `.bean-type-chip-row[data-bean-type-group="${mode}"] .bean-type-chip`);
-        firstChip?.focus();
-        showToast('請選擇豆子類型（單品 / 配方豆）');
         return;
     }
 
@@ -1964,6 +2178,7 @@ async function loadRecordIntoForm(mode, recordId) {
             shopSel.appendChild(opt);
         }
         shopSel.value = r.shop_id || '';
+        refreshImportBeanForShop(mode, shopSel.value);
 
         // common fields
         document.getElementById('f-defects').value = r.defects || '';
@@ -1979,6 +2194,8 @@ async function loadRecordIntoForm(mode, recordId) {
                     if (el && r[k] != null) el.value = r[k];
                 });
             setBrewingMethodChip(r.method || '');
+            setProcessChip(r.process || '');
+            populateOriginDatalist();
             if (r.roast != null) {
                 const roastRadio = document.querySelector(`input[name="roast"][value="${CSS.escape(r.roast)}"]`);
                 if (roastRadio) roastRadio.checked = true;
