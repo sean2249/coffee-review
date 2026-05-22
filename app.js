@@ -75,20 +75,96 @@ function scoresInTier(tier) {
 }
 
 // ─── Evaluation field definitions ────────────────────────────────────────────
-const mouthfeelOptions = {
-    weight:  { label: '重量級別', options: ['輕盈如茶', '圓潤順口', '醇厚飽滿'] },
-    texture: { label: '質地描述', options: ['絲滑感', '奶油感', '絨布感', '糖漿感', '多汁感', '清脆感', '乾澀感', '氣泡感', '顆粒感'] },
+// Chip 快選選項：每個 sub-key 為一組 chip 群組
+//   type: 'single' → radio 行為，儲存為字串
+//   type: 'multi'  → checkbox 行為，儲存為字串陣列
+const evaluationOptions = {
+    flavor: {
+        intensity:   { label: '強度',   type: 'single',
+                       options: ['微弱', '中等', '濃郁', '爆發'] },
+        complexity:  { label: '複雜度', type: 'single',
+                       options: ['單一明確', '雙層次', '多層次', '變化豐富'] },
+        development: { label: '發展',   type: 'multi',
+                       options: ['靜態', '隨溫度變化', '入口至尾韻變化', '加奶後變化'] },
+    },
+    acidity: {
+        intensity: { label: '強度', type: 'single',
+                     options: ['微弱', '中等', '明亮', '銳利'] },
+        types:     { label: '類型', type: 'multi',
+                     options: ['檸檬酸（柑橘）', '蘋果酸（青蘋果）', '酒石酸（葡萄酒感）',
+                               '磷酸（清涼）', '醋酸', '乳酸（優格感）', '發酵酸'] },
+        textures:  { label: '質地', type: 'multi',
+                     options: ['活潑', '柔和', '圓潤', '刺激', '尖銳', '多汁'] },
+    },
+    sweetness: {
+        intensity:   { label: '強度',   type: 'single',
+                       options: ['微甜', '適中', '濃郁', '蜜香'] },
+        types:       { label: '類型',   type: 'multi',
+                       options: ['蔗糖', '蜂蜜', '焦糖', '紅糖', '麥芽', '果糖', '煉乳感'] },
+        persistence: { label: '持久度', type: 'single',
+                       options: ['短暫', '中等', '悠長'] },
+    },
+    mouthfeel: {
+        weight:    { label: '重量級別', type: 'single',
+                     options: ['輕盈如茶', '圓潤順口', '醇厚飽滿'] },
+        texture:   { label: '質地描述', type: 'multi',
+                     options: ['絲滑感', '奶油感', '絨布感', '糖漿感', '多汁感',
+                               '清脆感', '乾澀感', '氣泡感', '顆粒感'] },
+        viscosity: { label: '黏稠度',   type: 'single',
+                     options: ['稀薄', '適中', '濃稠'] },
+        touch:     { label: '觸感',     type: 'multi',
+                     options: ['清涼', '溫潤', '刺激', '礦物感'] },
+    },
+    aftertaste: {
+        length:  { label: '尾韻長度', type: 'single',
+                   options: ['短暫', '中等', '悠長', '綿延'] },
+        quality: { label: '尾韻質地', type: 'multi',
+                   options: ['乾淨', '粗糙 / 乾澀', '富有變化'] },
+        finish:  { label: '風味回甘', type: 'multi',
+                   options: ['果香殘留', '巧克力尾', '花香尾', '堅果尾',
+                             '焦糖尾', '回甘明顯', '苦尾', '酸尾'] },
+    },
+    cleanness: {
+        description: { label: '描述', type: 'single',
+                       options: ['透亮乾淨', '純粹', '略帶雜質', '模糊', '混濁'] },
+    },
+    balance: {
+        description: { label: '描述',     type: 'single',
+                       options: ['完整協調', '大致平衡', '略偏一邊', '失衡'] },
+        dominant:    { label: '突出元素', type: 'multi',
+                       options: ['酸主導', '甜主導', '苦主導', '風味主導', '口感主導'] },
+    },
+    overall: {
+        impression: { label: '印象', type: 'single',
+                      options: ['驚艷', '出色', '合格', '平凡', '失望'] },
+        intent:     { label: '意願', type: 'multi',
+                      options: ['想再喝', '想分享', '想推薦給人',
+                                '想了解豆況', '不會再點'] },
+    },
 };
-const aftertasteOptions = {
-    length:  { label: '尾韻長度', options: ['短暫', '中等', '悠長', '綿延'] },
-    quality: { label: '尾韻質地', options: ['乾淨', '粗糙 / 乾澀', '富有變化'] },
+
+const observationOptions = {
+    aroma: {
+        intensity:   { label: '強度',     type: 'single',
+                       options: ['微弱', '中等', '飽滿', '強烈'] },
+        persistence: { label: '持久度',   type: 'single',
+                       options: ['短', '中', '長'] },
+        dryVsWet:    { label: '乾濕對比', type: 'single',
+                       options: ['乾香較強', '濕香較強', '均衡'] },
+    },
 };
+
+const defectsOptions = [
+    '過萃', '萃取不足', '苦澀', '焦味', '酸敗', '紙味', '木味',
+    '霉味', '土味', '化學味', '澀感', '雜味', '金屬味', '發酵過度',
+];
+
 const referenceFields = [
     { key: 'flavor',     label: '風味 Flavor',      icon: 'bi-droplet-half',     hasFlavorWheel: true },
     { key: 'acidity',    label: '酸質 Acidity',     icon: 'bi-lightning-charge' },
     { key: 'sweetness',  label: '甜度 Sweetness',   icon: 'bi-heart' },
-    { key: 'mouthfeel',  label: '口感 Mouthfeel',   icon: 'bi-circle-half',      custom: mouthfeelOptions },
-    { key: 'aftertaste', label: '尾韻 Aftertaste',  icon: 'bi-soundwave',        custom: aftertasteOptions },
+    { key: 'mouthfeel',  label: '口感 Mouthfeel',   icon: 'bi-circle-half' },
+    { key: 'aftertaste', label: '尾韻 Aftertaste',  icon: 'bi-soundwave' },
     { key: 'cleanness',  label: '乾淨度 Clean Cup', icon: 'bi-stars' },
     { key: 'balance',    label: '平衡 Balance',     icon: 'bi-arrow-left-right' },
     { key: 'overall',    label: '整體 Overall',     icon: 'bi-trophy' },
@@ -714,6 +790,37 @@ function renderDetailTastingTagsCard(r) {
         </div>`;
 }
 
+function renderChipRow(values) {
+    if (!values || values.length === 0) return '';
+    return `<div class="detail-tag-row">${values.map(v =>
+        `<span class="detail-tag-pill">${escapeHtml(v)}</span>`).join('')}</div>`;
+}
+
+function renderChipDetailRows(spec, data) {
+    if (!spec || !data) return '';
+    let html = '';
+    Object.entries(spec).forEach(([subKey, sub]) => {
+        const v = data[subKey];
+        if (sub.type === 'single') {
+            if (v) {
+                html += `<div class="detail-eval-row">
+                    <span class="detail-eval-key">${escapeHtml(sub.label)}</span>
+                    <span class="detail-eval-val">${escapeHtml(v)}</span>
+                </div>`;
+            }
+        } else {
+            const arr = Array.isArray(v) ? v : (v ? [v] : []);
+            if (arr.length > 0) {
+                html += `<div class="detail-eval-row">
+                    <span class="detail-eval-key">${escapeHtml(sub.label)}</span>
+                    <span class="detail-eval-val">${arr.map(escapeHtml).join('、')}</span>
+                </div>`;
+            }
+        }
+    });
+    return html;
+}
+
 function renderDetailObservations(r) {
     if (!r.observation) return '';
     return observationFields.map(f => {
@@ -722,7 +829,8 @@ function renderDetailObservations(r) {
         const flavorChips = (data.flavors || [])
             .map(decodeFlavorMeta).filter(Boolean)
             .map(m => `<span class="detail-flavor-chip" style="--ft-color:${m.color}">${escapeHtml(m.name)}</span>`).join('');
-        const hasContent = data.dryAroma || data.wetAroma || data.notes || flavorChips;
+        const chipRows = renderChipDetailRows(observationOptions[f.key], data);
+        const hasContent = data.dryAroma || data.wetAroma || data.notes || flavorChips || chipRows;
         if (!hasContent) return '';
         return `
             <div class="detail-eval-section">
@@ -731,6 +839,7 @@ function renderDetailObservations(r) {
                 </h4>
                 ${data.dryAroma ? `<div class="detail-eval-row"><span class="detail-eval-key">乾香</span><span class="detail-eval-val">${escapeHtml(data.dryAroma)}</span></div>` : ''}
                 ${data.wetAroma ? `<div class="detail-eval-row"><span class="detail-eval-key">濕香</span><span class="detail-eval-val">${escapeHtml(data.wetAroma)}</span></div>` : ''}
+                ${chipRows}
                 ${flavorChips ? `<div class="detail-flavor-row">${flavorChips}</div>` : ''}
                 ${data.notes ? `<p class="detail-eval-notes">${escapeHtml(data.notes)}</p>` : ''}
             </div>`;
@@ -743,14 +852,7 @@ function renderDetailReferences(r) {
         const data = r.evaluations[f.key];
         if (!data) return '';
         const score = typeof data.score === 'number' ? data.score.toFixed(1) : '—';
-        let customHtml = '';
-        if (f.custom) {
-            const pk = Object.keys(f.custom)[0], sk = Object.keys(f.custom)[1];
-            const pv = data[pk];
-            const sv = data[sk] || [];
-            if (pv) customHtml += `<div class="detail-eval-row"><span class="detail-eval-key">${escapeHtml(f.custom[pk].label)}</span><span class="detail-eval-val">${escapeHtml(pv)}</span></div>`;
-            if (sv.length > 0) customHtml += `<div class="detail-eval-row"><span class="detail-eval-key">${escapeHtml(f.custom[sk].label)}</span><span class="detail-eval-val">${sv.map(escapeHtml).join('、')}</span></div>`;
-        }
+        const chipRows = renderChipDetailRows(evaluationOptions[f.key], data);
         const flavorChips = (data.flavors || [])
             .map(decodeFlavorMeta).filter(Boolean)
             .map(m => `<span class="detail-flavor-chip" style="--ft-color:${m.color}">${escapeHtml(m.name)}</span>`).join('');
@@ -761,7 +863,7 @@ function renderDetailReferences(r) {
                     <span class="detail-eval-section-label">${escapeHtml(f.label)}</span>
                     <span class="detail-eval-score">${score} / 8</span>
                 </h4>
-                ${customHtml}
+                ${chipRows}
                 ${flavorChips ? `<div class="detail-flavor-row">${flavorChips}</div>` : ''}
                 ${data.notes ? `<p class="detail-eval-notes">${escapeHtml(data.notes)}</p>` : ''}
             </div>`;
@@ -769,14 +871,16 @@ function renderDetailReferences(r) {
 }
 
 function renderDetailDefectsNotes(r) {
-    if (!r.defects && !r.notes) return '';
+    const defectsTags = Array.isArray(r.defects_tags) ? r.defects_tags : [];
+    if (!r.defects && !r.notes && defectsTags.length === 0) return '';
     return `
         <div class="detail-eval-section">
             <h4 class="detail-eval-section-title">
                 <span class="eval-icon"><i class="bi bi-exclamation-diamond"></i></span>
                 <span class="detail-eval-section-label">瑕疵與備註</span>
             </h4>
-            ${r.defects ? `<div class="detail-eval-row"><span class="detail-eval-key">瑕疵</span><span class="detail-eval-val">${escapeHtml(r.defects)}</span></div>` : ''}
+            ${renderChipRow(defectsTags)}
+            ${r.defects ? `<div class="detail-eval-row"><span class="detail-eval-key">補充</span><span class="detail-eval-val">${escapeHtml(r.defects)}</span></div>` : ''}
             ${r.notes ? `<p class="detail-eval-notes">${escapeHtml(r.notes)}</p>` : ''}
         </div>`;
 }
@@ -1029,6 +1133,49 @@ function refreshTotalDisplay() {
 }
 
 // ─── Evaluation accordion ────────────────────────────────────────────────────
+// 共用：渲染 button-style chip 群組（single / multi）
+function chipGroupHtml(name, label, type, options) {
+    const role = type === 'single' ? 'radiogroup' : 'group';
+    return `
+        <label class="chip-group-label">${escapeHtml(label)}</label>
+        <div class="chip-group" role="${role}" aria-label="${escapeHtml(label)}"
+             data-chip-name="${escapeHtml(name)}" data-chip-type="${type}">
+            ${options.map(opt => `
+                <button type="button" class="chip"
+                        data-chip-value="${escapeHtml(opt)}"
+                        aria-pressed="false">${escapeHtml(opt)}</button>
+            `).join('')}
+        </div>`;
+}
+
+// 從 DOM 讀取 chip group 已選值：single → 字串、multi → 字串陣列
+function readChipGroup(name) {
+    const group = document.querySelector(`.chip-group[data-chip-name="${name}"]`);
+    if (!group) return null;
+    const isMulti = group.dataset.chipType === 'multi';
+    const pressed = group.querySelectorAll('button[aria-pressed="true"]');
+    if (!isMulti) return pressed[0]?.dataset.chipValue || '';
+    return Array.from(pressed).map(b => b.dataset.chipValue);
+}
+
+// 把資料寫入 chip group（用於載入既有記錄）。
+// 容忍舊資料型別不一致：multi 期望陣列但拿到字串會自動包成陣列。
+function writeChipGroup(name, value) {
+    const group = document.querySelector(`.chip-group[data-chip-name="${name}"]`);
+    if (!group) return;
+    const isMulti = group.dataset.chipType === 'multi';
+    let values;
+    if (isMulti) {
+        values = Array.isArray(value) ? value : (value ? [value] : []);
+    } else {
+        values = [Array.isArray(value) ? value[0] : value].filter(Boolean);
+    }
+    const selected = new Set(values);
+    group.querySelectorAll('button[data-chip-value]').forEach(btn => {
+        btn.setAttribute('aria-pressed', String(selected.has(btn.dataset.chipValue)));
+    });
+}
+
 function notesSlotHtml(textareaId, { rows = 2 } = {}) {
     const bodyId = `${textareaId}_body`;
     return `<div class="notes-slot" data-notes-slot="${textareaId}">
@@ -1084,28 +1231,10 @@ function generateReferenceItem(field) {
             <div class="small-hint">參考分 4-8（預設 5），不影響上方 CoE 總分。</div>
         </div>`;
 
-    if (field.custom) {
-        const opts = field.custom;
-        const pk = Object.keys(opts)[0], sk = Object.keys(opts)[1];
-        const primary = opts[pk], secondary = opts[sk];
-
-        body += `<h6 class="mb-2 text-secondary small">${primary.label}</h6>`;
-        primary.options.forEach((opt, i) => {
-            const optId = `${key}_${pk}_${i}`;
-            body += `<div class="form-check form-check-inline">
-                <input class="form-check-input" type="radio"
-                       name="${key}_${pk}" id="${optId}" value="${opt}" data-ref-key="${key}">
-                <label class="form-check-label" for="${optId}">${opt}</label>
-            </div>`;
-        });
-        body += `<h6 class="mt-2 mb-2 text-secondary small">${secondary.label}</h6>`;
-        secondary.options.forEach((opt, i) => {
-            const optId = `${key}_${sk}_${i}`;
-            body += `<div class="form-check form-check-inline">
-                <input class="form-check-input" type="checkbox"
-                       name="${key}_${sk}" id="${optId}" value="${opt}" data-ref-key="${key}">
-                <label class="form-check-label" for="${optId}">${opt}</label>
-            </div>`;
+    const chipSpec = evaluationOptions[key];
+    if (chipSpec) {
+        Object.entries(chipSpec).forEach(([subKey, spec]) => {
+            body += chipGroupHtml(`${key}_${subKey}`, spec.label, spec.type, spec.options);
         });
     }
 
@@ -1126,6 +1255,12 @@ function generateObservationItem(field) {
         <textarea id="${key}_dryAroma" class="form-control mb-2" rows="2"></textarea>
         <label class="form-label">濕香:</label>
         <textarea id="${key}_wetAroma" class="form-control mb-2" rows="2"></textarea>`;
+    const chipSpec = observationOptions[key];
+    if (chipSpec) {
+        Object.entries(chipSpec).forEach(([subKey, spec]) => {
+            body += chipGroupHtml(`${key}_${subKey}`, spec.label, spec.type, spec.options);
+        });
+    }
     if (field.hasFlavorWheel) {
         body += `<label class="form-label mt-2">風味（點選後展開細項）:</label>
             <div id="${key}_flavorList" class="flavor-wheel"></div>`;
@@ -1136,9 +1271,10 @@ function generateObservationItem(field) {
 
 function generateDefectsItem() {
     const body = `
-        <label for="f-defects" class="form-label">瑕疵記錄</label>
+        ${chipGroupHtml('defects_tags', '常見瑕疵', 'multi', defectsOptions)}
+        <label for="f-defects" class="form-label mt-2">補充說明</label>
         <textarea id="f-defects" class="form-control mb-2" rows="2"
-                  placeholder="記錄任何瑕疵，例如過度萃取、雜味等..."></textarea>
+                  placeholder="其他瑕疵描述（選填）..."></textarea>
         <div class="notes-slot" data-notes-slot="f-notes">
             <button type="button" class="notes-toggle" data-notes-target="f-notes"
                     aria-controls="f-notes-body" aria-expanded="false">
@@ -1181,9 +1317,27 @@ function initEvaluationAccordion() {
         const key = e.target.dataset.refScore;
         if (key) onRefScoreInput(key);
     });
-    accordion.addEventListener('change', e => {
-        const key = e.target.dataset.refKey;
-        if (key) updateRefSummary(key);
+    accordion.addEventListener('click', e => {
+        const btn = e.target.closest('.chip[data-chip-value]');
+        if (!btn) return;
+        const group = btn.closest('.chip-group');
+        if (!group) return;
+        const isMulti = group.dataset.chipType === 'multi';
+        if (isMulti) {
+            const next = btn.getAttribute('aria-pressed') === 'true' ? 'false' : 'true';
+            btn.setAttribute('aria-pressed', next);
+        } else {
+            group.querySelectorAll('.chip').forEach(b =>
+                b.setAttribute('aria-pressed', String(b === btn)));
+        }
+        const name = group.dataset.chipName;
+        if (name === 'defects_tags') {
+            updateDefectsSummary();
+            return;
+        }
+        const refKey = name.split('_')[0];
+        if (referenceFields.some(f => f.key === refKey)) updateRefSummary(refKey);
+        else if (observationFields.some(f => f.key === refKey)) updateObservationSummary(refKey);
     });
 }
 
@@ -1222,9 +1376,13 @@ function updateEstimatedTotalDisplay() {
 function updateDefectsSummary() {
     const summaryEl = document.getElementById('defects_summary');
     if (!summaryEl) return;
+    const tags = readChipGroup('defects_tags') || [];
     const defects = document.getElementById('f-defects')?.value?.trim() || '';
     const notes = document.getElementById('f-notes')?.value?.trim() || '';
-    const text = [defects, notes].filter(Boolean).join(' / ');
+    const tagPreview = tags.length > 0
+        ? tags.slice(0, 3).join('、') + (tags.length > 3 ? `…(+${tags.length - 3})` : '')
+        : '';
+    const text = [tagPreview, defects, notes].filter(Boolean).join(' / ');
     if (!text) {
         summaryEl.textContent = '';
         return;
@@ -1253,13 +1411,19 @@ function updateRefSummary(key) {
     const score = getReferenceScore(key);
     const parts = [`${score.toFixed(1)} / 8`];
 
-    if (field.custom) {
-        const opts = field.custom;
-        const pk = Object.keys(opts)[0], sk = Object.keys(opts)[1];
-        const pv = document.querySelector(`input[name="${key}_${pk}"]:checked`)?.value || '';
-        const sv = Array.from(document.querySelectorAll(`input[name="${key}_${sk}"]:checked`)).map(cb => cb.value);
-        const summary = [pv, ...sv].filter(Boolean).join(', ');
-        if (summary) parts.push(summary);
+    const chipSpec = evaluationOptions[key];
+    if (chipSpec) {
+        const chipValues = [];
+        Object.keys(chipSpec).forEach(subKey => {
+            const v = readChipGroup(`${key}_${subKey}`);
+            if (Array.isArray(v)) chipValues.push(...v);
+            else if (v) chipValues.push(v);
+        });
+        if (chipValues.length > 0) {
+            const preview = chipValues.slice(0, 3).join(', ')
+                + (chipValues.length > 3 ? `…(+${chipValues.length - 3})` : '');
+            parts.push(preview);
+        }
     }
     if (field.hasFlavorWheel) {
         const selected = getSelectedFlavorNames(`${key}_flavorList`);
@@ -1274,10 +1438,20 @@ function updateRefSummary(key) {
 function updateObservationSummary(key) {
     const summaryEl = document.getElementById(`${key}_summary`);
     if (!summaryEl) return;
-    const selected = getSelectedFlavorNames(`${key}_flavorList`);
-    summaryEl.textContent = selected.length === 0
+    const chipSpec = observationOptions[key];
+    const chipValues = [];
+    if (chipSpec) {
+        Object.keys(chipSpec).forEach(subKey => {
+            const v = readChipGroup(`${key}_${subKey}`);
+            if (Array.isArray(v)) chipValues.push(...v);
+            else if (v) chipValues.push(v);
+        });
+    }
+    const flavors = getSelectedFlavorNames(`${key}_flavorList`);
+    const all = [...chipValues, ...flavors];
+    summaryEl.textContent = all.length === 0
         ? ''
-        : selected.slice(0, 3).join(', ') + (selected.length > 3 ? `…(+${selected.length - 3})` : '');
+        : all.slice(0, 3).join(', ') + (all.length > 3 ? `…(+${all.length - 3})` : '');
 }
 
 function getSelectedFlavorNames(containerId) {
@@ -1616,10 +1790,11 @@ function buildEvaluationPayload() {
             score: getReferenceScore(f.key),
             notes: document.getElementById(`${f.key}_notes`)?.value || '',
         };
-        if (f.custom) {
-            const pk = Object.keys(f.custom)[0], sk = Object.keys(f.custom)[1];
-            entry[pk] = document.querySelector(`input[name="${f.key}_${pk}"]:checked`)?.value || '';
-            entry[sk] = Array.from(document.querySelectorAll(`input[name="${f.key}_${sk}"]:checked`)).map(cb => cb.value);
+        const chipSpec = evaluationOptions[f.key];
+        if (chipSpec) {
+            Object.keys(chipSpec).forEach(subKey => {
+                entry[subKey] = readChipGroup(`${f.key}_${subKey}`);
+            });
         }
         if (f.hasFlavorWheel) entry.flavors = getSelectedFlavorIds(`${f.key}_flavorList`);
         payload.evaluations[f.key] = entry;
@@ -1630,6 +1805,12 @@ function buildEvaluationPayload() {
             entry.dryAroma = document.getElementById(`${f.key}_dryAroma`)?.value || '';
             entry.wetAroma = document.getElementById(`${f.key}_wetAroma`)?.value || '';
         }
+        const chipSpec = observationOptions[f.key];
+        if (chipSpec) {
+            Object.keys(chipSpec).forEach(subKey => {
+                entry[subKey] = readChipGroup(`${f.key}_${subKey}`);
+            });
+        }
         if (f.hasFlavorWheel) entry.flavors = getSelectedFlavorIds(`${f.key}_flavorList`);
         payload.observation[f.key] = entry;
     });
@@ -1639,6 +1820,7 @@ function buildEvaluationPayload() {
 function buildFormPayload(mode) {
     const shopId = document.getElementById('f-shop').value || null;
     const defects = document.getElementById('f-defects').value;
+    const defectsTags = readChipGroup('defects_tags') || [];
     const notes = document.getElementById('f-notes').value;
 
     const ev = buildEvaluationPayload();
@@ -1664,8 +1846,9 @@ function buildFormPayload(mode) {
             method: document.getElementById('f-method').value || null,
             extraction_time: document.getElementById('f-extraction_time').value || null,
             defects: defects || null,
+            defects_tags: defectsTags,
             notes: notes || null,
-            schema_version: 2,
+            schema_version: 3,
             ...ev,
         };
     }
@@ -1688,8 +1871,9 @@ function buildFormPayload(mode) {
         decor_notes:      document.getElementById('f-tag-decor-notes')?.value || null,
         service_notes:    document.getElementById('f-tag-service-notes')?.value || null,
         defects: defects || null,
+        defects_tags: defectsTags,
         notes: notes || null,
-        schema_version: 2,
+        schema_version: 3,
         ...ev,
     };
 }
@@ -1847,17 +2031,10 @@ async function loadRecordIntoForm(mode, recordId) {
                     notesEl.value = data.notes || '';
                     if (data.notes) expandNotesSlot(`${f.key}_notes`, { focus: false });
                 }
-                if (f.custom) {
-                    const pk = Object.keys(f.custom)[0], sk = Object.keys(f.custom)[1];
-                    if (data[pk]) {
-                        const radio = document.querySelector(
-                            `input[name="${f.key}_${pk}"][value="${CSS.escape(data[pk])}"]`);
-                        if (radio) radio.checked = true;
-                    }
-                    (data[sk] || []).forEach(v => {
-                        const cb = document.querySelector(
-                            `input[name="${f.key}_${sk}"][value="${CSS.escape(v)}"]`);
-                        if (cb) cb.checked = true;
+                const chipSpec = evaluationOptions[f.key];
+                if (chipSpec) {
+                    Object.keys(chipSpec).forEach(subKey => {
+                        writeChipGroup(`${f.key}_${subKey}`, data[subKey]);
                     });
                 }
                 if (f.hasFlavorWheel && Array.isArray(data.flavors)) {
@@ -1882,12 +2059,24 @@ async function loadRecordIntoForm(mode, recordId) {
                     if (dry) dry.value = data.dryAroma || '';
                     if (wet) wet.value = data.wetAroma || '';
                 }
+                const chipSpec = observationOptions[f.key];
+                if (chipSpec) {
+                    Object.keys(chipSpec).forEach(subKey => {
+                        writeChipGroup(`${f.key}_${subKey}`, data[subKey]);
+                    });
+                }
                 if (f.hasFlavorWheel && Array.isArray(data.flavors)) {
                     applyFlavorSelections(`${f.key}_flavorList`, data.flavors);
                 }
                 updateObservationSummary(f.key);
             });
         }
+
+        // Defects chip
+        if (Array.isArray(r.defects_tags)) {
+            writeChipGroup('defects_tags', r.defects_tags);
+        }
+        updateDefectsSummary();
 
         updateEstimatedTotalDisplay();
     } catch (e) {

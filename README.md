@@ -183,6 +183,50 @@ alter table coffee.tasting_records
 
 舊紀錄 `bean_type` 會是 `NULL`；下次在 App 編輯儲存時會被要求補選類型。
 
+E. **升級到 v3（瑕疵 chip + 標籤系統）**：在 SQL Editor 執行：
+
+```sql
+-- #41: defects 拆 chip + 自由備註
+alter table coffee.cupping_records
+    add column if not exists defects_tags text[] not null default '{}';
+alter table coffee.tasting_records
+    add column if not exists defects_tags text[] not null default '{}';
+
+-- #27: 標籤系統
+create table if not exists coffee.tags (
+    id          uuid primary key default gen_random_uuid(),
+    name        text not null unique,
+    color       text not null default '#6c757d',
+    icon        text,
+    is_builtin  boolean not null default false,
+    sort_order  int not null default 0,
+    created_at  timestamptz not null default now()
+);
+alter table coffee.tags enable row level security;
+create policy "open access" on coffee.tags for all using (true) with check (true);
+grant all on coffee.tags to anon, authenticated, service_role;
+
+alter table coffee.cupping_records
+    add column if not exists tag_ids uuid[] not null default '{}';
+alter table coffee.tasting_records
+    add column if not exists tag_ids uuid[] not null default '{}';
+
+create index if not exists cupping_tag_ids_idx
+    on coffee.cupping_records using gin(tag_ids);
+create index if not exists tasting_tag_ids_idx
+    on coffee.tasting_records using gin(tag_ids);
+
+-- 內建標籤 seed（is_builtin 僅為標記，仍可被刪除）
+insert into coffee.tags (id, name, color, icon, is_builtin, sort_order) values
+    ('11111111-1111-1111-1111-000000000001', '最愛',   '#e0245e', 'bi-star-fill',        true, 1),
+    ('11111111-1111-1111-1111-000000000002', '想再試', '#1d9bf0', 'bi-arrow-repeat',     true, 2),
+    ('11111111-1111-1111-1111-000000000003', '不推薦', '#71767b', 'bi-hand-thumbs-down', true, 3),
+    ('11111111-1111-1111-1111-000000000004', '已下單', '#00ba7c', 'bi-bag-check-fill',   true, 4)
+on conflict (id) do nothing;
+```
+
+舊紀錄 `defects_tags` / `tag_ids` 預設為空陣列，向前相容。
+
 ### 2. 前端配置
 
 連線資訊**不放在 repo**。兩種來源擇一：
