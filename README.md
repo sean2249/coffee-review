@@ -92,7 +92,7 @@ create table coffee.shops (
     updated_at              timestamptz not null default now()
 );
 create index shops_name_idx on coffee.shops(lower(name));
-create index shops_google_place_id_idx on coffee.shops(google_place_id);
+-- google_place_id 的 unique 已自動建索引，不需額外 create index
 
 create or replace function coffee.touch_updated_at()
 returns trigger language plpgsql as $$
@@ -244,7 +244,7 @@ alter table coffee.shops
     add column if not exists lat numeric,
     add column if not exists lng numeric,
     add column if not exists google_data_fetched_at timestamptz;
-create index if not exists shops_google_place_id_idx on coffee.shops(google_place_id);
+-- google_place_id 的 unique 已自動建索引，不需額外 create index
 ```
 
 ### 2. 前端配置

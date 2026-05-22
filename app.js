@@ -2433,7 +2433,13 @@ function openShopModal({ shop = null, onSaved = null } = {}) {
         } catch (e2) {
             // Postgres unique_violation — Supabase passes the SQLSTATE through .code
             if (e2.code === '23505') {
-                alert('店家名稱已存在');
+                // details / message 會帶到具體 column 名稱（"...(google_place_id)=..." 或 "...(name)=..."）
+                const hint = `${e2.details || ''} ${e2.message || ''}`;
+                if (hint.includes('google_place_id')) {
+                    alert('此 Google 地點已綁定到其他店家');
+                } else {
+                    alert('店家名稱已存在');
+                }
             } else {
                 alert('儲存失敗：' + (e2.message || e2));
             }
@@ -2485,7 +2491,7 @@ async function openPlaceBackfillDialog(shop) {
 
     const g = await ensureGoogleMaps();
     if (!g) {
-        resultsEl.innerHTML = '<div class="empty-state error"><i class="bi bi-exclamation-triangle"></i>Google Maps 尚未設定</div>';
+        resultsEl.innerHTML = '<div class="empty-state error"><i class="bi bi-exclamation-triangle"></i>Google Maps 載入失敗，請檢查網路或 console 訊息</div>';
         return;
     }
 
@@ -2646,7 +2652,7 @@ async function viewShopDetail(root, shopId) {
         }
 
         const mapsLink = shop.google_place_id
-            ? `<a class="btn btn-outline-secondary btn-sm" target="_blank" rel="noopener"
+            ? `<a class="btn btn-outline-secondary btn-sm" target="_blank" rel="noopener noreferrer"
                   href="https://www.google.com/maps/place/?q=place_id:${encodeURIComponent(shop.google_place_id)}">
                 <i class="bi bi-geo-alt"></i>在 Google Maps 開啟
                </a>`
