@@ -283,6 +283,33 @@ async function ensureSupabase() {
     return supabaseClient;
 }
 
+// ─── Google Maps Places loader (lazy) ────────────────────────────────────────
+let googleMapsPromise = null;
+function isGoogleMapsReady() {
+    return !!(window.GOOGLE_CONFIG && window.GOOGLE_CONFIG.mapsApiKey);
+}
+async function ensureGoogleMaps() {
+    if (!isGoogleMapsReady()) return null;
+    if (googleMapsPromise) return googleMapsPromise;
+    googleMapsPromise = (async () => {
+        try {
+            const mod = await import('https://cdn.jsdelivr.net/npm/@googlemaps/js-api-loader@1/+esm');
+            const loader = new mod.Loader({
+                apiKey: window.GOOGLE_CONFIG.mapsApiKey,
+                version: 'weekly',
+                libraries: ['places'],
+            });
+            await loader.importLibrary('places');
+            return window.google;
+        } catch (e) {
+            console.warn('Google Maps load failed:', e);
+            googleMapsPromise = null;
+            return null;
+        }
+    })();
+    return googleMapsPromise;
+}
+
 const api = {
     async listShops() {
         const sb = await ensureSupabase();
@@ -2314,12 +2341,47 @@ function openShopModal({ shop = null, onSaved = null } = {}) {
     const locEl  = node.querySelector('#sm-location');
     const intEl  = node.querySelector('#sm-intro');
     const titleEl = node.querySelector('#shop-modal-title');
+    const placeRow = node.querySelector('.sm-place-row');
+    const placeMount = node.querySelector('#sm-place-mount');
 
     if (shop) {
         titleEl.textContent = '編輯店家';
         nameEl.value = shop.name || '';
         locEl.value  = shop.location || '';
         intEl.value  = shop.intro || '';
+    }
+
+    // Stashed Google place data, merged into payload on submit if present.
+    let pendingPlace = null;
+
+    if (isGoogleMapsReady() && placeRow && placeMount) {
+        placeRow.hidden = false;
+        ensureGoogleMaps().then(g => {
+            if (!g || !node.isConnected) return;
+            const el = document.createElement('gmp-place-autocomplete');
+            el.setAttribute('included-primary-types', 'cafe,restaurant');
+            el.style.width = '100%';
+            placeMount.appendChild(el);
+            el.addEventListener('gmp-select', async ev => {
+                const place = ev.placePrediction?.toPlace?.() || ev.place;
+                if (!place) return;
+                try {
+                    await place.fetchFields({
+                        fields: ['id', 'displayName', 'formattedAddress', 'location'],
+                    });
+                } catch (err) {
+                    console.warn('fetchFields failed:', err);
+                    return;
+                }
+                if (place.displayName) nameEl.value = place.displayName;
+                if (place.formattedAddress) locEl.value = place.formattedAddress;
+                pendingPlace = {
+                    google_place_id: place.id || null,
+                    lat: place.location?.lat?.() ?? place.location?.lat ?? null,
+                    lng: place.location?.lng?.() ?? place.location?.lng ?? null,
+                };
+            });
+        });
     }
 
     const close = () => {
@@ -2344,6 +2406,12 @@ function openShopModal({ shop = null, onSaved = null } = {}) {
             nameEl.focus();
             return;
         }
+        if (pendingPlace) {
+            payload.google_place_id = pendingPlace.google_place_id;
+            payload.lat = pendingPlace.lat;
+            payload.lng = pendingPlace.lng;
+            payload.google_data_fetched_at = new Date().toISOString();
+        }
         try {
             const saved = shop
                 ? await api.updateShop(shop.id, payload)
@@ -2365,7 +2433,13 @@ function openShopModal({ shop = null, onSaved = null } = {}) {
         } catch (e2) {
             // Postgres unique_violation — Supabase passes the SQLSTATE through .code
             if (e2.code === '23505') {
-                alert('店家名稱已存在');
+                // details / message 會帶到具體 column 名稱（"...(google_place_id)=..." 或 "...(name)=..."）
+                const hint = `${e2.details || ''} ${e2.message || ''}`;
+                if (hint.includes('google_place_id')) {
+                    alert('此 Google 地點已綁定到其他店家');
+                } else {
+                    alert('店家名稱已存在');
+                }
             } else {
                 alert('儲存失敗：' + (e2.message || e2));
             }
@@ -2373,6 +2447,114 @@ function openShopModal({ shop = null, onSaved = null } = {}) {
     });
 
     setTimeout(() => nameEl.focus(), 0);
+}
+
+// ─── Google Places backfill dialog ──────────────────────────────────────────
+async function openPlaceBackfillDialog(shop) {
+    const backdrop = document.createElement('div');
+    backdrop.className = 'modal-backdrop-custom';
+    backdrop.innerHTML = `
+        <div class="modal-shell" role="dialog" aria-modal="true">
+            <header class="modal-header">
+                <h3>Google 補完 — ${escapeHtml(shop.name)}</h3>
+                <button type="button" class="modal-close" aria-label="關閉">
+                    <i class="bi bi-x-lg"></i>
+                </button>
+            </header>
+            <div class="modal-body">
+                <div class="mb-2 text-muted small">以下是 Google Places 找到的候選，選一筆寫入此店家。</div>
+                <div id="bf-results">
+                    <div class="empty-state"><i class="bi bi-hourglass-split"></i>搜尋中…</div>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-outline-secondary" data-action="cancel">取消</button>
+                    <button type="button" class="btn btn-primary" id="bf-confirm" disabled>套用</button>
+                </div>
+            </div>
+        </div>`;
+    document.body.appendChild(backdrop);
+    document.body.classList.add('modal-open-custom');
+
+    const close = () => {
+        backdrop.remove();
+        document.body.classList.remove('modal-open-custom');
+    };
+    backdrop.querySelector('.modal-close').addEventListener('click', close);
+    backdrop.querySelector('[data-action="cancel"]').addEventListener('click', close);
+    backdrop.addEventListener('click', e => {
+        if (e.target === backdrop) close();
+    });
+
+    const resultsEl = backdrop.querySelector('#bf-results');
+    const confirmBtn = backdrop.querySelector('#bf-confirm');
+    let selected = null;
+
+    const g = await ensureGoogleMaps();
+    if (!g) {
+        resultsEl.innerHTML = '<div class="empty-state error"><i class="bi bi-exclamation-triangle"></i>Google Maps 載入失敗，請檢查網路或 console 訊息</div>';
+        return;
+    }
+
+    try {
+        const { Place } = await g.maps.importLibrary('places');
+        const query = `${shop.name} ${shop.location || ''}`.trim();
+        const { places } = await Place.searchByText({
+            textQuery: query,
+            fields: ['id', 'displayName', 'formattedAddress', 'location'],
+            maxResultCount: 5,
+        });
+        if (!places || places.length === 0) {
+            resultsEl.innerHTML = '<div class="empty-state"><i class="bi bi-inbox"></i>找不到候選</div>';
+            return;
+        }
+        resultsEl.innerHTML = places.map((p, i) => `
+            <label class="bf-option">
+                <input type="radio" name="bf-pick" value="${i}">
+                <div>
+                    <div class="bf-option-name">${escapeHtml(p.displayName || '')}</div>
+                    <div class="bf-option-addr">${escapeHtml(p.formattedAddress || '')}</div>
+                </div>
+            </label>
+        `).join('');
+        resultsEl.addEventListener('change', e => {
+            const idx = Number(e.target.value);
+            if (Number.isInteger(idx)) {
+                selected = places[idx];
+                confirmBtn.disabled = false;
+            }
+        });
+    } catch (err) {
+        resultsEl.innerHTML = `<div class="empty-state error">
+            <i class="bi bi-exclamation-triangle"></i>搜尋失敗：${escapeHtml(err.message || String(err))}
+        </div>`;
+        return;
+    }
+
+    confirmBtn.addEventListener('click', async () => {
+        if (!selected) return;
+        confirmBtn.disabled = true;
+        try {
+            await api.updateShop(shop.id, {
+                name: selected.displayName || shop.name,
+                location: selected.formattedAddress || shop.location,
+                google_place_id: selected.id || null,
+                lat: selected.location?.lat?.() ?? selected.location?.lat ?? null,
+                lng: selected.location?.lng?.() ?? selected.location?.lng ?? null,
+                google_data_fetched_at: new Date().toISOString(),
+            });
+            showToast('✓ 已補完');
+            await refreshShopsCache();
+            close();
+            renderRoute();
+        } catch (err) {
+            confirmBtn.disabled = false;
+            if (err.code === '23505') {
+                alert('此 Google 地點已綁定到其他店家');
+            } else {
+                alert('補完失敗：' + (err.message || err));
+            }
+        }
+    });
 }
 
 // ─── View: shops list ───────────────────────────────────────────────────────
@@ -2469,6 +2651,18 @@ async function viewShopDetail(root, shopId) {
             return;
         }
 
+        const mapsLink = shop.google_place_id
+            ? `<a class="btn btn-outline-secondary btn-sm" target="_blank" rel="noopener noreferrer"
+                  href="https://www.google.com/maps/place/?q=place_id:${encodeURIComponent(shop.google_place_id)}">
+                <i class="bi bi-geo-alt"></i>在 Google Maps 開啟
+               </a>`
+            : '';
+        const backfillBtn = (!shop.google_place_id && isGoogleMapsReady())
+            ? `<button class="btn btn-outline-secondary btn-sm" id="shop-backfill">
+                <i class="bi bi-search"></i>Google 補完
+               </button>`
+            : '';
+
         root.innerHTML = `
             <div class="card">
                 <div class="card-body">
@@ -2478,6 +2672,8 @@ async function viewShopDetail(root, shopId) {
                             <button class="btn btn-primary btn-sm" id="shop-new-record">
                                 <i class="bi bi-plus-lg"></i>新增記錄
                             </button>
+                            ${mapsLink}
+                            ${backfillBtn}
                             <button class="btn btn-outline-secondary btn-sm" id="shop-edit">
                                 <i class="bi bi-pencil"></i>編輯
                             </button>
@@ -2510,6 +2706,10 @@ async function viewShopDetail(root, shopId) {
         });
         document.getElementById('shop-edit').addEventListener('click', () =>
             openShopModal({ shop }));
+        const backfillEl = document.getElementById('shop-backfill');
+        if (backfillEl) {
+            backfillEl.addEventListener('click', () => openPlaceBackfillDialog(shop));
+        }
         document.getElementById('shop-delete').addEventListener('click', async () => {
             if (records.length > 0) {
                 if (!confirm(`「${shop.name}」目前有 ${records.length} 筆相關記錄。\n\n刪除店家會：\n• 連帶刪除所有品鑑記錄\n• 杯測記錄保留但失去店家連結\n\n確定要刪除嗎？`)) return;

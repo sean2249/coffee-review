@@ -27,6 +27,7 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
         run: |
           if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_ANON_KEY" ]; then
               echo "::warning::SUPABASE_URL / SUPABASE_ANON_KEY secrets not set — config.js will not be generated. Cloud storage will be disabled in the deployed site. To enable, add the secrets in Settings → Secrets and variables → Actions and re-run."
@@ -44,6 +45,17 @@ jobs:
           };
           EOF
           echo "Generated config.js (URL length=${#SUPABASE_URL}, KEY length=${#SUPABASE_ANON_KEY})"
+          if [ -n "$GOOGLE_MAPS_API_KEY" ]; then
+              GMAPS_KEY_JSON=$(printf '%s' "$GOOGLE_MAPS_API_KEY" | jq -Rs .)
+              cat >> config.js <<EOF
+          window.GOOGLE_CONFIG = {
+              mapsApiKey: ${GMAPS_KEY_JSON},
+          };
+          EOF
+              echo "Appended GOOGLE_CONFIG (KEY length=${#GOOGLE_MAPS_API_KEY})"
+          else
+              echo "GOOGLE_MAPS_API_KEY not set — Google Places features will be disabled in the deployed site."
+          fi
 
       - uses: actions/configure-pages@v5
 

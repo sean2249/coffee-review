@@ -1143,6 +1143,37 @@ body.modal-open-custom { overflow: hidden; }
     margin-top: 0.5rem;
 }
 
+/* ───── Google Places UI ──────────────────────────────────────────────── */
+.sm-place-mount gmp-place-autocomplete {
+    width: 100%;
+    display: block;
+}
+.bf-option {
+    display: flex;
+    gap: 0.6rem;
+    align-items: flex-start;
+    padding: 0.6rem 0.7rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    margin-bottom: 0.4rem;
+    cursor: pointer;
+    background: var(--bg-page);
+}
+.bf-option:hover {
+    border-color: var(--accent);
+}
+.bf-option input[type="radio"] {
+    margin-top: 0.25rem;
+}
+.bf-option-name {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+.bf-option-addr {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+}
+
 /* ───── Misc ───────────────────────────────────────────────────────────── */
 .small-hint { font-size: 0.8rem; color: var(--text-muted); }
 hr { border-color: var(--border); opacity: 0.7; }
