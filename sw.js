@@ -3,7 +3,7 @@
 //   • App shell + CDN libs: stale-while-revalidate
 //   • Supabase API: pass-through, always go to network
 
-const VERSION = 'v2';
+const VERSION = 'v3';
 const CACHE = `coffee-review-${VERSION}`;
 
 const APP_SHELL = [
@@ -43,6 +43,8 @@ function shouldBypass(url) {
     const host = url.hostname;
     // Supabase REST / Realtime / Storage — always go to network
     if (host.endsWith('.supabase.co') || host.endsWith('.supabase.in')) return true;
+    // Google Maps / Places — always go to network (避免快取 API 回應與動態 JS)
+    if (host === 'maps.googleapis.com' || host === 'places.googleapis.com') return true;
     return false;
 }
 

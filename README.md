@@ -80,14 +80,19 @@ alter default privileges in schema coffee
 
 -- shops — 店家主表
 create table coffee.shops (
-    id          uuid primary key default gen_random_uuid(),
-    name        text not null unique,
-    location    text,
-    intro       text,
-    created_at  timestamptz not null default now(),
-    updated_at  timestamptz not null default now()
+    id                      uuid primary key default gen_random_uuid(),
+    name                    text not null unique,
+    location                text,
+    intro                   text,
+    google_place_id         text unique,
+    lat                     numeric,
+    lng                     numeric,
+    google_data_fetched_at  timestamptz,
+    created_at              timestamptz not null default now(),
+    updated_at              timestamptz not null default now()
 );
 create index shops_name_idx on coffee.shops(lower(name));
+create index shops_google_place_id_idx on coffee.shops(google_place_id);
 
 create or replace function coffee.touch_updated_at()
 returns trigger language plpgsql as $$
@@ -231,6 +236,17 @@ on conflict (id) do nothing;
 
 舊紀錄 `defects_tags` / `tag_ids` 預設為空陣列，向前相容。
 
+**舊資料庫追加 Google Places 欄位**（已建表者，於 SQL Editor 執行）：
+
+```sql
+alter table coffee.shops
+    add column if not exists google_place_id text unique,
+    add column if not exists lat numeric,
+    add column if not exists lng numeric,
+    add column if not exists google_data_fetched_at timestamptz;
+create index if not exists shops_google_place_id_idx on coffee.shops(google_place_id);
+```
+
 ### 2. 前端配置
 
 連線資訊**不放在 repo**。兩種來源擇一：
@@ -246,12 +262,13 @@ cp config.example.js config.js
 
 **B. 部署到 GitHub Pages**
 
-在 repo Settings 加 2 個 secret：
+在 repo Settings 加以下 secret（前兩個必要，第三個啟用 Google Places 補完才需要）：
 
 | Name | Value |
 |---|---|
 | `SUPABASE_URL` | `https://xxxxx.supabase.co` |
 | `SUPABASE_ANON_KEY` | `sb_publishable_...` |
+| `GOOGLE_MAPS_API_KEY` | Google Cloud Console 啟用 Places API (New) + Maps JavaScript API 後產生的金鑰，**建議設 HTTP referrer 限制**為部署網址 + `http://localhost:*` |
 
 Settings → Pages → Source 選 **GitHub Actions**。
 `.github/workflows/deploy.yml` 會在 push `main` 時用 secret 產生 `config.js` 後部署。
