@@ -216,6 +216,10 @@ create index if not exists cupping_tag_ids_idx
 create index if not exists tasting_tag_ids_idx
     on coffee.tasting_records using gin(tag_ids);
 
+-- 預設 schema_version 升到 3（app 仍會在 payload 顯式寫入 3，default 主要影響直接 INSERT 的人）
+alter table coffee.cupping_records alter column schema_version set default 3;
+alter table coffee.tasting_records alter column schema_version set default 3;
+
 -- 內建標籤 seed（is_builtin 僅為標記，仍可被刪除）
 insert into coffee.tags (id, name, color, icon, is_builtin, sort_order) values
     ('11111111-1111-1111-1111-000000000001', '最愛',   '#e0245e', 'bi-star-fill',        true, 1),

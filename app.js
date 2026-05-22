@@ -1318,11 +1318,12 @@ function refreshTotalDisplay() {
 
 // ─── Evaluation accordion ────────────────────────────────────────────────────
 // 共用：渲染 button-style chip 群組（single / multi）
+// 兩種型別都用 role="group"：children 是 toggle button（aria-pressed），
+// 不符合 radiogroup 的 ARIA 規範（後者期望 role="radio" + aria-checked + 鍵盤導覽）。
 function chipGroupHtml(name, label, type, options) {
-    const role = type === 'single' ? 'radiogroup' : 'group';
     return `
-        <label class="chip-group-label">${escapeHtml(label)}</label>
-        <div class="chip-group" role="${role}" aria-label="${escapeHtml(label)}"
+        <span class="chip-group-label" id="${escapeHtml(name)}_label">${escapeHtml(label)}</span>
+        <div class="chip-group" role="group" aria-labelledby="${escapeHtml(name)}_label"
              data-chip-name="${escapeHtml(name)}" data-chip-type="${type}">
             ${options.map(opt => `
                 <button type="button" class="chip"
@@ -1334,7 +1335,7 @@ function chipGroupHtml(name, label, type, options) {
 
 // 從 DOM 讀取 chip group 已選值：single → 字串、multi → 字串陣列
 function readChipGroup(name) {
-    const group = document.querySelector(`.chip-group[data-chip-name="${name}"]`);
+    const group = document.querySelector(`.chip-group[data-chip-name="${CSS.escape(name)}"]`);
     if (!group) return null;
     const isMulti = group.dataset.chipType === 'multi';
     const pressed = group.querySelectorAll('button[aria-pressed="true"]');
@@ -1345,7 +1346,7 @@ function readChipGroup(name) {
 // 把資料寫入 chip group（用於載入既有記錄）。
 // 容忍舊資料型別不一致：multi 期望陣列但拿到字串會自動包成陣列。
 function writeChipGroup(name, value) {
-    const group = document.querySelector(`.chip-group[data-chip-name="${name}"]`);
+    const group = document.querySelector(`.chip-group[data-chip-name="${CSS.escape(name)}"]`);
     if (!group) return;
     const isMulti = group.dataset.chipType === 'multi';
     let values;
