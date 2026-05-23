@@ -2364,6 +2364,9 @@ function openShopModal({ shop = null, onSaved = null } = {}) {
                 placeSearchEl.focus();
                 return;
             }
+            // Clear any previously-stashed selection so a new search doesn't carry
+            // stale google_place_id/lat/lng into the save payload.
+            pendingPlace = null;
             placeResultsEl.innerHTML = '<div class="empty-state small"><i class="bi bi-hourglass-split"></i>搜尋中…</div>';
             const g = await ensureGoogleMaps();
             if (!g) {

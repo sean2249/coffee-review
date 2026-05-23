@@ -420,6 +420,17 @@ button.card-title {
     color: #842029;
 }
 .empty-state.error .bi { color: #b03a36; }
+.empty-state.small {
+    padding: 0.6rem 0.75rem;
+    font-size: 0.85rem;
+    text-align: left;
+}
+.empty-state.small .bi {
+    font-size: 1rem;
+    display: inline;
+    margin-right: 0.35rem;
+    margin-bottom: 0;
+}
 
 /* ───── CoE Total Card — Flat medal style ──────────────────────────────── */
 .coe-card {
