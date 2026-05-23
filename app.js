@@ -2342,7 +2342,9 @@ function openShopModal({ shop = null, onSaved = null } = {}) {
     const intEl  = node.querySelector('#sm-intro');
     const titleEl = node.querySelector('#shop-modal-title');
     const placeRow = node.querySelector('.sm-place-row');
-    const placeMount = node.querySelector('#sm-place-mount');
+    const placeSearchEl = node.querySelector('#sm-place-search');
+    const placeSearchBtn = node.querySelector('#sm-place-search-btn');
+    const placeResultsEl = node.querySelector('#sm-place-results');
 
     if (shop) {
         titleEl.textContent = '編輯店家';
@@ -2354,33 +2356,65 @@ function openShopModal({ shop = null, onSaved = null } = {}) {
     // Stashed Google place data, merged into payload on submit if present.
     let pendingPlace = null;
 
-    if (isGoogleMapsReady() && placeRow && placeMount) {
+    if (isGoogleMapsReady() && placeRow) {
         placeRow.hidden = false;
-        ensureGoogleMaps().then(g => {
-            if (!g || !node.isConnected) return;
-            const el = document.createElement('gmp-place-autocomplete');
-            el.setAttribute('included-primary-types', 'cafe,restaurant');
-            el.style.width = '100%';
-            placeMount.appendChild(el);
-            el.addEventListener('gmp-select', async ev => {
-                const place = ev.placePrediction?.toPlace?.() || ev.place;
-                if (!place) return;
-                try {
-                    await place.fetchFields({
-                        fields: ['id', 'displayName', 'formattedAddress', 'location'],
-                    });
-                } catch (err) {
-                    console.warn('fetchFields failed:', err);
+        const runPlaceSearch = async () => {
+            const query = placeSearchEl.value.trim();
+            if (!query) {
+                placeSearchEl.focus();
+                return;
+            }
+            placeResultsEl.innerHTML = '<div class="empty-state small"><i class="bi bi-hourglass-split"></i>搜尋中…</div>';
+            const g = await ensureGoogleMaps();
+            if (!g) {
+                placeResultsEl.innerHTML = '<div class="empty-state error small"><i class="bi bi-exclamation-triangle"></i>Google Maps 載入失敗</div>';
+                return;
+            }
+            try {
+                const { Place } = await g.maps.importLibrary('places');
+                const { places } = await Place.searchByText({
+                    textQuery: query,
+                    fields: ['id', 'displayName', 'formattedAddress', 'location'],
+                    maxResultCount: 5,
+                });
+                if (!places || places.length === 0) {
+                    placeResultsEl.innerHTML = '<div class="empty-state small"><i class="bi bi-inbox"></i>找不到候選</div>';
                     return;
                 }
-                if (place.displayName) nameEl.value = place.displayName;
-                if (place.formattedAddress) locEl.value = place.formattedAddress;
-                pendingPlace = {
-                    google_place_id: place.id || null,
-                    lat: place.location?.lat?.() ?? place.location?.lat ?? null,
-                    lng: place.location?.lng?.() ?? place.location?.lng ?? null,
-                };
-            });
+                placeResultsEl.innerHTML = places.map((p, i) => `
+                    <button type="button" class="bf-option sm-place-option" data-idx="${i}">
+                        <div>
+                            <div class="bf-option-name">${escapeHtml(p.displayName || '')}</div>
+                            <div class="bf-option-addr">${escapeHtml(p.formattedAddress || '')}</div>
+                        </div>
+                    </button>
+                `).join('');
+                placeResultsEl.querySelectorAll('.sm-place-option').forEach(btn => {
+                    btn.addEventListener('click', () => {
+                        const idx = Number(btn.dataset.idx);
+                        const place = places[idx];
+                        if (!place) return;
+                        if (place.displayName) nameEl.value = place.displayName;
+                        if (place.formattedAddress) locEl.value = place.formattedAddress;
+                        pendingPlace = {
+                            google_place_id: place.id || null,
+                            lat: place.location?.lat?.() ?? place.location?.lat ?? null,
+                            lng: place.location?.lng?.() ?? place.location?.lng ?? null,
+                        };
+                        placeResultsEl.innerHTML = `<div class="empty-state small"><i class="bi bi-check-circle"></i>已套用：${escapeHtml(place.displayName || '')}</div>`;
+                    });
+                });
+            } catch (err) {
+                placeResultsEl.innerHTML = `<div class="empty-state error small"><i class="bi bi-exclamation-triangle"></i>搜尋失敗：${escapeHtml(err.message || String(err))}</div>`;
+            }
+        };
+        placeSearchBtn.addEventListener('click', runPlaceSearch);
+        placeSearchEl.addEventListener('keydown', e => {
+            // Prevent Enter from submitting the parent form; trigger search instead.
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                runPlaceSearch();
+            }
         });
     }
 

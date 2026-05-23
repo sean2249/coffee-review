@@ -305,8 +305,14 @@
                 </header>
                 <form class="modal-body" id="shop-modal-form">
                     <div class="mb-2 sm-place-row" hidden>
-                        <label class="form-label">Google Places 搜尋</label>
-                        <div id="sm-place-mount" class="sm-place-mount"></div>
+                        <label for="sm-place-search" class="form-label">Google Places 搜尋</label>
+                        <div class="input-group">
+                            <input type="search" class="form-control" id="sm-place-search" placeholder="輸入店名或關鍵字">
+                            <button type="button" class="btn btn-outline-secondary" id="sm-place-search-btn">
+                                <i class="bi bi-search"></i>搜尋
+                            </button>
+                        </div>
+                        <div id="sm-place-results" class="sm-place-results"></div>
                         <div class="form-text">選定後會自動帶入店名與地址，下方欄位仍可手動修改。</div>
                     </div>
                     <div class="mb-2">
