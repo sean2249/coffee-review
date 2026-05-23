@@ -1377,4 +1377,13 @@ hr { border-color: var(--border); opacity: 0.7; }
     .shops-search-input { max-width: none; flex-basis: 100%; }
     .new-mode-picker-btn { padding: 1.1rem 0.8rem; }
     .detail-header-card .detail-title { font-size: 1.15rem; }
+    /* Fullscreen modal on phones so gmp-place-autocomplete's fullscreen dialog
+       isn't clipped by .modal-shell's max-height / overflow context. */
+    .modal-backdrop-custom { padding: 0; }
+    .modal-shell {
+        max-width: 100%;
+        max-height: 100dvh;
+        height: 100dvh;
+        border-radius: 0;
+    }
 }
