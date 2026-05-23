@@ -420,6 +420,17 @@ button.card-title {
     color: #842029;
 }
 .empty-state.error .bi { color: #b03a36; }
+.empty-state.small {
+    padding: 0.6rem 0.75rem;
+    font-size: 0.85rem;
+    text-align: left;
+}
+.empty-state.small .bi {
+    font-size: 1rem;
+    display: inline;
+    margin-right: 0.35rem;
+    margin-bottom: 0;
+}
 
 /* ───── CoE Total Card — Flat medal style ──────────────────────────────── */
 .coe-card {
@@ -1144,9 +1155,12 @@ body.modal-open-custom { overflow: hidden; }
 }
 
 /* ───── Google Places UI ──────────────────────────────────────────────── */
-.sm-place-mount gmp-place-autocomplete {
+.sm-place-results { margin-top: 0.4rem; }
+.sm-place-option {
     width: 100%;
-    display: block;
+    text-align: left;
+    font: inherit;
+    color: inherit;
 }
 .shop-place-badge {
     color: var(--accent);
@@ -1383,23 +1397,4 @@ hr { border-color: var(--border); opacity: 0.7; }
     .shops-search-input { max-width: none; flex-basis: 100%; }
     .new-mode-picker-btn { padding: 1.1rem 0.8rem; }
     .detail-header-card .detail-title { font-size: 1.15rem; }
-    /* Fullscreen modal on phones so gmp-place-autocomplete's fullscreen dialog
-       isn't clipped by .modal-shell's overflow / max-height context. Move the
-       scroll container to .modal-body so .modal-shell can be overflow:visible. */
-    .modal-backdrop-custom { padding: 0; }
-    .modal-shell {
-        max-width: 100%;
-        max-height: 100vh;
-        max-height: 100dvh;
-        height: 100vh;
-        height: 100dvh;
-        border-radius: 0;
-        overflow: visible;
-        padding-top: env(safe-area-inset-top, 0px);
-        padding-bottom: env(safe-area-inset-bottom, 0px);
-    }
-    .modal-shell .modal-body {
-        overflow: auto;
-        min-height: 0;
-    }
 }
