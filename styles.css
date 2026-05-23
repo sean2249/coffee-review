@@ -1148,6 +1148,12 @@ body.modal-open-custom { overflow: hidden; }
     width: 100%;
     display: block;
 }
+.shop-place-badge {
+    color: var(--accent);
+    font-size: 0.85em;
+    margin-left: 0.35rem;
+    opacity: 0.85;
+}
 .bf-option {
     display: flex;
     gap: 0.6rem;

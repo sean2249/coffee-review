@@ -537,7 +537,7 @@ async function viewRecordsList(root) {
     state.shops.forEach(s => {
         const opt = document.createElement('option');
         opt.value = s.id;
-        opt.textContent = s.name;
+        opt.textContent = (s.google_place_id ? '📍 ' : '') + s.name;
         shopSel.appendChild(opt);
     });
     shopSel.value = state.listFilter.shopId || '';
@@ -1251,7 +1251,7 @@ function populateShopSelect(sel, required) {
     state.shops.forEach(s => {
         const opt = document.createElement('option');
         opt.value = s.id;
-        opt.textContent = s.name + (s.location ? ` · ${s.location}` : '');
+        opt.textContent = (s.google_place_id ? '📍 ' : '') + s.name + (s.location ? ` · ${s.location}` : '');
         sel.appendChild(opt);
     });
 
@@ -2590,6 +2590,7 @@ async function viewShopsList(root) {
                 <div class="shop-card-header">
                     <i class="bi bi-shop"></i>
                     <span class="shop-card-name">${escapeHtml(s.name)}</span>
+                    ${s.google_place_id ? '<i class="bi bi-geo-alt-fill shop-place-badge" title="已綁定 Google 地點" aria-label="已綁定 Google 地點"></i>' : ''}
                 </div>
                 ${s.location ? `<div class="shop-card-loc"><i class="bi bi-geo-alt"></i>${escapeHtml(s.location)}</div>` : ''}
                 ${s.intro ? `<div class="shop-card-intro">${escapeHtml(s.intro)}</div>` : ''}
@@ -2667,7 +2668,7 @@ async function viewShopDetail(root, shopId) {
             <div class="card">
                 <div class="card-body">
                     <div class="shop-detail-header">
-                        <h2 class="shop-detail-name"><i class="bi bi-shop"></i>${escapeHtml(shop.name)}</h2>
+                        <h2 class="shop-detail-name"><i class="bi bi-shop"></i>${escapeHtml(shop.name)}${shop.google_place_id ? '<i class="bi bi-geo-alt-fill shop-place-badge" title="已綁定 Google 地點" aria-label="已綁定 Google 地點"></i>' : ''}</h2>
                         <div class="shop-detail-actions">
                             <button class="btn btn-primary btn-sm" id="shop-new-record">
                                 <i class="bi bi-plus-lg"></i>新增記錄
