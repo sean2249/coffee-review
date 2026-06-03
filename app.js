@@ -2092,10 +2092,14 @@ function bindFormHandlers() {
         processEl.addEventListener('input', e => setProcessChip(e.target.value));
     }
 
-    // Item ordered (品鑑): chip row + free-text input two-way binding
+    // Item ordered (品鑑): chip row + free-text input two-way binding.
+    // `input` highlights live within the active category; `change` (commit/blur,
+    // incl. datalist pick) reconciles the category — a custom value clears the
+    // category selection, an exact match re-activates the owning category.
     const itemEl = document.getElementById('f-item_ordered');
     if (itemEl) {
         itemEl.addEventListener('input', e => setItemChip(e.target.value));
+        itemEl.addEventListener('change', e => applyItemValue(e.target.value));
     }
 
     // Import existing bean — one selector per mode
