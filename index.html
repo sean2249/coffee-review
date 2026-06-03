@@ -204,8 +204,11 @@
                         </div>
                         <div class="col-12">
                             <label for="f-item_ordered" class="form-label">點用品項</label>
-                            <input type="text" class="form-control" id="f-item_ordered"
-                                   placeholder="例：V60 衣索比亞耶加雪菲 / 拿鐵">
+                            <div class="item-cat-row" role="group" aria-label="品項分類"></div>
+                            <div class="item-chip-row" role="group" aria-label="點用品項"></div>
+                            <input type="text" class="form-control mt-2" id="f-item_ordered"
+                                   list="item-options" placeholder="選擇上方或自行輸入，例：氮氣冷萃">
+                            <datalist id="item-options"></datalist>
                         </div>
                         <div class="col-12">
                             <label class="form-label">豆子類型 *</label>
@@ -233,11 +236,6 @@
                             <label for="f-tasting-bean" class="form-label">品項豆子名</label>
                             <input type="text" class="form-control" id="f-tasting-bean"
                                    placeholder="例：衣索比亞 耶加雪菲">
-                        </div>
-                        <div class="col-md-6 col-12">
-                            <label for="f-brewing_method" class="form-label">沖煮方式</label>
-                            <input type="text" class="form-control" id="f-brewing_method"
-                                   placeholder="例：V60 / 義式 / 冰滴">
                         </div>
                     </div>
                 </div>

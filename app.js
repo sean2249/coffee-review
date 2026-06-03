@@ -219,6 +219,8 @@ const state = {
     currentForm: null,  // { mode, recordId|null }
     knownOrigins: [],   // distinct origin strings from past cupping records
     knownOriginsLoaded: false,
+    knownItems: [],     // distinct item_ordered strings from past tasting records
+    knownItemsLoaded: false,
 };
 
 const COMMON_COUNTRIES = [
@@ -230,6 +232,17 @@ const COMMON_COUNTRIES = [
 const COMMON_PROCESSES = [
     '水洗', '日曬', '蜜處理', '厭氧發酵', '半水洗', '濕刨法',
 ];
+
+// 品鑑「點用品項」分層清單：先選分類、再選品項，減少同時顯示的按鈕數。
+// 自訂值仍可直接打字，會被記住。分類僅為選取輔助，入庫只存單一 item_ordered 字串。
+const ITEM_GROUPS = [
+    { key: 'espresso', label: '義式系列', items: ['濃縮', '冰美式', '熱美式'] },
+    { key: 'milk',     label: '奶系列',   items: ['冰拿鐵', '熱拿鐵', '卡布奇諾', '馥列白', '摩卡'] },
+    { key: 'pourover', label: '手沖',     items: ['手沖', '冰手沖'] },
+    { key: 'other',    label: '其他',     items: ['冰萃', '冰滴'] },
+];
+// 扁平清單供 datalist 自動補全使用。
+const COMMON_ITEMS = ITEM_GROUPS.flatMap(g => g.items);
 
 const coeState = { coeTotal: 82, selectedTierId: 'common' };
 let supabaseClient = null;
@@ -1007,6 +1020,11 @@ async function viewForm(root, { mode, recordId, prefillShopId = null }) {
         renderProcessChips();
         loadKnownOrigins().then(populateOriginDatalist);
         populateOriginDatalist();
+    } else {
+        // Item picker (category row) + datalist are tasting-only UI elements.
+        renderItemCats();
+        loadKnownItems().then(populateItemDatalist);
+        populateItemDatalist();
     }
 
     const initialShopId = document.getElementById('f-shop')?.value || '';
@@ -1108,6 +1126,39 @@ function populateOriginDatalist() {
     });
 }
 
+async function loadKnownItems() {
+    if (state.knownItemsLoaded) return;
+    const sb = await ensureSupabase();
+    if (!sb) return;
+    // Defensive cap — distinct happens client-side. If the table grows past
+    // a few thousand rows, switch to a Postgres view/RPC returning DISTINCT.
+    const { data, error } = await sb.from(SUPABASE_CONFIG.tastingTable)
+        .select('item_ordered').not('item_ordered', 'is', null).limit(2000);
+    if (error) {
+        console.warn('loadKnownItems failed:', error);
+        return;
+    }
+    const seen = new Set();
+    (data || []).forEach(row => {
+        const v = (row.item_ordered || '').trim();
+        if (v) seen.add(v);
+    });
+    state.knownItems = Array.from(seen);
+    state.knownItemsLoaded = true;
+}
+
+function populateItemDatalist() {
+    const dl = document.getElementById('item-options');
+    if (!dl) return;
+    const all = new Set([...COMMON_ITEMS, ...state.knownItems]);
+    dl.innerHTML = '';
+    all.forEach(v => {
+        const opt = document.createElement('option');
+        opt.value = v;
+        dl.appendChild(opt);
+    });
+}
+
 // ─── Process chip row ────────────────────────────────────────────────────────
 function renderProcessChips() {
     const row = document.querySelector('.process-chip-row');
@@ -1135,6 +1186,81 @@ function setProcessChip(value) {
         c.classList.toggle('selected', sel);
         c.setAttribute('aria-pressed', String(sel));
     });
+}
+
+// ─── Item picker (品鑑點用品項：分類 → 品項兩層) ──────────────────────────────
+function renderItemCats() {
+    const row = document.querySelector('.item-cat-row');
+    if (!row) return;
+    row.innerHTML = '';
+    ITEM_GROUPS.forEach(g => {
+        const chip = document.createElement('button');
+        chip.type = 'button';
+        chip.className = 'item-cat-chip';
+        chip.dataset.cat = g.key;
+        chip.setAttribute('aria-pressed', 'false');
+        chip.textContent = g.label;
+        chip.addEventListener('click', () => activateItemCat(g.key));
+        row.appendChild(chip);
+    });
+}
+
+function activateItemCat(key) {
+    document.querySelectorAll('.item-cat-chip').forEach(c => {
+        const sel = c.dataset.cat === key;
+        c.classList.toggle('selected', sel);
+        c.setAttribute('aria-pressed', String(sel));
+    });
+    renderItemChips(key);
+}
+
+function renderItemChips(catKey) {
+    const row = document.querySelector('.item-chip-row');
+    if (!row) return;
+    row.innerHTML = '';
+    const group = ITEM_GROUPS.find(g => g.key === catKey);
+    if (!group) return;
+    group.items.forEach(p => {
+        const chip = document.createElement('button');
+        chip.type = 'button';
+        chip.className = 'item-chip';
+        chip.dataset.item = p;
+        chip.setAttribute('aria-pressed', 'false');
+        chip.textContent = p;
+        chip.addEventListener('click', () => {
+            const input = document.getElementById('f-item_ordered');
+            if (input) input.value = p;
+            setItemChip(p);
+        });
+        row.appendChild(chip);
+    });
+    // Re-highlight the current value if it belongs to this category (edit/restore).
+    setItemChip(document.getElementById('f-item_ordered')?.value || '');
+}
+
+function setItemChip(value) {
+    document.querySelectorAll('.item-chip').forEach(c => {
+        const sel = c.dataset.item === value;
+        c.classList.toggle('selected', sel);
+        c.setAttribute('aria-pressed', String(sel));
+    });
+}
+
+// Activate the category that contains `value` and highlight it (used on edit-load).
+function applyItemValue(value) {
+    const group = ITEM_GROUPS.find(g => g.items.includes(value));
+    if (group) {
+        activateItemCat(group.key);
+        setItemChip(value);
+        return;
+    }
+    // Custom value — clear the category + item rows.
+    document.querySelectorAll('.item-cat-chip').forEach(c => {
+        c.classList.remove('selected');
+        c.setAttribute('aria-pressed', 'false');
+    });
+    const row = document.querySelector('.item-chip-row');
+    if (row) row.innerHTML = '';
 }
 
 // ─── Import existing bean (per shop) ─────────────────────────────────────────
@@ -1966,6 +2092,12 @@ function bindFormHandlers() {
         processEl.addEventListener('input', e => setProcessChip(e.target.value));
     }
 
+    // Item ordered (品鑑): chip row + free-text input two-way binding
+    const itemEl = document.getElementById('f-item_ordered');
+    if (itemEl) {
+        itemEl.addEventListener('input', e => setItemChip(e.target.value));
+    }
+
     // Import existing bean — one selector per mode
     ['cupping', 'tasting'].forEach(m => {
         const importSel = document.getElementById(`f-import-bean-${m}`);
@@ -2103,7 +2235,6 @@ function buildFormPayload(mode) {
         item_ordered: document.getElementById('f-item_ordered').value.trim() || null,
         bean_name: document.getElementById('f-tasting-bean').value.trim() || null,
         bean_type: getBeanType('tasting') || null,
-        brewing_method: document.getElementById('f-brewing_method').value || null,
         atmosphere_tags: getTagValues('atmosphere'),
         decor_tags:      getTagValues('decor'),
         service_tags:    getTagValues('service'),
@@ -2238,8 +2369,8 @@ async function loadRecordIntoForm(mode, recordId) {
             set('f-visit_date', r.visit_date || '');
             set('f-price', r.price ?? '');
             set('f-item_ordered', r.item_ordered || '');
+            applyItemValue(r.item_ordered || '');
             set('f-tasting-bean', r.bean_name || '');
-            set('f-brewing_method', r.brewing_method || '');
             // Legacy tasting rows have no bean_type — leave empty so the user picks one on edit.
             setBeanType('tasting', r.bean_type || '');
 
