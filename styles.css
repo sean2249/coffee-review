@@ -921,6 +921,52 @@ button.card-title {
     box-shadow: 0 0 0 3px var(--accent-tint);
 }
 
+/* ───── Item picker (品鑑點用品項：分類 → 品項，比照風味輪階層) ────────── */
+.item-cat-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    align-items: center;
+}
+/* The item row reads as the active category's children: indented, shaded,
+   revealed below the selected category — mirrors .flavor-row-l2. */
+.item-chip-row:not(:empty) {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    align-items: center;
+    background-color: rgba(0, 0, 0, 0.035);
+    border-radius: 0.55rem;
+    padding: 0.55rem 0.7rem;
+    margin: 0.3rem 0 0.1rem 1.5rem;
+    animation: flavor-reveal 0.18s ease-out;
+}
+.item-cat-chip,
+.item-chip {
+    display: inline-block;
+    padding: 0.38em 0.9em;
+    font-size: 0.85em;
+    font-weight: 500;
+    line-height: 1.1;
+    border-radius: 999px;
+    cursor: pointer;
+    border: none;
+    background-color: var(--bg-muted);
+    color: var(--text-primary);
+    transition: background-color 0.12s ease, color 0.12s ease, transform 0.12s ease;
+    font-family: inherit;
+}
+.item-cat-chip { font-weight: 600; }
+.item-cat-chip:hover,
+.item-chip:hover { background-color: var(--bg-muted-hover); transform: translateY(-1px); }
+.item-cat-chip.selected,
+.item-chip.selected { background-color: var(--accent); color: #fff; }
+.item-cat-chip:focus-visible,
+.item-chip:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px var(--accent-tint);
+}
+
 /* ───── Estimated total (sensory eval) ─────────────────────────────────── */
 .evaluation-estimated-total {
     display: flex;
