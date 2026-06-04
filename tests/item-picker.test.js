@@ -27,12 +27,18 @@ const cats = () => [...doc.querySelectorAll('.item-cat-chip')].map(c => c.datase
 const selCat = () => [...doc.querySelectorAll('.item-cat-chip.selected')].map(c => c.dataset.cat);
 const items = () => [...doc.querySelectorAll('.item-chip')].map(c => c.dataset.item);
 const selItem = () => [...doc.querySelectorAll('.item-chip.selected')].map(c => c.dataset.item);
+const input = () => doc.getElementById('f-item_ordered');
+const inputHidden = () => input().classList.contains('d-none');
 
 describe('renderItemCats', () => {
     it('renders the category chips and shows no items until one is picked', () => {
-        expect(cats()).toEqual(['espresso', 'milk', 'pourover', 'other']);
+        expect(cats()).toEqual(['espresso', 'milk', 'pourover', 'coldbrew', 'other']);
         expect(items()).toEqual([]);
         expect(selCat()).toEqual([]);
+    });
+
+    it('hides the free-text input by default', () => {
+        expect(inputHidden()).toBe(true);
     });
 });
 
@@ -48,6 +54,22 @@ describe('activateItemCat', () => {
         win.activateItemCat('pourover');
         expect(selCat()).toEqual(['pourover']);
         expect(items()).toEqual(['手沖', '冰手沖']);
+    });
+
+    it('exposes 冰萃/冰滴 under the 冷萃 category, not 其他', () => {
+        win.activateItemCat('coldbrew');
+        expect(items()).toEqual(['冰萃', '冰滴']);
+        win.activateItemCat('other');
+        expect(items()).toEqual([]);
+    });
+
+    it('only reveals the free-text input for the 其他 category', () => {
+        win.activateItemCat('espresso');
+        expect(inputHidden()).toBe(true);
+        win.activateItemCat('other');
+        expect(inputHidden()).toBe(false);
+        win.activateItemCat('pourover');
+        expect(inputHidden()).toBe(true);
     });
 });
 
@@ -66,20 +88,46 @@ describe('applyItemValue', () => {
         expect(selItem()).toEqual(['冰手沖']);
     });
 
-    it('clears the category + item rows for a custom (out-of-list) value', () => {
+    it('treats a custom (out-of-list) value as 其他 and shows the input', () => {
         // User opens a category, then commits a free-text value not in any group.
         win.activateItemCat('milk');
         win.applyItemValue('氮氣冷萃');
+        expect(selCat()).toEqual(['other']);
+        expect(items()).toEqual([]);
+        expect(inputHidden()).toBe(false);
+    });
+
+    it('clears the selection and hides the input for an empty value', () => {
+        win.activateItemCat('milk');
+        win.applyItemValue('');
         expect(selCat()).toEqual([]);
         expect(items()).toEqual([]);
+        expect(inputHidden()).toBe(true);
     });
 });
 
-describe('item chip click', () => {
-    it('writes the value into the input and highlights the clicked chip', () => {
+describe('category chip click', () => {
+    it('writes the value into the input and highlights the clicked item chip', () => {
         win.activateItemCat('milk');
         doc.querySelector('.item-chip[data-item="冰拿鐵"]').click();
-        expect(doc.getElementById('f-item_ordered').value).toBe('冰拿鐵');
+        expect(input().value).toBe('冰拿鐵');
         expect(selItem()).toEqual(['冰拿鐵']);
+    });
+
+    it('clears the input when switching to a different category', () => {
+        doc.querySelector('.item-cat-chip[data-cat="other"]').click();
+        input().value = '氮氣冷萃';
+        doc.querySelector('.item-cat-chip[data-cat="pourover"]').click();
+        expect(input().value).toBe('');
+        expect(selItem()).toEqual([]);
+    });
+
+    it('preserves the selection when re-clicking the already-selected category', () => {
+        win.activateItemCat('coldbrew');
+        doc.querySelector('.item-chip[data-item="冰萃"]').click();
+        // Re-click 冷萃 (already selected) — value + highlight must survive.
+        doc.querySelector('.item-cat-chip[data-cat="coldbrew"]').click();
+        expect(input().value).toBe('冰萃');
+        expect(selItem()).toEqual(['冰萃']);
     });
 });
