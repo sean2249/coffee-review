@@ -1202,11 +1202,15 @@ function renderItemCats() {
         chip.setAttribute('aria-pressed', 'false');
         chip.textContent = g.label;
         chip.addEventListener('click', () => {
-            // 使用者切換分類 → 清空文字框（落實「切走就清空」，進「其他」也給乾淨起點）。
+            // 只有「切換到不同分類」才清空文字框（落實「切走就清空」，進「其他」也給
+            // 乾淨起點）；重複點同一個分類則保留既有選取，避免誤清。
+            const switching = !chip.classList.contains('selected');
             activateItemCat(g.key);
-            const input = document.getElementById('f-item_ordered');
-            if (input) input.value = '';
-            setItemChip('');
+            if (switching) {
+                const input = document.getElementById('f-item_ordered');
+                if (input) input.value = '';
+                setItemChip('');
+            }
         });
         row.appendChild(chip);
     });
