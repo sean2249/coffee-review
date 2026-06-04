@@ -2305,6 +2305,21 @@ async function submitForm() {
         showToast('品鑑記錄必須指定店家');
         return;
     }
+    if (mode === 'tasting') {
+        const itemEl = document.getElementById('f-item_ordered');
+        if (!itemEl.value.trim()) {
+            const selectedCat = document.querySelector('.item-cat-chip.selected');
+            // 文字框已展開（其他）→ 聚焦文字框；已選分類 → 聚焦品項列；都沒選 → 聚焦分類列
+            const focusTarget = !itemEl.classList.contains('d-none')
+                ? itemEl
+                : (selectedCat
+                    ? document.querySelector('.item-chip-row .item-chip')
+                    : document.querySelector('.item-cat-row .item-cat-chip'));
+            focusTarget?.focus();
+            showToast('請選擇或輸入點用品項');
+            return;
+        }
+    }
 
     const saveBtn = document.getElementById('f-save');
     saveBtn.disabled = true;
