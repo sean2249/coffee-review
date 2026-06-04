@@ -239,7 +239,8 @@ const ITEM_GROUPS = [
     { key: 'espresso', label: '義式系列', items: ['濃縮', '冰美式', '熱美式'] },
     { key: 'milk',     label: '奶系列',   items: ['冰拿鐵', '熱拿鐵', '卡布奇諾', '馥列白', '摩卡'] },
     { key: 'pourover', label: '手沖',     items: ['手沖', '冰手沖'] },
-    { key: 'other',    label: '其他',     items: ['冰萃', '冰滴'] },
+    { key: 'coldbrew', label: '冷萃',     items: ['冰萃', '冰滴'] },
+    { key: 'other',    label: '其他',     items: [] },
 ];
 // 扁平清單供 datalist 自動補全使用。
 const COMMON_ITEMS = ITEM_GROUPS.flatMap(g => g.items);
@@ -1200,9 +1201,18 @@ function renderItemCats() {
         chip.dataset.cat = g.key;
         chip.setAttribute('aria-pressed', 'false');
         chip.textContent = g.label;
-        chip.addEventListener('click', () => activateItemCat(g.key));
+        chip.addEventListener('click', () => {
+            // 使用者切換分類 → 清空文字框（落實「切走就清空」，進「其他」也給乾淨起點）。
+            activateItemCat(g.key);
+            const input = document.getElementById('f-item_ordered');
+            if (input) input.value = '';
+            setItemChip('');
+        });
         row.appendChild(chip);
     });
+    // 預設隱藏文字框，待點「其他」才顯示。
+    const input = document.getElementById('f-item_ordered');
+    if (input) input.classList.add('d-none');
 }
 
 function activateItemCat(key) {
@@ -1212,6 +1222,9 @@ function activateItemCat(key) {
         c.setAttribute('aria-pressed', String(sel));
     });
     renderItemChips(key);
+    // 只有「其他」分類顯示自由輸入文字框。
+    const input = document.getElementById('f-item_ordered');
+    if (input) input.classList.toggle('d-none', key !== 'other');
 }
 
 function renderItemChips(catKey) {
@@ -1248,19 +1261,27 @@ function setItemChip(value) {
 
 // Activate the category that contains `value` and highlight it (used on edit-load).
 function applyItemValue(value) {
+    if (!value) { clearItemCats(); return; }   // 空值 → 不選分類、隱藏文字框
     const group = ITEM_GROUPS.find(g => g.items.includes(value));
     if (group) {
         activateItemCat(group.key);
         setItemChip(value);
         return;
     }
-    // Custom value — clear the category + item rows.
+    // 自訂值 → 視為「其他」，顯示文字框（value 已由呼叫端 set）。
+    activateItemCat('other');
+}
+
+// Clear category + item rows and hide the free-text box.
+function clearItemCats() {
     document.querySelectorAll('.item-cat-chip').forEach(c => {
         c.classList.remove('selected');
         c.setAttribute('aria-pressed', 'false');
     });
     const row = document.querySelector('.item-chip-row');
     if (row) row.innerHTML = '';
+    const input = document.getElementById('f-item_ordered');
+    if (input) input.classList.add('d-none');
 }
 
 // ─── Import existing bean (per shop) ─────────────────────────────────────────
