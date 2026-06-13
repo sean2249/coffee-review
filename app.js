@@ -1970,12 +1970,20 @@ function bindFormHandlers() {
     ['cupping', 'tasting'].forEach(m => {
         const importSel = document.getElementById(`f-import-bean-${m}`);
         if (!importSel) return;
-        importSel.addEventListener('change', () => {
+        importSel.addEventListener('change', async () => {
             const id = importSel.value;
             if (!id) return;
             // Keep the selected bean visible in the dropdown — resetting it back
             // to "— 不帶入 —" here made it look like nothing was imported.
-            applyImportedBean(m, id);
+            // Disable while importing so a rapid re-select can't start a second,
+            // overlapping fetch that resolves out of order and leaves the form
+            // showing a different bean than the dropdown.
+            importSel.disabled = true;
+            try {
+                await applyImportedBean(m, id);
+            } finally {
+                importSel.disabled = false;
+            }
         });
     });
 
