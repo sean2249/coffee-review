@@ -626,6 +626,26 @@ function renderCloudWarning() {
     </div></div>`;
 }
 
+// ─── New record mode picker (shared by #/new page and shop dialog) ───────────
+// Returns the two record-type option anchors. Pass a shopId to carry it into the
+// form via ?shop= so the new record is pre-linked to that shop.
+function newModePickerOptions(shopId = null) {
+    const suffix = shopId ? `?shop=${encodeURIComponent(shopId)}` : '';
+    return `
+        <div class="new-mode-picker">
+            <a class="new-mode-picker-btn" href="#/new/cupping${suffix}">
+                <span class="new-mode-picker-icon"><i class="bi bi-cup-hot"></i></span>
+                <span class="new-mode-picker-label">杯測</span>
+                <span class="new-mode-picker-desc">記錄自家或樣品豆，含沖煮參數與評分</span>
+            </a>
+            <a class="new-mode-picker-btn" href="#/new/tasting${suffix}">
+                <span class="new-mode-picker-icon"><i class="bi bi-shop"></i></span>
+                <span class="new-mode-picker-label">品鑑</span>
+                <span class="new-mode-picker-desc">記錄店家飲用體驗，含氛圍、裝潢、服務</span>
+            </a>
+        </div>`;
+}
+
 // ─── View: new record mode picker ───────────────────────────────────────────
 function viewNewModePicker(root) {
     root.innerHTML = `
@@ -633,18 +653,7 @@ function viewNewModePicker(root) {
             <div class="card-body">
                 <h3 class="card-title"><i class="bi bi-plus-circle"></i>新增記錄</h3>
                 <p class="new-mode-picker-hint">請先選擇記錄類型，建立後無法變更。</p>
-                <div class="new-mode-picker">
-                    <a class="new-mode-picker-btn" href="#/new/cupping">
-                        <span class="new-mode-picker-icon"><i class="bi bi-cup-hot"></i></span>
-                        <span class="new-mode-picker-label">杯測</span>
-                        <span class="new-mode-picker-desc">記錄自家或樣品豆，含沖煮參數與評分</span>
-                    </a>
-                    <a class="new-mode-picker-btn" href="#/new/tasting">
-                        <span class="new-mode-picker-icon"><i class="bi bi-shop"></i></span>
-                        <span class="new-mode-picker-label">品鑑</span>
-                        <span class="new-mode-picker-desc">記錄店家飲用體驗，含氛圍、裝潢、服務</span>
-                    </a>
-                </div>
+                ${newModePickerOptions()}
             </div>
         </div>`;
 }
@@ -2669,6 +2678,39 @@ async function viewShopsList(root) {
     }
 }
 
+// ─── Dialog: pick record type for a shop ────────────────────────────────────
+function openNewRecordPicker(shop) {
+    const backdrop = document.createElement('div');
+    backdrop.className = 'modal-backdrop-custom';
+    backdrop.innerHTML = `
+        <div class="modal-shell" role="dialog" aria-modal="true" aria-labelledby="new-record-picker-title">
+            <header class="modal-header">
+                <h3 id="new-record-picker-title">新增記錄 — ${escapeHtml(shop.name)}</h3>
+                <button type="button" class="modal-close" aria-label="關閉">
+                    <i class="bi bi-x-lg"></i>
+                </button>
+            </header>
+            <div class="modal-body">
+                <p class="new-mode-picker-hint">請先選擇記錄類型，建立後無法變更。</p>
+                ${newModePickerOptions(shop.id)}
+            </div>
+        </div>`;
+    document.body.appendChild(backdrop);
+    document.body.classList.add('modal-open-custom');
+
+    const close = () => {
+        backdrop.remove();
+        document.body.classList.remove('modal-open-custom');
+    };
+    backdrop.querySelector('.modal-close').addEventListener('click', close);
+    backdrop.addEventListener('click', e => {
+        if (e.target === backdrop) close();
+    });
+    // Anchors navigate via the hash router; close the dialog so it doesn't linger.
+    backdrop.querySelectorAll('.new-mode-picker-btn').forEach(btn =>
+        btn.addEventListener('click', close));
+}
+
 // ─── View: shop detail ──────────────────────────────────────────────────────
 async function viewShopDetail(root, shopId) {
     if (!isCloudReady()) {
@@ -2740,7 +2782,7 @@ async function viewShopDetail(root, shopId) {
             </div>`;
 
         document.getElementById('shop-new-record').addEventListener('click', () => {
-            navigate(`/new/tasting?shop=${encodeURIComponent(shopId)}`);
+            openNewRecordPicker(shop);
         });
         document.getElementById('shop-edit').addEventListener('click', () =>
             openShopModal({ shop }));
