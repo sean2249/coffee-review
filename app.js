@@ -1973,9 +1973,9 @@ function bindFormHandlers() {
         importSel.addEventListener('change', () => {
             const id = importSel.value;
             if (!id) return;
+            // Keep the selected bean visible in the dropdown — resetting it back
+            // to "— 不帶入 —" here made it look like nothing was imported.
             applyImportedBean(m, id);
-            // Reset so re-selecting the same option re-applies if needed.
-            importSel.value = '';
         });
     });
 
