@@ -1476,7 +1476,6 @@ hr { border-color: var(--border); opacity: 0.7; }
     gap: 0.4rem;
     margin-bottom: 0.85rem;
 }
-.shop-summary-records:empty { display: none; }
 .shop-summary-record {
     display: flex;
     align-items: center;

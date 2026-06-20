@@ -970,7 +970,7 @@ function recordFlavorLeafIds(r) {
     if (Array.isArray(aroma?.flavors)) ids.push(...aroma.flavors);
     // 只留葉節點：祖先 id 會是某個更深 id 的 `id + '__'` 前綴
     return ids.filter(id => typeof id === 'string'
-        && !ids.some(other => other !== id && other.startsWith(id + '__')));
+        && !ids.some(other => typeof other === 'string' && other !== id && other.startsWith(id + '__')));
 }
 
 function summarizeRecords(records) {
@@ -2986,6 +2986,8 @@ function renderShopSummaryCard(summary) {
         .map(f => `<span class="detail-flavor-chip" style="--ft-color:${f.color}">${escapeHtml(f.name)} ×${f.count}</span>`)
         .join('');
 
+    const recordsHtml = [scoreLink(highest, '最高'), scoreLink(lowest, '最低')].join('');
+
     return `
         <div class="card">
             <div class="card-body">
@@ -3004,10 +3006,7 @@ function renderShopSummaryCard(summary) {
                         <span class="shop-summary-stat-label">最近一次</span>
                     </div>
                 </div>
-                <div class="shop-summary-records">
-                    ${scoreLink(highest, '最高')}
-                    ${scoreLink(lowest, '最低')}
-                </div>
+                ${recordsHtml ? `<div class="shop-summary-records">${recordsHtml}</div>` : ''}
                 ${topFlavors.length ? `
                 <div class="shop-summary-flavors">
                     <span class="shop-summary-sub-label"><i class="bi bi-tags"></i>常見風味</span>
