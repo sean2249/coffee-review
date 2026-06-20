@@ -1444,3 +1444,74 @@ hr { border-color: var(--border); opacity: 0.7; }
     .new-mode-picker-btn { padding: 1.1rem 0.8rem; }
     .detail-header-card .detail-title { font-size: 1.15rem; }
 }
+
+/* ───── 店家摘要 ──────────────────────────────────────────────────────────── */
+.shop-summary-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    margin-bottom: 0.85rem;
+}
+.shop-summary-stat {
+    flex: 1 1 8rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    padding: 0.6rem 0.75rem;
+    background: var(--bg-soft);
+    border-radius: var(--radius-md);
+}
+.shop-summary-stat-num {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--accent);
+}
+.shop-summary-stat-label {
+    font-size: 0.78rem;
+    color: var(--text-muted);
+}
+.shop-summary-records {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    margin-bottom: 0.85rem;
+}
+.shop-summary-records:empty { display: none; }
+.shop-summary-record {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.45rem 0.65rem;
+    background: var(--bg-soft);
+    border-radius: var(--radius-md);
+    text-decoration: none;
+    color: var(--text-primary);
+}
+.shop-summary-record:hover { background: var(--bg-muted-hover); }
+.shop-summary-record-label {
+    flex-shrink: 0;
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--text-muted);
+}
+.shop-summary-record-title {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.9rem;
+}
+.shop-summary-record-score {
+    flex-shrink: 0;
+    font-weight: 700;
+    color: var(--accent);
+}
+.shop-summary-sub-label {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    color: var(--text-secondary);
+    font-size: 0.88rem;
+    font-weight: 600;
+    margin-bottom: 0.35rem;
+}
