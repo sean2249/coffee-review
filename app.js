@@ -959,6 +959,66 @@ function computeEstimatedTotalFromRecord(r) {
     return any ? 36 + sum : null;
 }
 
+function recordFlavorLeafIds(r) {
+    const ids = [];
+    if (r.evaluations) {
+        for (const v of Object.values(r.evaluations)) {
+            if (Array.isArray(v?.flavors)) ids.push(...v.flavors);
+        }
+    }
+    const aroma = r.observation?.aroma;
+    if (Array.isArray(aroma?.flavors)) ids.push(...aroma.flavors);
+    // 只留葉節點：祖先 id 會是某個更深 id 的 `id + '__'` 前綴
+    return ids.filter(id => typeof id === 'string'
+        && !ids.some(other => typeof other === 'string' && other !== id && other.startsWith(id + '__')));
+}
+
+function summarizeRecords(records) {
+    const cupping = records.filter(r => r._type === 'cupping').length;
+    const tasting = records.filter(r => r._type === 'tasting').length;
+    const counts = { total: records.length, cupping, tasting };
+
+    const scored = records.filter(r => typeof r.coe_total === 'number');
+    const avgScore = scored.length
+        ? scored.reduce((sum, r) => sum + r.coe_total, 0) / scored.length
+        : null;
+    const highest = scored.length
+        ? scored.reduce((a, b) => (b.coe_total > a.coe_total ? b : a))
+        : null;
+    const lowest = scored.length
+        ? scored.reduce((a, b) => (b.coe_total < a.coe_total ? b : a))
+        : null;
+
+    let lastDate = null;
+    for (const r of records) {
+        const d = (r._type === 'tasting' && r.visit_date) ? r.visit_date : r.created_at;
+        if (d && (!lastDate || d > lastDate)) lastDate = d;
+    }
+
+    const flavorCounts = new Map();
+    for (const r of records) {
+        for (const id of recordFlavorLeafIds(r)) {
+            const meta = decodeFlavorMeta(id);
+            if (!meta) continue;
+            const prev = flavorCounts.get(meta.name);
+            if (prev) prev.count += 1;
+            else flavorCounts.set(meta.name, { name: meta.name, color: meta.color, count: 1 });
+        }
+    }
+    const topFlavors = [...flavorCounts.values()]
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 5);
+
+    return {
+        counts,
+        avgScore,
+        highest: highest ? { record: highest, score: highest.coe_total } : null,
+        lowest: lowest ? { record: lowest, score: lowest.coe_total } : null,
+        lastDate,
+        topFlavors,
+    };
+}
+
 function decodeFlavorMeta(id) {
     if (!id || typeof id !== 'string') return null;
     const l1Start = id.indexOf('__l1-');
@@ -2895,6 +2955,67 @@ function openNewRecordPicker(shop) {
 }
 
 // ─── View: shop detail ──────────────────────────────────────────────────────
+function renderShopSummaryCard(summary) {
+    if (summary.counts.total === 0) {
+        return `
+            <div class="card">
+                <div class="card-body">
+                    <h3 class="card-title"><i class="bi bi-bar-chart-line"></i>統計摘要</h3>
+                    <div class="empty-state">
+                        <i class="bi bi-cup-hot"></i>
+                        <p>還沒有這家店的記錄</p>
+                        <button class="btn btn-primary btn-sm" id="shop-summary-cta">新增第一筆品鑑</button>
+                    </div>
+                </div>
+            </div>`;
+    }
+
+    const { counts, avgScore, highest, lowest, lastDate, topFlavors } = summary;
+
+    const scoreLink = (entry, label) => {
+        if (!entry) return '';
+        const r = entry.record;
+        return `<a class="shop-summary-record" href="#/${r._type}/${r.id}">
+            <span class="shop-summary-record-label">${label}</span>
+            <span class="shop-summary-record-title">${escapeHtml(deriveTitle(r))}</span>
+            <span class="shop-summary-record-score">${entry.score.toFixed(1)}</span>
+        </a>`;
+    };
+
+    const flavorChips = topFlavors
+        .map(f => `<span class="detail-flavor-chip" style="--ft-color:${f.color}">${escapeHtml(f.name)} ×${f.count}</span>`)
+        .join('');
+
+    const recordsHtml = [scoreLink(highest, '最高'), scoreLink(lowest, '最低')].join('');
+
+    return `
+        <div class="card">
+            <div class="card-body">
+                <h3 class="card-title"><i class="bi bi-bar-chart-line"></i>統計摘要</h3>
+                <div class="shop-summary-grid">
+                    <div class="shop-summary-stat">
+                        <span class="shop-summary-stat-num">${counts.total}</span>
+                        <span class="shop-summary-stat-label">總記錄（杯測 ${counts.cupping} / 品鑑 ${counts.tasting}）</span>
+                    </div>
+                    <div class="shop-summary-stat">
+                        <span class="shop-summary-stat-num">${avgScore != null ? avgScore.toFixed(1) : '—'}</span>
+                        <span class="shop-summary-stat-label">平均 CoE 總分</span>
+                    </div>
+                    <div class="shop-summary-stat">
+                        <span class="shop-summary-stat-num">${lastDate ? escapeHtml(fmtDate(lastDate)) : '—'}</span>
+                        <span class="shop-summary-stat-label">最近一次</span>
+                    </div>
+                </div>
+                ${recordsHtml ? `<div class="shop-summary-records">${recordsHtml}</div>` : ''}
+                ${topFlavors.length ? `
+                <div class="shop-summary-flavors">
+                    <span class="shop-summary-sub-label"><i class="bi bi-tags"></i>常見風味</span>
+                    <div class="detail-tag-row">${flavorChips}</div>
+                </div>` : ''}
+            </div>
+        </div>`;
+}
+
 async function viewShopDetail(root, shopId) {
     if (!isCloudReady()) {
         root.innerHTML = renderCloudWarning();
@@ -2950,6 +3071,8 @@ async function viewShopDetail(root, shopId) {
                 </div>
             </div>
 
+            ${renderShopSummaryCard(summarizeRecords(records))}
+
             <div class="card">
                 <div class="card-body">
                     <h3 class="card-title">
@@ -2967,6 +3090,8 @@ async function viewShopDetail(root, shopId) {
         document.getElementById('shop-new-record').addEventListener('click', () => {
             openNewRecordPicker(shop);
         });
+        document.getElementById('shop-summary-cta')?.addEventListener('click', () =>
+            openNewRecordPicker(shop));
         document.getElementById('shop-edit').addEventListener('click', () =>
             openShopModal({ shop }));
         const backfillEl = document.getElementById('shop-backfill');
