@@ -238,12 +238,71 @@ button.card-title {
     line-height: 1.45;
 }
 
-/* ───── Shop picker (select + add button) ──────────────────────────────── */
+/* ───── Shop picker (trigger button + searchable modal) ────────────────── */
 .shop-picker {
     display: flex;
     gap: 0.4rem;
 }
 .shop-picker .form-select { flex: 1; }
+
+.shop-picker-trigger {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    text-align: left;
+    cursor: pointer;
+}
+.shop-picker-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.shop-picker-label.is-placeholder { color: var(--text-muted); }
+.shop-picker-label .bi { color: var(--accent); }
+.shop-picker-caret {
+    flex: none;
+    color: var(--text-muted);
+    font-size: 0.8em;
+}
+
+.shop-picker-search { width: 100%; margin-bottom: 0.6rem; }
+.shop-picker-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    max-height: 50vh;
+    overflow-y: auto;
+}
+.shop-picker-list-item {
+    display: block;
+    width: 100%;
+    padding: 0.6rem 0.75rem;
+    border: none;
+    border-radius: var(--radius-sm);
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+.shop-picker-list-item .bi { color: var(--accent); }
+.shop-picker-list-item:hover { background: var(--accent-tint); }
+.shop-picker-list-item:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px var(--accent-tint);
+    background: var(--accent-tint);
+}
+.shop-picker-list-item.selected {
+    background: var(--accent-tint);
+    color: var(--accent);
+    font-weight: 500;
+}
+.shop-picker-empty {
+    padding: 0.75rem;
+    color: var(--text-muted);
+    text-align: center;
+}
 
 /* ───── Filter bar (records list) ──────────────────────────────────────── */
 .filter-bar {
@@ -275,11 +334,33 @@ button.card-title {
     color: #fff;
 }
 .filter-shop-wrap {
-    margin-left: auto;
+    flex: 1 1 8rem;
     min-width: 0;
-    flex-shrink: 1;
 }
-.filter-shop-wrap .form-select { min-width: 10rem; }
+.filter-shop-wrap .form-select,
+.filter-shop-wrap .form-control { min-width: 8rem; }
+
+/* 進階篩選按鈕 + 條件數 badge */
+.filter-adv-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    white-space: nowrap;
+}
+.filter-adv-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.1rem;
+    height: 1.1rem;
+    padding: 0 0.3rem;
+    border-radius: 999px;
+    background: var(--accent);
+    color: #fff;
+    font-size: 0.72rem;
+    font-weight: 700;
+    line-height: 1;
+}
 
 /* ───── Records list ───────────────────────────────────────────────────── */
 .records-list {
@@ -1254,6 +1335,75 @@ body.modal-open-custom { overflow: hidden; }
     margin-top: 0.5rem;
 }
 
+/* ───── 進階篩選抽屜 ──────────────────────────────────────────────────── */
+/* 沿用 .modal-backdrop-custom 的遮罩；面板從右側滑出。 */
+.filter-drawer-backdrop {
+    justify-content: flex-end;
+    align-items: stretch;
+    padding: 0;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+}
+.filter-drawer-backdrop.show { opacity: 1; }
+.filter-drawer {
+    background: var(--bg-card);
+    box-shadow: var(--shadow-lg);
+    width: 100%;
+    max-width: 380px;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    overflow: auto;
+    transform: translateX(100%);
+    transition: transform 0.22s ease;
+}
+.filter-drawer-backdrop.show .filter-drawer { transform: translateX(0); }
+.filter-drawer .modal-header {
+    display: flex;
+    align-items: center;
+    padding: 0.9rem 1.1rem;
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    background: var(--bg-card);
+    z-index: 1;
+}
+.filter-drawer .modal-header h3 { margin: 0; font-size: 1.05rem; font-weight: 700; flex: 1; }
+.filter-drawer .modal-body { padding: 1rem 1.1rem; flex: 1; }
+.filter-group { margin-bottom: 1.3rem; }
+.filter-group-title {
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: var(--text-muted);
+    margin-bottom: 0.55rem;
+}
+.filter-tier-row { flex-wrap: wrap; }
+/* 選取的徽章 chip 顯示對應獎牌色（沿用卡片獎牌的 tier tokens）。 */
+.filter-tier-row .filter-chip.selected { border-color: transparent; }
+.filter-tier-row .filter-chip.t-trash.selected      { background: var(--t1-bg); color: var(--t1-fg); }
+.filter-tier-row .filter-chip.t-commercial.selected { background: var(--t2-bg); color: var(--t2-fg); }
+.filter-tier-row .filter-chip.t-common.selected     { background: var(--t3-bg); color: var(--t3-fg); }
+.filter-tier-row .filter-chip.t-like.selected       { background: var(--t4-bg); color: var(--t4-fg); }
+.filter-tier-row .filter-chip.t-recommend.selected  { background: var(--t5-bg); color: var(--t5-fg); }
+.filter-tier-row .filter-chip.t-amazing.selected    { background: var(--t6-bg); color: var(--t6-fg); }
+.filter-tier-row .filter-chip.t-godly.selected      { background: var(--t7-bg); color: var(--t7-fg); }
+.filter-date-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+.filter-date-row .form-control { flex: 1; min-width: 0; }
+.filter-date-sep { color: var(--text-muted); }
+.filter-drawer-actions {
+    justify-content: space-between;
+    padding: 0.9rem 1.1rem;
+    border-top: 1px solid var(--border);
+    margin-top: 0;
+    position: sticky;
+    bottom: 0;
+    background: var(--bg-card);
+}
+
 /* ───── Google Places UI ──────────────────────────────────────────────── */
 .sm-place-results { margin-top: 0.4rem; }
 .sm-place-option {
@@ -1360,6 +1510,9 @@ hr { border-color: var(--border); opacity: 0.7; }
     font-size: 0.88rem;
 }
 .detail-meta .bi { margin-right: 0.25rem; color: var(--text-dim); }
+.detail-meta-shop { color: var(--accent); text-decoration: none; font-weight: 600; }
+.detail-meta-shop:hover { text-decoration: underline; }
+.detail-meta-shop .bi { color: var(--accent); }
 .detail-list {
     display: grid;
     grid-template-columns: max-content 1fr;
@@ -1497,4 +1650,74 @@ hr { border-color: var(--border); opacity: 0.7; }
     .shops-search-input { max-width: none; flex-basis: 100%; }
     .new-mode-picker-btn { padding: 1.1rem 0.8rem; }
     .detail-header-card .detail-title { font-size: 1.15rem; }
+}
+
+/* ───── 店家摘要 ──────────────────────────────────────────────────────────── */
+.shop-summary-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    margin-bottom: 0.85rem;
+}
+.shop-summary-stat {
+    flex: 1 1 8rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    padding: 0.6rem 0.75rem;
+    background: var(--bg-soft);
+    border-radius: var(--radius-md);
+}
+.shop-summary-stat-num {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--accent);
+}
+.shop-summary-stat-label {
+    font-size: 0.78rem;
+    color: var(--text-muted);
+}
+.shop-summary-records {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    margin-bottom: 0.85rem;
+}
+.shop-summary-record {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.45rem 0.65rem;
+    background: var(--bg-soft);
+    border-radius: var(--radius-md);
+    text-decoration: none;
+    color: var(--text-primary);
+}
+.shop-summary-record:hover { background: var(--bg-muted-hover); }
+.shop-summary-record-label {
+    flex-shrink: 0;
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--text-muted);
+}
+.shop-summary-record-title {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.9rem;
+}
+.shop-summary-record-score {
+    flex-shrink: 0;
+    font-weight: 700;
+    color: var(--accent);
+}
+.shop-summary-sub-label {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    color: var(--text-secondary);
+    font-size: 0.88rem;
+    font-weight: 600;
+    margin-bottom: 0.35rem;
 }

@@ -228,7 +228,7 @@ const legacyTagSections = [
 const state = {
     shops: [],          // [{id, name, location, intro, ...}]
     shopsLoaded: false, // true after first successful fetch — distinguishes "deleted" from "not loaded yet"
-    listFilter: { type: 'all', shopId: '' },
+    listFilter: { type: 'all', shopKeyword: '', tiers: [], dateFrom: '', dateTo: '' },
     currentForm: null,  // { mode, recordId|null }
     knownOrigins: [],   // distinct origin strings from past cupping records
     knownOriginsLoaded: false,
@@ -383,7 +383,7 @@ const api = {
         if (error) throw error;
     },
 
-    async listRecords({ type = 'all', shopId = '' } = {}) {
+    async listRecords({ type = 'all' } = {}) {
         const sb = await ensureSupabase();
         if (!sb) return [];
         const baseCols = 'id, shop_id, coe_total, coe_tier_id, created_at';
@@ -393,17 +393,17 @@ const api = {
             return (r.data || []).map(x => ({ ...x, _type }));
         };
 
+        // 進階篩選（店家關鍵字 / 徽章 / 日期）一律在前端套用，故這裡只依
+        // 類型決定查哪張表，其餘維度交給 applyAdvancedFilters。
         if (type === 'all' || type === 'cupping') {
-            let q = sb.from(SUPABASE_CONFIG.cuppingTable)
+            const q = sb.from(SUPABASE_CONFIG.cuppingTable)
                 .select(`${baseCols}, bean_name, origin`);
-            if (shopId) q = q.eq('shop_id', shopId);
             tasks.push(q.order('created_at', { ascending: false })
                 .then(r => unwrap(r, 'cupping')));
         }
         if (type === 'all' || type === 'tasting') {
-            let q = sb.from(SUPABASE_CONFIG.tastingTable)
+            const q = sb.from(SUPABASE_CONFIG.tastingTable)
                 .select(`${baseCols}, visit_date, item_ordered, bean_name`);
-            if (shopId) q = q.eq('shop_id', shopId);
             tasks.push(q.order('created_at', { ascending: false })
                 .then(r => unwrap(r, 'tasting')));
         }
@@ -495,7 +495,7 @@ async function renderRoute() {
     wheelState.clear();
 
     if (parts.length === 0 || parts[0] === 'records') {
-        await viewRecordsList(root);
+        await viewRecordsList(root, query);
     } else if (parts[0] === 'new' && !parts[1]) {
         viewNewModePicker(root);
     } else if (parts[0] === 'new' && (parts[1] === 'cupping' || parts[1] === 'tasting')) {
@@ -535,12 +535,169 @@ function viewNotFound(root) {
         </div></div>`;
 }
 
+// ─── Records list filtering ──────────────────────────────────────────────────
+// 進階篩選一律在前端套用（記錄量級小，且日期欄位依類型而異）。
+function recordDateStr(r) {
+    // 杯測用 created_at；品鑑優先 visit_date，缺漏時 fallback created_at（與卡片日期顯示一致）。
+    const iso = r._type === 'tasting' ? (r.visit_date || r.created_at) : r.created_at;
+    return (iso || '').slice(0, 10);
+}
+
+function applyAdvancedFilters(rows) {
+    const f = state.listFilter;
+    // 店家清單尚未成功載入時 shopName() 會回傳空字串，會把所有記錄誤濾掉，
+    // 故 shops 未載入前先略過店家關鍵字篩選。
+    const kw = state.shopsLoaded ? f.shopKeyword.trim().toLowerCase() : '';
+    return rows.filter(r => {
+        if (kw && !shopName(r.shop_id).toLowerCase().includes(kw)) return false;
+        if (f.tiers.length && !f.tiers.includes(r.coe_tier_id)) return false;
+        if (f.dateFrom || f.dateTo) {
+            const d = recordDateStr(r);
+            if (!d) return false;
+            if (f.dateFrom && d < f.dateFrom) return false;
+            if (f.dateTo && d > f.dateTo) return false;
+        }
+        return true;
+    });
+}
+
+// 進階條件數（抽屜內的維度）— 用於 badge 與 empty state 判斷。
+// 徽章逐一計數（選 3 個徽章 → 3），日期範圍有任一 from/to 即算 1。
+function advancedFilterCount() {
+    const f = state.listFilter;
+    let n = f.tiers.length;
+    if (f.dateFrom || f.dateTo) n += 1;
+    return n;
+}
+
+function hasAnyFilter() {
+    const f = state.listFilter;
+    return f.type !== 'all' || f.shopKeyword.trim() !== '' || advancedFilterCount() > 0;
+}
+
+function hydrateFilterFromQuery(query) {
+    state.listFilter = {
+        type: query.type === 'cupping' || query.type === 'tasting' ? query.type : 'all',
+        shopKeyword: query.shop || '',
+        tiers: query.tier ? query.tier.split(',').filter(Boolean) : [],
+        dateFrom: query.from || '',
+        dateTo: query.to || '',
+    };
+}
+
+// 序列化篩選條件到 hash query。用 replaceState 避免觸發 hashchange → 整頁重繪。
+function syncFilterToHash() {
+    const f = state.listFilter;
+    const params = new URLSearchParams();
+    if (f.type && f.type !== 'all') params.set('type', f.type);
+    if (f.shopKeyword.trim()) params.set('shop', f.shopKeyword.trim());
+    if (f.tiers.length) params.set('tier', f.tiers.join(','));
+    if (f.dateFrom) params.set('from', f.dateFrom);
+    if (f.dateTo) params.set('to', f.dateTo);
+    const qs = params.toString();
+    history.replaceState(null, '', '#/records' + (qs ? `?${qs}` : ''));
+}
+
+function updateAdvBadge() {
+    const badge = document.getElementById('filter-adv-badge');
+    if (!badge) return;
+    const n = advancedFilterCount();
+    badge.textContent = n > 0 ? String(n) : '';
+    badge.hidden = n === 0;
+}
+
+// 篩選變更後的共同流程：序列化 → 更新 badge → 重繪卡片。
+function onFilterChange() {
+    syncFilterToHash();
+    updateAdvBadge();
+    loadAndRenderCards();
+}
+
+function openFilterDrawer() {
+    const f = state.listFilter;
+    const tierChips = totalScoreTiers.map(t => `
+        <button type="button" class="filter-chip ${t.cssClass} ${f.tiers.includes(t.id) ? 'selected' : ''}"
+                data-tier-id="${t.id}">${t.medal} | ${escapeHtml(t.label)}</button>`).join('');
+
+    const backdrop = document.createElement('div');
+    backdrop.className = 'modal-backdrop-custom filter-drawer-backdrop';
+    backdrop.innerHTML = `
+        <div class="filter-drawer" role="dialog" aria-modal="true" aria-label="進階篩選">
+            <header class="modal-header">
+                <h3>進階篩選</h3>
+                <button type="button" class="modal-close" aria-label="關閉"><i class="bi bi-x-lg"></i></button>
+            </header>
+            <div class="modal-body">
+                <div class="filter-group">
+                    <div class="filter-group-title">徽章 / 分數區間</div>
+                    <div class="filter-chip-row filter-tier-row">${tierChips}</div>
+                </div>
+                <div class="filter-group">
+                    <div class="filter-group-title">日期範圍</div>
+                    <div class="filter-date-row">
+                        <input type="date" class="form-control form-control-sm" id="filter-date-from"
+                               aria-label="起始日期" value="${f.dateFrom}">
+                        <span class="filter-date-sep">→</span>
+                        <input type="date" class="form-control form-control-sm" id="filter-date-to"
+                               aria-label="結束日期" value="${f.dateTo}">
+                    </div>
+                </div>
+            </div>
+            <footer class="modal-actions filter-drawer-actions">
+                <button type="button" class="btn btn-sm btn-link" id="filter-clear-all">清除全部</button>
+                <button type="button" class="btn btn-sm btn-primary" id="filter-drawer-done">完成</button>
+            </footer>
+        </div>`;
+
+    document.body.appendChild(backdrop);
+    document.body.classList.add('modal-open-custom');
+    requestAnimationFrame(() => backdrop.classList.add('show'));
+
+    const close = () => {
+        backdrop.remove();
+        document.body.classList.remove('modal-open-custom');
+    };
+    backdrop.addEventListener('click', e => { if (e.target === backdrop) close(); });
+    backdrop.querySelector('.modal-close').addEventListener('click', close);
+    backdrop.querySelector('#filter-drawer-done').addEventListener('click', close);
+
+    backdrop.querySelectorAll('[data-tier-id]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const id = btn.dataset.tierId;
+            const i = state.listFilter.tiers.indexOf(id);
+            if (i >= 0) state.listFilter.tiers.splice(i, 1);
+            else state.listFilter.tiers.push(id);
+            btn.classList.toggle('selected');
+            onFilterChange();
+        });
+    });
+
+    const fromEl = backdrop.querySelector('#filter-date-from');
+    const toEl = backdrop.querySelector('#filter-date-to');
+    fromEl.addEventListener('change', () => { state.listFilter.dateFrom = fromEl.value; onFilterChange(); });
+    toEl.addEventListener('change', () => { state.listFilter.dateTo = toEl.value; onFilterChange(); });
+
+    backdrop.querySelector('#filter-clear-all').addEventListener('click', () => {
+        state.listFilter = { type: 'all', shopKeyword: '', tiers: [], dateFrom: '', dateTo: '' };
+        backdrop.querySelectorAll('[data-tier-id]').forEach(b => b.classList.remove('selected'));
+        fromEl.value = '';
+        toEl.value = '';
+        const kwEl = document.getElementById('filter-shop-kw');
+        if (kwEl) kwEl.value = '';
+        document.querySelectorAll('.filter-chip[data-filter-type]').forEach(b =>
+            b.classList.toggle('selected', b.dataset.filterType === 'all'));
+        onFilterChange();
+    });
+}
+
 // ─── View: records list ─────────────────────────────────────────────────────
-async function viewRecordsList(root) {
+async function viewRecordsList(root, query = {}) {
     if (!isCloudReady()) {
         root.innerHTML = renderCloudWarning();
         return;
     }
+
+    hydrateFilterFromQuery(query);
 
     root.innerHTML = `
         <div class="filter-bar">
@@ -550,41 +707,47 @@ async function viewRecordsList(root) {
                 <button type="button" class="filter-chip" data-filter-type="tasting">品鑑</button>
             </div>
             <div class="filter-shop-wrap">
-                <select class="form-select form-select-sm" id="filter-shop">
-                    <option value="">全部店家</option>
-                </select>
+                <input type="search" class="form-control form-control-sm" id="filter-shop-kw"
+                       placeholder="搜尋店家名稱…" autocomplete="off">
             </div>
+            <button type="button" class="btn btn-sm btn-outline-secondary filter-adv-btn" id="filter-adv-btn">
+                <i class="bi bi-sliders"></i>進階篩選<span class="filter-adv-badge" id="filter-adv-badge" hidden></span>
+            </button>
         </div>
         <div id="records-list" class="records-list"></div>`;
 
     await refreshShopsCache();
 
-    // Populate shop filter
-    const shopSel = document.getElementById('filter-shop');
-    state.shops.forEach(s => {
-        const opt = document.createElement('option');
-        opt.value = s.id;
-        opt.textContent = (s.google_place_id ? '📍 ' : '') + s.name;
-        shopSel.appendChild(opt);
+    // Shop keyword search (debounce 200ms)
+    const kwEl = document.getElementById('filter-shop-kw');
+    kwEl.value = state.listFilter.shopKeyword;
+    let kwTimer;
+    kwEl.addEventListener('input', () => {
+        clearTimeout(kwTimer);
+        kwTimer = setTimeout(() => {
+            // 若 debounce 期間已離開 records 視圖（輸入框被移出 DOM），
+            // 就不要再 onFilterChange / replaceState，避免改回 #/records 網址。
+            if (!document.body.contains(kwEl)) return;
+            state.listFilter.shopKeyword = kwEl.value;
+            onFilterChange();
+        }, 200);
     });
-    shopSel.value = state.listFilter.shopId || '';
 
-    // Wire chips
-    document.querySelectorAll('.filter-chip').forEach(btn => {
+    // Type chips
+    document.querySelectorAll('.filter-chip[data-filter-type]').forEach(btn => {
         btn.classList.toggle('selected', btn.dataset.filterType === state.listFilter.type);
         btn.addEventListener('click', () => {
             state.listFilter.type = btn.dataset.filterType;
-            document.querySelectorAll('.filter-chip').forEach(b =>
+            document.querySelectorAll('.filter-chip[data-filter-type]').forEach(b =>
                 b.classList.toggle('selected', b === btn));
-            loadAndRenderCards();
+            onFilterChange();
         });
     });
 
-    shopSel.addEventListener('change', () => {
-        state.listFilter.shopId = shopSel.value;
-        loadAndRenderCards();
-    });
+    // Advanced filter drawer
+    document.getElementById('filter-adv-btn').addEventListener('click', openFilterDrawer);
 
+    updateAdvBadge();
     await loadAndRenderCards();
 }
 
@@ -593,13 +756,18 @@ async function loadAndRenderCards() {
     if (!container) return;
     container.innerHTML = '<div class="empty-state"><i class="bi bi-hourglass-split"></i>讀取中…</div>';
     try {
-        const rows = await api.listRecords(state.listFilter);
+        const rows = applyAdvancedFilters(await api.listRecords({ type: state.listFilter.type }));
         if (rows.length === 0) {
-            container.innerHTML = `<div class="empty-state">
-                <i class="bi bi-inbox"></i>
-                <p>還沒有記錄</p>
-                <a class="btn btn-primary btn-sm" href="#/new">新增第一筆</a>
-            </div>`;
+            container.innerHTML = hasAnyFilter()
+                ? `<div class="empty-state">
+                    <i class="bi bi-funnel"></i>
+                    <p>找不到符合條件的記錄</p>
+                </div>`
+                : `<div class="empty-state">
+                    <i class="bi bi-inbox"></i>
+                    <p>還沒有記錄</p>
+                    <a class="btn btn-primary btn-sm" href="#/new">新增第一筆</a>
+                </div>`;
             return;
         }
         container.innerHTML = rows.map(renderRecordCard).join('');
@@ -717,6 +885,7 @@ function renderRecordDetail(mode, r) {
     const score = typeof r.coe_total === 'number' ? r.coe_total.toFixed(1) : '—';
     const title = deriveTitle({ ...r, _type: mode });
     const shop = shopName(r.shop_id);
+    const shopLinkable = !!(r.shop_id && state.shops.find(s => s.id === r.shop_id));
     const date = mode === 'tasting' && r.visit_date ? fmtDate(r.visit_date) : fmtDate(r.created_at);
 
     const estTotal = computeEstimatedTotalFromRecord(r);
@@ -734,7 +903,9 @@ function renderRecordDetail(mode, r) {
             <div class="card-body">
                 <h2 class="detail-title">${escapeHtml(title)}</h2>
                 <div class="detail-meta">
-                    ${shop ? `<span><i class="bi bi-shop"></i>${escapeHtml(shop)}</span>` : ''}
+                    ${shop ? (shopLinkable
+                        ? `<a class="detail-meta-shop" href="#/shops/${r.shop_id}"><i class="bi bi-shop"></i>${escapeHtml(shop)}</a>`
+                        : `<span><i class="bi bi-shop"></i>${escapeHtml(shop)}</span>`) : ''}
                     ${date ? `<span><i class="bi bi-calendar3"></i>${escapeHtml(date)}</span>` : ''}
                     ${mode === 'tasting' && r.price != null
                         ? `<span><i class="bi bi-cash-coin"></i>$${escapeHtml(String(r.price))}</span>`
@@ -992,6 +1163,66 @@ function computeEstimatedTotalFromRecord(r) {
     return any ? 36 + sum : null;
 }
 
+function recordFlavorLeafIds(r) {
+    const ids = [];
+    if (r.evaluations) {
+        for (const v of Object.values(r.evaluations)) {
+            if (Array.isArray(v?.flavors)) ids.push(...v.flavors);
+        }
+    }
+    const aroma = r.observation?.aroma;
+    if (Array.isArray(aroma?.flavors)) ids.push(...aroma.flavors);
+    // 只留葉節點：祖先 id 會是某個更深 id 的 `id + '__'` 前綴
+    return ids.filter(id => typeof id === 'string'
+        && !ids.some(other => typeof other === 'string' && other !== id && other.startsWith(id + '__')));
+}
+
+function summarizeRecords(records) {
+    const cupping = records.filter(r => r._type === 'cupping').length;
+    const tasting = records.filter(r => r._type === 'tasting').length;
+    const counts = { total: records.length, cupping, tasting };
+
+    const scored = records.filter(r => typeof r.coe_total === 'number');
+    const avgScore = scored.length
+        ? scored.reduce((sum, r) => sum + r.coe_total, 0) / scored.length
+        : null;
+    const highest = scored.length
+        ? scored.reduce((a, b) => (b.coe_total > a.coe_total ? b : a))
+        : null;
+    const lowest = scored.length
+        ? scored.reduce((a, b) => (b.coe_total < a.coe_total ? b : a))
+        : null;
+
+    let lastDate = null;
+    for (const r of records) {
+        const d = (r._type === 'tasting' && r.visit_date) ? r.visit_date : r.created_at;
+        if (d && (!lastDate || d > lastDate)) lastDate = d;
+    }
+
+    const flavorCounts = new Map();
+    for (const r of records) {
+        for (const id of recordFlavorLeafIds(r)) {
+            const meta = decodeFlavorMeta(id);
+            if (!meta) continue;
+            const prev = flavorCounts.get(meta.name);
+            if (prev) prev.count += 1;
+            else flavorCounts.set(meta.name, { name: meta.name, color: meta.color, count: 1 });
+        }
+    }
+    const topFlavors = [...flavorCounts.values()]
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 5);
+
+    return {
+        counts,
+        avgScore,
+        highest: highest ? { record: highest, score: highest.coe_total } : null,
+        lowest: lowest ? { record: lowest, score: lowest.coe_total } : null,
+        lastDate,
+        topFlavors,
+    };
+}
+
 function decodeFlavorMeta(id) {
     if (!id || typeof id !== 'string') return null;
     const l1Start = id.indexOf('__l1-');
@@ -1087,8 +1318,9 @@ function applyShopPrefill(shopId) {
     if (!shopId) return;
     const sel = document.getElementById('f-shop');
     if (!sel) return;
-    if ([...sel.options].some(o => o.value === shopId)) {
+    if (state.shops.some(s => s.id === shopId)) {
         sel.value = shopId;
+        renderShopTriggerLabel();
     }
 }
 
@@ -1423,34 +1655,122 @@ async function applyImportedBean(mode, recordId) {
     }
 }
 
+// The form's 店家 field is a hidden input (#f-shop) holding the shop id, fronted
+// by a trigger button that opens the searchable picker. This keeps every existing
+// read/write of #f-shop.value working unchanged; we only refresh the visible label.
 function populateShopSelect(sel, required) {
     if (!sel) return;
-    const currentVal = sel.value;
-    sel.innerHTML = '';
+    const trigger = document.getElementById('f-shop-trigger');
+    if (trigger) trigger.dataset.placeholder = required ? '— 請選擇 —' : '— 不指定 —';
+    renderShopTriggerLabel();
+}
 
-    if (!required) {
-        const opt = document.createElement('option');
-        opt.value = '';
-        opt.textContent = '— 不指定 —';
-        sel.appendChild(opt);
+// Render the visible label of a shop-picker trigger from its hidden input's value.
+function renderShopPickerLabel(triggerId, hiddenId) {
+    const trigger = document.getElementById(triggerId);
+    const hidden = document.getElementById(hiddenId);
+    if (!trigger || !hidden) return;
+    const labelEl = trigger.querySelector('.shop-picker-label');
+    if (!labelEl) return;
+    const val = hidden.value;
+    if (!val) {
+        labelEl.textContent = trigger.dataset.placeholder || '';
+        labelEl.classList.add('is-placeholder');
+        return;
+    }
+    labelEl.classList.remove('is-placeholder');
+    const shop = state.shops.find(s => s.id === val);
+    if (shop) {
+        const pin = shop.google_place_id ? '<i class="bi bi-geo-alt-fill"></i> ' : '';
+        const loc = shop.location ? ` · ${escapeHtml(shop.location)}` : '';
+        labelEl.innerHTML = pin + escapeHtml(shop.name) + loc;
     } else {
-        const opt = document.createElement('option');
-        opt.value = '';
-        opt.textContent = '— 請選擇 —';
-        opt.disabled = true;
-        sel.appendChild(opt);
+        // Value set but shop not in cache — deleted, or the cache never loaded.
+        labelEl.textContent = state.shopsLoaded ? '(已刪除店家)' : '(店家載入失敗)';
     }
+}
 
-    state.shops.forEach(s => {
-        const opt = document.createElement('option');
-        opt.value = s.id;
-        opt.textContent = (s.google_place_id ? '📍 ' : '') + s.name + (s.location ? ` · ${s.location}` : '');
-        sel.appendChild(opt);
+function renderShopTriggerLabel() {
+    renderShopPickerLabel('f-shop-trigger', 'f-shop');
+}
+
+// Searchable shop picker modal. Reuses the custom-modal idiom (see openNewRecordPicker)
+// and the same name/location/intro substring filter as the /shops list view.
+function openShopPicker({ currentId = '', allowEmpty = true, emptyLabel = '— 不指定 —', onPick } = {}) {
+    // Remember the control that opened the dialog so focus can return to it on
+    // close — otherwise keyboard users are stranded on the removed search input.
+    const opener = document.activeElement;
+    const backdrop = document.createElement('div');
+    backdrop.className = 'modal-backdrop-custom';
+    backdrop.innerHTML = `
+        <div class="modal-shell" role="dialog" aria-modal="true" aria-label="選擇店家">
+            <header class="modal-header">
+                <h3>選擇店家</h3>
+                <button type="button" class="modal-close" aria-label="關閉">
+                    <i class="bi bi-x-lg"></i>
+                </button>
+            </header>
+            <div class="modal-body">
+                <input type="search" class="form-control shop-picker-search"
+                       placeholder="搜尋店家名稱或地址…" autocomplete="off">
+                <div class="shop-picker-list"></div>
+            </div>
+        </div>`;
+    document.body.appendChild(backdrop);
+    document.body.classList.add('modal-open-custom');
+
+    const listEl = backdrop.querySelector('.shop-picker-list');
+    const searchEl = backdrop.querySelector('.shop-picker-search');
+
+    const onKey = e => { if (e.key === 'Escape') close(); };
+    function close() {
+        backdrop.remove();
+        document.body.classList.remove('modal-open-custom');
+        document.removeEventListener('keydown', onKey);
+        if (opener && typeof opener.focus === 'function') opener.focus();
+    }
+    const pick = id => { close(); if (typeof onPick === 'function') onPick(id); };
+
+    const renderList = q => {
+        const query = q.toLowerCase();
+        const matches = query
+            ? state.shops.filter(s =>
+                (s.name || '').toLowerCase().includes(query) ||
+                (s.location || '').toLowerCase().includes(query) ||
+                (s.intro || '').toLowerCase().includes(query))
+            : state.shops;
+        // Options are real <button>s so they're focusable and Enter/Space-activatable.
+        let html = '';
+        if (allowEmpty) {
+            const sel = currentId ? '' : ' selected';
+            html += `<button type="button" class="shop-picker-list-item${sel}" data-shop-id="">${escapeHtml(emptyLabel)}</button>`;
+        }
+        if (state.shops.length === 0) {
+            html += '<div class="shop-picker-empty">尚無店家，請先新增店家。</div>';
+        } else if (matches.length === 0) {
+            html += '<div class="shop-picker-empty">找不到符合的店家。</div>';
+        } else {
+            html += matches.map(s => {
+                const sel = s.id === currentId ? ' selected' : '';
+                const pin = s.google_place_id ? '<i class="bi bi-geo-alt-fill"></i> ' : '';
+                const loc = s.location ? ` · ${escapeHtml(s.location)}` : '';
+                return `<button type="button" class="shop-picker-list-item${sel}" data-shop-id="${escapeHtml(s.id)}">${pin}${escapeHtml(s.name)}${loc}</button>`;
+            }).join('');
+        }
+        listEl.innerHTML = html;
+    };
+
+    renderList('');
+
+    searchEl.addEventListener('input', e => renderList(e.target.value.trim()));
+    listEl.addEventListener('click', e => {
+        const item = e.target.closest('.shop-picker-list-item');
+        if (item) pick(item.dataset.shopId);
     });
-
-    if (currentVal && state.shops.some(s => s.id === currentVal)) {
-        sel.value = currentVal;
-    }
+    backdrop.querySelector('.modal-close').addEventListener('click', close);
+    backdrop.addEventListener('click', e => { if (e.target === backdrop) close(); });
+    document.addEventListener('keydown', onKey);
+    searchEl.focus();
 }
 
 // ─── CoE widget ──────────────────────────────────────────────────────────────
@@ -2307,6 +2627,20 @@ function bindFormHandlers() {
         if (toggle) expandNotesSlot(toggle.dataset.notesTarget);
     });
 
+    document.getElementById('f-shop-trigger').addEventListener('click', () => {
+        const hidden = document.getElementById('f-shop');
+        openShopPicker({
+            currentId: hidden.value,
+            allowEmpty: state.currentForm?.mode !== 'tasting',
+            emptyLabel: '— 不指定 —',
+            onPick: id => {
+                hidden.value = id || '';
+                renderShopTriggerLabel();
+                hidden.dispatchEvent(new Event('change', { bubbles: true }));
+            },
+        });
+    });
+
     document.getElementById('f-shop-new').addEventListener('click', () => openShopModal());
 
     form.addEventListener('submit', e => {
@@ -2458,7 +2792,7 @@ async function submitForm() {
     }
     const shopId = document.getElementById('f-shop').value;
     if (mode === 'tasting' && !shopId) {
-        document.getElementById('f-shop').focus();
+        document.getElementById('f-shop-trigger').focus();
         showToast('品鑑記錄必須指定店家');
         return;
     }
@@ -2526,18 +2860,11 @@ async function loadRecordIntoForm(mode, recordId) {
             return;
         }
 
-        // shop
+        // shop — the hidden input holds any id regardless of cache, so a deleted
+        // shop's FK is preserved on save; renderShopTriggerLabel shows the fallback.
         const shopSel = document.getElementById('f-shop');
-        if (r.shop_id && !state.shops.some(s => s.id === r.shop_id)) {
-            // Preserve the shop_id in the dropdown so saving doesn't drop the FK.
-            // Label depends on whether shops loaded successfully — if the cache
-            // never loaded, the shop might still exist; don't claim it's deleted.
-            const opt = document.createElement('option');
-            opt.value = r.shop_id;
-            opt.textContent = state.shopsLoaded ? '(已刪除店家)' : '(店家載入失敗)';
-            shopSel.appendChild(opt);
-        }
         shopSel.value = r.shop_id || '';
+        renderShopTriggerLabel();
         refreshImportBeanForShop(mode, shopSel.value);
 
         // common fields
@@ -2806,6 +3133,8 @@ function openShopModal({ shop = null, onSaved = null } = {}) {
                     const shopSel = document.getElementById('f-shop');
                     populateShopSelect(shopSel, state.currentForm.mode === 'tasting');
                     shopSel.value = saved.id;
+                    renderShopTriggerLabel();
+                    shopSel.dispatchEvent(new Event('change', { bubbles: true }));
                 }
             }
         } catch (e2) {
@@ -2953,7 +3282,14 @@ async function viewShopsList(root) {
             <div class="empty-state"><i class="bi bi-hourglass-split"></i>讀取中…</div>
         </div>`;
 
-    document.getElementById('shops-new').addEventListener('click', () => openShopModal());
+    // After creating a shop here, offer to add a record for it right away so
+    // the user doesn't have to re-find the shop they just created.
+    const onShopCreated = (saved) => {
+        renderRoute();
+        openNewRecordPicker(saved);
+    };
+    document.getElementById('shops-new')
+        .addEventListener('click', () => openShopModal({ onSaved: onShopCreated }));
 
     const grid = document.getElementById('shops-grid');
     const renderGrid = (shops) => {
@@ -2989,7 +3325,7 @@ async function viewShopsList(root) {
                 </button>
             </div>`;
             document.getElementById('shops-new-inline')
-                .addEventListener('click', () => openShopModal());
+                .addEventListener('click', () => openShopModal({ onSaved: onShopCreated }));
             return;
         }
         renderGrid(shops);
@@ -3044,6 +3380,67 @@ function openNewRecordPicker(shop) {
 }
 
 // ─── View: shop detail ──────────────────────────────────────────────────────
+function renderShopSummaryCard(summary) {
+    if (summary.counts.total === 0) {
+        return `
+            <div class="card">
+                <div class="card-body">
+                    <h3 class="card-title"><i class="bi bi-bar-chart-line"></i>統計摘要</h3>
+                    <div class="empty-state">
+                        <i class="bi bi-cup-hot"></i>
+                        <p>還沒有這家店的記錄</p>
+                        <button class="btn btn-primary btn-sm" id="shop-summary-cta">新增第一筆品鑑</button>
+                    </div>
+                </div>
+            </div>`;
+    }
+
+    const { counts, avgScore, highest, lowest, lastDate, topFlavors } = summary;
+
+    const scoreLink = (entry, label) => {
+        if (!entry) return '';
+        const r = entry.record;
+        return `<a class="shop-summary-record" href="#/${r._type}/${r.id}">
+            <span class="shop-summary-record-label">${label}</span>
+            <span class="shop-summary-record-title">${escapeHtml(deriveTitle(r))}</span>
+            <span class="shop-summary-record-score">${entry.score.toFixed(1)}</span>
+        </a>`;
+    };
+
+    const flavorChips = topFlavors
+        .map(f => `<span class="detail-flavor-chip" style="--ft-color:${f.color}">${escapeHtml(f.name)} ×${f.count}</span>`)
+        .join('');
+
+    const recordsHtml = [scoreLink(highest, '最高'), scoreLink(lowest, '最低')].join('');
+
+    return `
+        <div class="card">
+            <div class="card-body">
+                <h3 class="card-title"><i class="bi bi-bar-chart-line"></i>統計摘要</h3>
+                <div class="shop-summary-grid">
+                    <div class="shop-summary-stat">
+                        <span class="shop-summary-stat-num">${counts.total}</span>
+                        <span class="shop-summary-stat-label">總記錄（杯測 ${counts.cupping} / 品鑑 ${counts.tasting}）</span>
+                    </div>
+                    <div class="shop-summary-stat">
+                        <span class="shop-summary-stat-num">${avgScore != null ? avgScore.toFixed(1) : '—'}</span>
+                        <span class="shop-summary-stat-label">平均 CoE 總分</span>
+                    </div>
+                    <div class="shop-summary-stat">
+                        <span class="shop-summary-stat-num">${lastDate ? escapeHtml(fmtDate(lastDate)) : '—'}</span>
+                        <span class="shop-summary-stat-label">最近一次</span>
+                    </div>
+                </div>
+                ${recordsHtml ? `<div class="shop-summary-records">${recordsHtml}</div>` : ''}
+                ${topFlavors.length ? `
+                <div class="shop-summary-flavors">
+                    <span class="shop-summary-sub-label"><i class="bi bi-tags"></i>常見風味</span>
+                    <div class="detail-tag-row">${flavorChips}</div>
+                </div>` : ''}
+            </div>
+        </div>`;
+}
+
 async function viewShopDetail(root, shopId) {
     if (!isCloudReady()) {
         root.innerHTML = renderCloudWarning();
@@ -3051,10 +3448,11 @@ async function viewShopDetail(root, shopId) {
     }
     root.innerHTML = '<div class="empty-state"><i class="bi bi-hourglass-split"></i>讀取中…</div>';
     try {
-        const [shop, records] = await Promise.all([
+        const [shop, allRecords] = await Promise.all([
             api.getShop(shopId),
-            api.listRecords({ type: 'all', shopId }),
+            api.listRecords({ type: 'all' }),
         ]);
+        const records = allRecords.filter(r => r.shop_id === shopId);
         if (!shop) {
             root.innerHTML = `<div class="card"><div class="card-body">
                 <h3 class="card-title"><i class="bi bi-exclamation-circle"></i>找不到店家</h3>
@@ -3099,6 +3497,8 @@ async function viewShopDetail(root, shopId) {
                 </div>
             </div>
 
+            ${renderShopSummaryCard(summarizeRecords(records))}
+
             <div class="card">
                 <div class="card-body">
                     <h3 class="card-title">
@@ -3116,6 +3516,8 @@ async function viewShopDetail(root, shopId) {
         document.getElementById('shop-new-record').addEventListener('click', () => {
             openNewRecordPicker(shop);
         });
+        document.getElementById('shop-summary-cta')?.addEventListener('click', () =>
+            openNewRecordPicker(shop));
         document.getElementById('shop-edit').addEventListener('click', () =>
             openShopModal({ shop }));
         const backfillEl = document.getElementById('shop-backfill');
