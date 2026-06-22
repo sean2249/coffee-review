@@ -1,5 +1,5 @@
 config.js
 .DS_Store
 node_modules/
-.claude/worktrees/
+.claude/
 .claude.local.md
