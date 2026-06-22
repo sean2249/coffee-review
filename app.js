@@ -1285,8 +1285,9 @@ function applyShopPrefill(shopId) {
     if (!shopId) return;
     const sel = document.getElementById('f-shop');
     if (!sel) return;
-    if ([...sel.options].some(o => o.value === shopId)) {
+    if (state.shops.some(s => s.id === shopId)) {
         sel.value = shopId;
+        renderShopTriggerLabel();
     }
 }
 
@@ -1621,34 +1622,122 @@ async function applyImportedBean(mode, recordId) {
     }
 }
 
+// The form's 店家 field is a hidden input (#f-shop) holding the shop id, fronted
+// by a trigger button that opens the searchable picker. This keeps every existing
+// read/write of #f-shop.value working unchanged; we only refresh the visible label.
 function populateShopSelect(sel, required) {
     if (!sel) return;
-    const currentVal = sel.value;
-    sel.innerHTML = '';
+    const trigger = document.getElementById('f-shop-trigger');
+    if (trigger) trigger.dataset.placeholder = required ? '— 請選擇 —' : '— 不指定 —';
+    renderShopTriggerLabel();
+}
 
-    if (!required) {
-        const opt = document.createElement('option');
-        opt.value = '';
-        opt.textContent = '— 不指定 —';
-        sel.appendChild(opt);
+// Render the visible label of a shop-picker trigger from its hidden input's value.
+function renderShopPickerLabel(triggerId, hiddenId) {
+    const trigger = document.getElementById(triggerId);
+    const hidden = document.getElementById(hiddenId);
+    if (!trigger || !hidden) return;
+    const labelEl = trigger.querySelector('.shop-picker-label');
+    if (!labelEl) return;
+    const val = hidden.value;
+    if (!val) {
+        labelEl.textContent = trigger.dataset.placeholder || '';
+        labelEl.classList.add('is-placeholder');
+        return;
+    }
+    labelEl.classList.remove('is-placeholder');
+    const shop = state.shops.find(s => s.id === val);
+    if (shop) {
+        const pin = shop.google_place_id ? '<i class="bi bi-geo-alt-fill"></i> ' : '';
+        const loc = shop.location ? ` · ${escapeHtml(shop.location)}` : '';
+        labelEl.innerHTML = pin + escapeHtml(shop.name) + loc;
     } else {
-        const opt = document.createElement('option');
-        opt.value = '';
-        opt.textContent = '— 請選擇 —';
-        opt.disabled = true;
-        sel.appendChild(opt);
+        // Value set but shop not in cache — deleted, or the cache never loaded.
+        labelEl.textContent = state.shopsLoaded ? '(已刪除店家)' : '(店家載入失敗)';
     }
+}
 
-    state.shops.forEach(s => {
-        const opt = document.createElement('option');
-        opt.value = s.id;
-        opt.textContent = (s.google_place_id ? '📍 ' : '') + s.name + (s.location ? ` · ${s.location}` : '');
-        sel.appendChild(opt);
+function renderShopTriggerLabel() {
+    renderShopPickerLabel('f-shop-trigger', 'f-shop');
+}
+
+// Searchable shop picker modal. Reuses the custom-modal idiom (see openNewRecordPicker)
+// and the same name/location/intro substring filter as the /shops list view.
+function openShopPicker({ currentId = '', allowEmpty = true, emptyLabel = '— 不指定 —', onPick } = {}) {
+    // Remember the control that opened the dialog so focus can return to it on
+    // close — otherwise keyboard users are stranded on the removed search input.
+    const opener = document.activeElement;
+    const backdrop = document.createElement('div');
+    backdrop.className = 'modal-backdrop-custom';
+    backdrop.innerHTML = `
+        <div class="modal-shell" role="dialog" aria-modal="true" aria-label="選擇店家">
+            <header class="modal-header">
+                <h3>選擇店家</h3>
+                <button type="button" class="modal-close" aria-label="關閉">
+                    <i class="bi bi-x-lg"></i>
+                </button>
+            </header>
+            <div class="modal-body">
+                <input type="search" class="form-control shop-picker-search"
+                       placeholder="搜尋店家名稱或地址…" autocomplete="off">
+                <div class="shop-picker-list"></div>
+            </div>
+        </div>`;
+    document.body.appendChild(backdrop);
+    document.body.classList.add('modal-open-custom');
+
+    const listEl = backdrop.querySelector('.shop-picker-list');
+    const searchEl = backdrop.querySelector('.shop-picker-search');
+
+    const onKey = e => { if (e.key === 'Escape') close(); };
+    function close() {
+        backdrop.remove();
+        document.body.classList.remove('modal-open-custom');
+        document.removeEventListener('keydown', onKey);
+        if (opener && typeof opener.focus === 'function') opener.focus();
+    }
+    const pick = id => { close(); if (typeof onPick === 'function') onPick(id); };
+
+    const renderList = q => {
+        const query = q.toLowerCase();
+        const matches = query
+            ? state.shops.filter(s =>
+                (s.name || '').toLowerCase().includes(query) ||
+                (s.location || '').toLowerCase().includes(query) ||
+                (s.intro || '').toLowerCase().includes(query))
+            : state.shops;
+        // Options are real <button>s so they're focusable and Enter/Space-activatable.
+        let html = '';
+        if (allowEmpty) {
+            const sel = currentId ? '' : ' selected';
+            html += `<button type="button" class="shop-picker-list-item${sel}" data-shop-id="">${escapeHtml(emptyLabel)}</button>`;
+        }
+        if (state.shops.length === 0) {
+            html += '<div class="shop-picker-empty">尚無店家，請先新增店家。</div>';
+        } else if (matches.length === 0) {
+            html += '<div class="shop-picker-empty">找不到符合的店家。</div>';
+        } else {
+            html += matches.map(s => {
+                const sel = s.id === currentId ? ' selected' : '';
+                const pin = s.google_place_id ? '<i class="bi bi-geo-alt-fill"></i> ' : '';
+                const loc = s.location ? ` · ${escapeHtml(s.location)}` : '';
+                return `<button type="button" class="shop-picker-list-item${sel}" data-shop-id="${escapeHtml(s.id)}">${pin}${escapeHtml(s.name)}${loc}</button>`;
+            }).join('');
+        }
+        listEl.innerHTML = html;
+    };
+
+    renderList('');
+
+    searchEl.addEventListener('input', e => renderList(e.target.value.trim()));
+    listEl.addEventListener('click', e => {
+        const item = e.target.closest('.shop-picker-list-item');
+        if (item) pick(item.dataset.shopId);
     });
-
-    if (currentVal && state.shops.some(s => s.id === currentVal)) {
-        sel.value = currentVal;
-    }
+    backdrop.querySelector('.modal-close').addEventListener('click', close);
+    backdrop.addEventListener('click', e => { if (e.target === backdrop) close(); });
+    document.addEventListener('keydown', onKey);
+    searchEl.focus();
 }
 
 // ─── CoE widget ──────────────────────────────────────────────────────────────
@@ -2409,6 +2498,20 @@ function bindFormHandlers() {
         if (toggle) expandNotesSlot(toggle.dataset.notesTarget);
     });
 
+    document.getElementById('f-shop-trigger').addEventListener('click', () => {
+        const hidden = document.getElementById('f-shop');
+        openShopPicker({
+            currentId: hidden.value,
+            allowEmpty: state.currentForm?.mode !== 'tasting',
+            emptyLabel: '— 不指定 —',
+            onPick: id => {
+                hidden.value = id || '';
+                renderShopTriggerLabel();
+                hidden.dispatchEvent(new Event('change', { bubbles: true }));
+            },
+        });
+    });
+
     document.getElementById('f-shop-new').addEventListener('click', () => openShopModal());
 
     form.addEventListener('submit', e => {
@@ -2549,7 +2652,7 @@ async function submitForm() {
     }
     const shopId = document.getElementById('f-shop').value;
     if (mode === 'tasting' && !shopId) {
-        document.getElementById('f-shop').focus();
+        document.getElementById('f-shop-trigger').focus();
         showToast('品鑑記錄必須指定店家');
         return;
     }
@@ -2617,18 +2720,11 @@ async function loadRecordIntoForm(mode, recordId) {
             return;
         }
 
-        // shop
+        // shop — the hidden input holds any id regardless of cache, so a deleted
+        // shop's FK is preserved on save; renderShopTriggerLabel shows the fallback.
         const shopSel = document.getElementById('f-shop');
-        if (r.shop_id && !state.shops.some(s => s.id === r.shop_id)) {
-            // Preserve the shop_id in the dropdown so saving doesn't drop the FK.
-            // Label depends on whether shops loaded successfully — if the cache
-            // never loaded, the shop might still exist; don't claim it's deleted.
-            const opt = document.createElement('option');
-            opt.value = r.shop_id;
-            opt.textContent = state.shopsLoaded ? '(已刪除店家)' : '(店家載入失敗)';
-            shopSel.appendChild(opt);
-        }
         shopSel.value = r.shop_id || '';
+        renderShopTriggerLabel();
         refreshImportBeanForShop(mode, shopSel.value);
 
         // common fields
@@ -2888,6 +2984,8 @@ function openShopModal({ shop = null, onSaved = null } = {}) {
                     const shopSel = document.getElementById('f-shop');
                     populateShopSelect(shopSel, state.currentForm.mode === 'tasting');
                     shopSel.value = saved.id;
+                    renderShopTriggerLabel();
+                    shopSel.dispatchEvent(new Event('change', { bubbles: true }));
                 }
             }
         } catch (e2) {

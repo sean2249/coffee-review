@@ -44,12 +44,16 @@
                 <div class="card-body">
                     <h3 class="card-title"><i class="bi bi-shop"></i>店家</h3>
                     <div class="mb-2">
-                        <label for="f-shop" class="form-label">
+                        <label for="f-shop-trigger" class="form-label">
                             <span data-mode-text="cupping">豆源（店家）</span>
                             <span data-mode-text="tasting">店家 *</span>
                         </label>
                         <div class="shop-picker">
-                            <select class="form-select" id="f-shop"></select>
+                            <button type="button" class="form-select shop-picker-trigger" id="f-shop-trigger" aria-haspopup="dialog">
+                                <span class="shop-picker-label is-placeholder">— 請選擇 —</span>
+                                <i class="bi bi-chevron-down shop-picker-caret"></i>
+                            </button>
+                            <input type="hidden" id="f-shop">
                             <button type="button" class="btn btn-outline-secondary" id="f-shop-new" title="新增店家">
                                 <i class="bi bi-plus-lg"></i>
                             </button>
