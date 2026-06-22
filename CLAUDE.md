@@ -92,11 +92,15 @@ is Traditional Chinese — keep it that way when editing.
   `*.supabase.co` and `*.supabase.in` so Supabase reads/writes always hit the network —
   see `shouldBypass` in sw.js).
 - **Tooling**: ESLint flat config (`eslint.config.js`) + Stylelint (`.stylelintrc.json`).
+  Unit tests via **Vitest** (jsdom) in `tests/` — `app.js` is loaded as a classic script
+  inside a fresh jsdom window by the `tests/load-app.js` harness (no network: it omits
+  `SUPABASE_CONFIG` so `isCloudReady()` stays false).
   `package.json` sets `"type": "module"` package-wide (so the config files load as ESM),
   but the browser files (`app.js`, `sw.js`) are loaded as classic scripts via `<script>` /
   `serviceWorker.register` — ESLint's per-file overrides set `sourceType: 'script'` to
   match.
-- **CI**: `.github/workflows/lint.yml` runs `npm run lint` on PRs; `deploy.yml` injects
+- **CI**: `.github/workflows/lint.yml` runs `npm run lint` on PRs (tests are **not** run in
+  CI — run `npm test` locally); `deploy.yml` injects
   `config.js` from secrets and publishes to GitHub Pages on push to `main`.
 
 ## File layout
@@ -109,6 +113,7 @@ sw.js              service worker (cache name bumped by VERSION constant)
 manifest.json      PWA manifest
 config.example.js  copy → config.js (gitignored) with Supabase creds
 .github/workflows  lint.yml + deploy.yml
+tests/             Vitest unit tests + load-app.js jsdom harness
 icons/             192/512 PNG + source SVG
 README.md          user-facing setup (Supabase SQL schema lives here, keep in sync)
 purpose.md, 口感.md design notes (Chinese)
@@ -127,15 +132,15 @@ purpose.md, 口感.md design notes (Chinese)
 
 **Two record types share one form template** (`#tpl-form` in index.html). The mode toggle
 flips visibility via `data-mode-only="cupping|tasting"` and `data-mode-text="..."`.
-`setFormMode` (app.js:545) sets display + `required` on shop select.
+`setFormMode` (app.js:1290) sets display + `required` on shop select.
 
-**Supabase API layer**: `api` object (app.js:198) wraps the schema-scoped client; tables
+**Supabase API layer**: `api` object (app.js:327) wraps the schema-scoped client; tables
 live in the `coffee` schema by default (`cupping_records`, `tasting_records`, `shops`).
 Use `maybeSingle()` for fetch-by-id so a missing row resolves to `{data: null}` instead
 of throwing PGRST116. The schema SQL is in README.md — when changing columns, update the
 SQL block there too.
 
-**State** (`state` at app.js:139): in-memory only. `state.shops` is a cache plus a
+**State** (`state` at app.js:215): in-memory only. `state.shops` is a cache plus a
 `shopsLoaded` flag so that `shopName(id)` doesn't mislabel transient fetch failures as
 "已刪除店家". CoE selection lives in `coeState`; flavor-wheel selections in `wheelState`
 (keyed by container id — `wheelState.clear()` on each route transition).
@@ -143,13 +148,13 @@ SQL block there too.
 **CoE scoring model** (critical to preserve):
 - `coe_total` is the **user-entered** total (74–96), not a sum. Two-stage picker: medal
   tier (`totalScoreTiers` at app.js:25) → score chip.
-- The 8 reference fields (`referenceFields` at app.js:86) score 4–8 with 0.5 step, default
+- The 8 reference fields (`referenceFields` at app.js:162) score 4–8 with 0.5 step, default
   5. They're **stored but don't compute** the total.
 - `observationFields` (`aroma`) is observation-only, no score.
 - Persisted shape: `coe_total`, `coe_tier_id`, `evaluations: jsonb`, `observation: jsonb`,
   `schema_version: 1`. `evaluations[key] = { score, notes, flavors?, <custom keys>? }`.
 
-**Flavor wheel**: up to 3 levels in `flavors` (app.js:101). The persisted ids in
+**Flavor wheel**: up to 3 levels in `flavors` (app.js:177). The persisted ids in
 `evaluations[key].flavors` / `observation.aroma.flavors` track the selection path and
 **vary in depth** — when an L1's `sub` entries are bare strings (e.g. `floral` → `'茉莉'`)
 the leaf stops at `${containerId}__l1-<slug>__l2-<slug>`; only branches whose L2 is an
@@ -163,7 +168,7 @@ from stored ids.
 - **Indent 4 spaces**, single quotes in JS, trailing commas where ESLint allows.
 - HTML class attributes use Bootstrap utilities + custom classes from `styles.css`.
 - Always `escapeHtml(...)` user/DB strings before interpolating into `innerHTML`. The
-  helper is at app.js:155.
+  helper is at app.js:257.
 - DOM ids in forms are prefixed `f-` for top-level inputs and `<key>_<suffix>` for
   evaluation widgets (e.g. `flavor_score`, `aroma_dryAroma`).
 - CSS section banners use the `/* ───── Title ──── */` style — keep new sections
@@ -178,9 +183,11 @@ npm install
 npm run lint        # lint:js + lint:css
 npm run lint:js
 npm run lint:css
+npm test            # vitest run (7 files, jsdom — no network)
 ```
 
-There is **no dev server, no test suite, no build step**. To run locally, copy
+There is **no dev server and no build step** (unit tests run under Vitest — see above; no
+browser/integration tests). To run locally, copy
 `config.example.js` → `config.js`, fill in Supabase URL + anon key, then open `index.html`
 through any static server (e.g. `python3 -m http.server`). Opening via `file://` breaks
 the service worker registration and the dynamic Supabase import.
@@ -201,13 +208,17 @@ bump `VERSION` in `sw.js:6`.
   card list / detail card still renders sensibly with old records (treat missing keys as
   default).
 - Anything that changes app-shell URLs → bump `sw.js` VERSION.
-- After edits: `npm run lint`. CI will fail the PR otherwise.
+- After edits: `npm run lint` (CI fails the PR otherwise) and `npm test` (not in CI, but
+  the suite covers scoring, flavor wheel, filters, estimated total, and the pickers).
 
 ## Things to leave alone unless asked
 
 - The RLS "open access" policy in README.md is intentional for personal use; do not switch
   to auth-based policies without explicit request.
-- The CoE total is **input, not computed** — don't "fix" it by summing reference scores.
+- The CoE total (`coe_total`) is **input, not computed** — don't "fix" it by summing
+  reference scores. (Separately, the **預估總分 / estimated total** *is* a deliberate
+  computed display — `36 + 8 reference scores`, `computeEstimatedTotalFromRecord` — shown
+  alongside `coe_total`, not a replacement for it.)
 - UI strings are zh-TW; don't translate to English.
 - `purpose.md` and `口感.md` are background design notes, not living docs — don't rewrite
   them as part of unrelated changes.
