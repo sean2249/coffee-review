@@ -2396,10 +2396,16 @@ function applyFlavorSelections(containerId, ids) {
 }
 
 // ─── 探訪心得 widgets (氣氛量表 / 設施 / 風格 / 材質 / 服務) ─────────────────
+// Toggle .selected + keep aria-pressed in sync (chips/segs are toggle controls).
+function setSelected(el, on) {
+    el.classList.toggle('selected', on);
+    el.setAttribute('aria-pressed', String(on));
+}
+
 function scaleRowHtml(axis) {
     const labels = [axis.left, '適中', axis.right];
     const segs = [1, 2, 3].map((n, i) =>
-        `<button type="button" class="scale-seg" data-scale-val="${n}">${escapeHtml(labels[i])}</button>`).join('');
+        `<button type="button" class="scale-seg" data-scale-val="${n}" aria-pressed="false">${escapeHtml(labels[i])}</button>`).join('');
     return `<div class="scale-row" data-scale="${axis.key}">
         ${axis.label ? `<span class="scale-label">${escapeHtml(axis.label)}</span>` : ''}
         <div class="scale-segs">${segs}</div>
@@ -2409,7 +2415,7 @@ function scaleRowHtml(axis) {
 function chipRowHtml(key, options, mode, withCustom = false) {
     return `<div class="tag-chip-row" data-tag-chips="${key}" data-tag-mode="${mode}">
         ${options.map(opt =>
-            `<button type="button" class="tag-chip" data-value="${escapeHtml(opt)}">${escapeHtml(opt)}<i class="bi bi-check-circle-fill tag-chip-check"></i></button>`).join('')}
+            `<button type="button" class="tag-chip" data-value="${escapeHtml(opt)}" aria-pressed="false">${escapeHtml(opt)}<i class="bi bi-check-circle-fill tag-chip-check"></i></button>`).join('')}
         ${withCustom ? `<button type="button" class="tag-chip tag-chip-add" data-tag-add="${key}"><i class="bi bi-plus"></i>自訂</button>` : ''}
     </div>`;
 }
@@ -2464,8 +2470,8 @@ function initTagSections() {
         if (seg) {
             const sel = seg.classList.contains('selected');
             seg.closest('.scale-row').querySelectorAll('.scale-seg')
-                .forEach(s => s.classList.remove('selected'));
-            if (!sel) seg.classList.add('selected'); // 再點一次取消 = 未評
+                .forEach(s => setSelected(s, false));
+            if (!sel) setSelected(seg, true); // 再點一次取消 = 未評
             return;
         }
         const add = e.target.closest('[data-tag-add]');
@@ -2475,10 +2481,10 @@ function initTagSections() {
         const rowEl = chip.closest('.tag-chip-row');
         if (rowEl?.dataset.tagMode === 'single') {
             const wasSel = chip.classList.contains('selected');
-            rowEl.querySelectorAll('.tag-chip').forEach(c => c.classList.remove('selected'));
-            if (!wasSel) chip.classList.add('selected');
+            rowEl.querySelectorAll('.tag-chip').forEach(c => setSelected(c, false));
+            if (!wasSel) setSelected(chip, true);
         } else {
-            chip.classList.toggle('selected');
+            setSelected(chip, !chip.classList.contains('selected'));
         }
     });
 }
@@ -2488,6 +2494,7 @@ function makeChipEl(value, selected) {
     chip.type = 'button';
     chip.className = 'tag-chip' + (selected ? ' selected' : '');
     chip.dataset.value = value;
+    chip.setAttribute('aria-pressed', String(!!selected));
     chip.textContent = value;
     const check = document.createElement('i');
     check.className = 'bi bi-check-circle-fill tag-chip-check';
@@ -2500,13 +2507,13 @@ function addCustomChip(key) {
     if (!val) return;
     const row = document.querySelector(`[data-tag-chips="${key}"]`);
     if (!row) return;
-    if (row.dataset.tagMode === 'single') row.querySelectorAll('.tag-chip').forEach(c => c.classList.remove('selected'));
+    if (row.dataset.tagMode === 'single') row.querySelectorAll('.tag-chip').forEach(c => setSelected(c, false));
     let chip = row.querySelector(`.tag-chip[data-value="${CSS.escape(val)}"]`);
     if (!chip) {
         chip = makeChipEl(val, false);
         row.insertBefore(chip, row.querySelector('[data-tag-add]'));
     }
-    chip.classList.add('selected');
+    setSelected(chip, true);
 }
 
 function getChipValues(key) {
@@ -2520,7 +2527,7 @@ function setChipValues(key, values) {
     const set = new Set(values || []);
     row.querySelectorAll('.tag-chip').forEach(c => {
         if (c.classList.contains('tag-chip-add')) return;
-        c.classList.toggle('selected', set.has(c.dataset.value));
+        setSelected(c, set.has(c.dataset.value));
     });
     // 自訂值 (不在 preset 清單) — 補上 chip
     const addBtn = row.querySelector('[data-tag-add]');
@@ -2539,8 +2546,9 @@ function getScaleValue(key) {
 function setScaleValue(key, val) {
     const row = document.querySelector(`[data-scale="${key}"]`);
     if (!row) return;
+    const n = val == null ? null : Number(val); // tolerate string values from JSON
     row.querySelectorAll('.scale-seg').forEach(d => {
-        d.classList.toggle('selected', Number(d.dataset.scaleVal) === val);
+        setSelected(d, Number(d.dataset.scaleVal) === n);
     });
 }
 

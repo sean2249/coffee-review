@@ -856,6 +856,12 @@ button.card-title {
     font-family: inherit;
 }
 .tag-chip:hover { color: var(--accent); border-color: var(--accent); }
+.tag-chip:focus-visible,
+.scale-seg:focus-visible {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-tint);
+}
 .tag-chip.selected {
     background: var(--accent);
     border-color: var(--accent);
