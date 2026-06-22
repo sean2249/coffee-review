@@ -195,20 +195,33 @@ const flavors = [
     { id: 'other',  name: '其他',   color: '#868e96', sub: ['化合物', '霉味 / 土味', '紙味'] },
 ];
 
-// ─── Tasting tag presets (chip choices) ──────────────────────────────────────
-const tastingTagSections = [
-    {
-        key: 'atmosphere', label: '氛圍', icon: 'bi-music-note-beamed',
-        options: ['安靜', '熱鬧', '明亮', '昏黃', '有音樂', '有閱讀區'],
-    },
-    {
-        key: 'decor', label: '裝潢', icon: 'bi-easel',
-        options: ['工業風', '日式', '文青', '桃花心木', '極簡', '復古'],
-    },
-    {
-        key: 'service', label: '服務', icon: 'bi-person-check',
-        options: ['親切', '專業', '全品項介紹', '沖煮解說', '沒交集', '不親切'],
-    },
+// ─── 探訪心得 config (schema_version 4) ──────────────────────────────────────
+// 雙極 3 點量表：1 = 左、2 = 適中、3 = 右；null = 未評。對立詞用單軸避免同時勾選矛盾。
+const ambienceAxes = [
+    { key: 'quiet_lively',  label: '氛圍',   left: '安靜', right: '熱鬧' },
+    { key: 'bright_dim',    label: '採光',   left: '明亮', right: '昏黃' },
+    { key: 'spacious_cozy', label: '空間感', left: '寬敞', right: '緊湊' },
+];
+const facilityOptions = ['有音樂', '有閱讀區', '有插座', 'Wi-Fi', '不限時', '戶外座位', '寵物友善'];
+const styleOptions    = ['工業風', '日式', '文青', '極簡', '復古', '北歐'];
+const materialOptions = ['木質', '水泥', '磚牆', '金屬', '玻璃', '植栽'];
+const serviceAxes = [
+    { key: 'greeting', left: '被動', right: '主動', label: '招呼' },
+    { key: 'speed',    left: '慢',   right: '快',   label: '出杯' },
+];
+const foodOptions  = ['輕食', '甜點', '早午餐', '義大利麵'];
+const drinkOptions = ['義式咖啡', '手沖/單品', '茶', '無咖啡因', '氣泡/果汁', '酒精/調酒'];
+const drinkDefaults = ['義式咖啡']; // 新紀錄預設勾選（幾乎每家都有）；編輯時由 load 覆蓋
+
+function axisValueLabel(axis, val) {
+    return { 1: axis.left, 2: '適中', 3: axis.right }[val] || '';
+}
+
+// 舊版多選標籤 (schema_version <= 3)：唯讀，只用於詳情頁顯示既有紀錄，新紀錄不再寫入。
+const legacyTagSections = [
+    { key: 'atmosphere', label: '氛圍', icon: 'bi-music-note-beamed' },
+    { key: 'decor',      label: '裝潢', icon: 'bi-easel' },
+    { key: 'service',    label: '服務', icon: 'bi-person-check' },
 ];
 
 // ─── Lightweight in-memory state ─────────────────────────────────────────────
@@ -827,21 +840,41 @@ function renderDetailBrewingCard(r) {
 }
 
 function renderDetailTastingTagsCard(r) {
-    const sections = tastingTagSections.map(sec => {
+    const notesP = n => n ? `<p class="detail-tag-notes">${escapeHtml(n)}</p>` : '';
+    const evalRow = (k, v) => `<div class="detail-eval-row">
+        <span class="detail-eval-key">${escapeHtml(k)}</span>
+        <span class="detail-eval-val">${escapeHtml(v)}</span></div>`;
+    const section = (icon, label, body) => body
+        ? `<div class="detail-tag-section">
+            <div class="detail-tag-section-title"><i class="bi ${icon}"></i>${escapeHtml(label)}</div>
+            ${body}</div>` : '';
+
+    const ax = r.ambience_axes || {};
+    const ambienceBody = ambienceAxes.filter(a => ax[a.key])
+        .map(a => evalRow(a.label, axisValueLabel(a, ax[a.key]))).join('')
+        + renderChipRow(r.facilities) + notesP(r.atmosphere_notes);
+
+    const styleBody = (r.space_style ? renderChipRow([r.space_style]) : '')
+        + renderChipRow(r.space_materials) + notesP(r.decor_notes);
+
+    const chipGroup = (label, arr) => arr && arr.length
+        ? evalRow(label, arr.join('、')) : '';
+    const sr = r.service_ratings || {};
+    const serviceBody = serviceAxes.filter(a => sr[a.key])
+        .map(a => evalRow(a.label, axisValueLabel(a, sr[a.key]))).join('')
+        + chipGroup('餐點', r.menu_food)
+        + chipGroup('飲料', r.drink_types)
+        + notesP(r.service_notes);
+
+    const legacy = legacyTagSections.map(sec => {
         const tags = r[`${sec.key}_tags`] || [];
-        const notes = r[`${sec.key}_notes`] || '';
-        if (tags.length === 0 && !notes) return '';
-        return `
-            <div class="detail-tag-section">
-                <div class="detail-tag-section-title">
-                    <i class="bi ${sec.icon}"></i>${escapeHtml(sec.label)}
-                </div>
-                ${tags.length > 0 ? `<div class="detail-tag-row">
-                    ${tags.map(t => `<span class="detail-tag-pill">${escapeHtml(t)}</span>`).join('')}
-                </div>` : ''}
-                ${notes ? `<p class="detail-tag-notes">${escapeHtml(notes)}</p>` : ''}
-            </div>`;
-    }).filter(Boolean).join('');
+        return tags.length ? section(sec.icon, `${sec.label}（舊版）`, renderChipRow(tags)) : '';
+    }).join('');
+
+    const sections = section('bi-music-note-beamed', '環境感受', ambienceBody)
+        + section('bi-easel', '空間風格', styleBody)
+        + section('bi-person-check', '服務', serviceBody)
+        + legacy;
     if (!sections) return '';
     return `
         <div class="card">
@@ -2042,56 +2075,152 @@ function applyFlavorSelections(containerId, ids) {
     drawFlavorWheel(containerId);
 }
 
-// ─── Tag chip sections (氛圍/裝潢/服務) ─────────────────────────────────────
+// ─── 探訪心得 widgets (氣氛量表 / 設施 / 風格 / 材質 / 服務) ─────────────────
+function scaleRowHtml(axis) {
+    const labels = [axis.left, '適中', axis.right];
+    const segs = [1, 2, 3].map((n, i) =>
+        `<button type="button" class="scale-seg" data-scale-val="${n}">${escapeHtml(labels[i])}</button>`).join('');
+    return `<div class="scale-row" data-scale="${axis.key}">
+        ${axis.label ? `<span class="scale-label">${escapeHtml(axis.label)}</span>` : ''}
+        <div class="scale-segs">${segs}</div>
+    </div>`;
+}
+
+function chipRowHtml(key, options, mode, withCustom = false) {
+    return `<div class="tag-chip-row" data-tag-chips="${key}" data-tag-mode="${mode}">
+        ${options.map(opt =>
+            `<button type="button" class="tag-chip" data-value="${escapeHtml(opt)}">${escapeHtml(opt)}<i class="bi bi-check-circle-fill tag-chip-check"></i></button>`).join('')}
+        ${withCustom ? `<button type="button" class="tag-chip tag-chip-add" data-tag-add="${key}"><i class="bi bi-plus"></i>自訂</button>` : ''}
+    </div>`;
+}
+
+function sectionTitle(icon, label, multi = false) {
+    return `<div class="tag-section-title">
+        <i class="bi ${icon}"></i><span>${escapeHtml(label)}</span>
+        ${multi ? '<span class="tag-multi-hint">可複選</span>' : ''}
+    </div>`;
+}
+
 function initTagSections() {
     const root = document.getElementById('tagSections');
     if (!root) return;
-    root.innerHTML = tastingTagSections.map(sec => `
-        <div class="tag-section" data-tag-section="${sec.key}">
-            <div class="tag-section-title">
-                <i class="bi ${sec.icon}"></i>
-                <span>${sec.label}</span>
-            </div>
-            <div class="tag-chip-row" data-tag-chips="${sec.key}">
-                ${sec.options.map(opt =>
-                    `<button type="button" class="tag-chip" data-value="${escapeHtml(opt)}">
-                        ${escapeHtml(opt)}
-                    </button>`).join('')}
-            </div>
-            <div class="mt-2">${notesSlotHtml(`f-tag-${sec.key}-notes`)}</div>
+    root.innerHTML = `
+        <div class="tag-section">
+            ${sectionTitle('bi-music-note-beamed', '環境感受')}
+            ${ambienceAxes.map(scaleRowHtml).join('')}
+            <div class="mt-2">${notesSlotHtml('f-visit-ambience-notes')}</div>
         </div>
-    `).join('');
+        <div class="tag-section">
+            ${sectionTitle('bi-shop', '設施', true)}
+            ${chipRowHtml('facilities', facilityOptions, 'multi')}
+        </div>
+        <div class="tag-section">
+            ${sectionTitle('bi-easel', '空間風格')}
+            ${chipRowHtml('style', styleOptions, 'single', true)}
+            <div class="mt-2">${notesSlotHtml('f-visit-style-notes')}</div>
+        </div>
+        <div class="tag-section">
+            ${sectionTitle('bi-bricks', '材質', true)}
+            ${chipRowHtml('materials', materialOptions, 'multi')}
+        </div>
+        <div class="tag-section">
+            ${sectionTitle('bi-person-check', '服務')}
+            ${serviceAxes.map(scaleRowHtml).join('')}
+            <div class="mt-2">${notesSlotHtml('f-visit-service-notes')}</div>
+        </div>
+        <div class="tag-section">
+            ${sectionTitle('bi-egg-fried', '餐點', true)}
+            ${chipRowHtml('food', foodOptions, 'multi', true)}
+        </div>
+        <div class="tag-section">
+            ${sectionTitle('bi-cup-straw', '飲料類型', true)}
+            ${chipRowHtml('drinks', drinkOptions, 'multi', true)}
+        </div>`;
+
+    setChipValues('drinks', drinkDefaults); // 新表單預設；編輯時 loadRecordIntoForm 會覆蓋
 
     root.addEventListener('click', e => {
+        const seg = e.target.closest('.scale-seg');
+        if (seg) {
+            const sel = seg.classList.contains('selected');
+            seg.closest('.scale-row').querySelectorAll('.scale-seg')
+                .forEach(s => s.classList.remove('selected'));
+            if (!sel) seg.classList.add('selected'); // 再點一次取消 = 未評
+            return;
+        }
+        const add = e.target.closest('[data-tag-add]');
+        if (add) { addCustomChip(add.dataset.tagAdd); return; }
         const chip = e.target.closest('.tag-chip');
-        if (!chip) return;
-        chip.classList.toggle('selected');
+        if (!chip || chip.classList.contains('tag-chip-add')) return;
+        const rowEl = chip.closest('.tag-chip-row');
+        if (rowEl?.dataset.tagMode === 'single') {
+            const wasSel = chip.classList.contains('selected');
+            rowEl.querySelectorAll('.tag-chip').forEach(c => c.classList.remove('selected'));
+            if (!wasSel) chip.classList.add('selected');
+        } else {
+            chip.classList.toggle('selected');
+        }
     });
 }
 
-function getTagValues(sectionKey) {
-    return Array.from(document.querySelectorAll(
-        `[data-tag-chips="${sectionKey}"] .tag-chip.selected`
-    )).map(c => c.dataset.value);
+function makeChipEl(value, selected) {
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'tag-chip' + (selected ? ' selected' : '');
+    chip.dataset.value = value;
+    chip.textContent = value;
+    const check = document.createElement('i');
+    check.className = 'bi bi-check-circle-fill tag-chip-check';
+    chip.appendChild(check);
+    return chip;
 }
 
-function setTagValues(sectionKey, values) {
+function addCustomChip(key) {
+    const val = (window.prompt('輸入自訂項目') || '').trim();
+    if (!val) return;
+    const row = document.querySelector(`[data-tag-chips="${key}"]`);
+    if (!row) return;
+    if (row.dataset.tagMode === 'single') row.querySelectorAll('.tag-chip').forEach(c => c.classList.remove('selected'));
+    let chip = row.querySelector(`.tag-chip[data-value="${CSS.escape(val)}"]`);
+    if (!chip) {
+        chip = makeChipEl(val, false);
+        row.insertBefore(chip, row.querySelector('[data-tag-add]'));
+    }
+    chip.classList.add('selected');
+}
+
+function getChipValues(key) {
+    return Array.from(document.querySelectorAll(`[data-tag-chips="${key}"] .tag-chip.selected`))
+        .map(c => c.dataset.value);
+}
+
+function setChipValues(key, values) {
+    const row = document.querySelector(`[data-tag-chips="${key}"]`);
+    if (!row) return;
     const set = new Set(values || []);
-    document.querySelectorAll(`[data-tag-chips="${sectionKey}"] .tag-chip`).forEach(c => {
+    row.querySelectorAll('.tag-chip').forEach(c => {
+        if (c.classList.contains('tag-chip-add')) return;
         c.classList.toggle('selected', set.has(c.dataset.value));
     });
-    // For custom values not in preset list, append additional chips
+    // 自訂值 (不在 preset 清單) — 補上 chip
+    const addBtn = row.querySelector('[data-tag-add]');
     (values || []).forEach(v => {
-        if (!tastingTagSections.find(s => s.key === sectionKey)?.options.includes(v)) {
-            const row = document.querySelector(`[data-tag-chips="${sectionKey}"]`);
-            if (!row || row.querySelector(`.tag-chip[data-value="${CSS.escape(v)}"]`)) return;
-            const chip = document.createElement('button');
-            chip.type = 'button';
-            chip.className = 'tag-chip selected';
-            chip.dataset.value = v;
-            chip.textContent = v;
-            row.appendChild(chip);
-        }
+        if (row.querySelector(`.tag-chip[data-value="${CSS.escape(v)}"]`)) return;
+        const chip = makeChipEl(v, true);
+        if (addBtn) row.insertBefore(chip, addBtn); else row.appendChild(chip);
+    });
+}
+
+function getScaleValue(key) {
+    const sel = document.querySelector(`[data-scale="${key}"] .scale-seg.selected`);
+    return sel ? Number(sel.dataset.scaleVal) : null;
+}
+
+function setScaleValue(key, val) {
+    const row = document.querySelector(`[data-scale="${key}"]`);
+    if (!row) return;
+    row.querySelectorAll('.scale-seg').forEach(d => {
+        d.classList.toggle('selected', Number(d.dataset.scaleVal) === val);
     });
 }
 
@@ -2281,16 +2410,27 @@ function buildFormPayload(mode) {
         item_ordered: document.getElementById('f-item_ordered').value.trim() || null,
         bean_name: document.getElementById('f-tasting-bean').value.trim() || null,
         bean_type: getBeanType('tasting') || null,
-        atmosphere_tags: getTagValues('atmosphere'),
-        decor_tags:      getTagValues('decor'),
-        service_tags:    getTagValues('service'),
-        atmosphere_notes: document.getElementById('f-tag-atmosphere-notes')?.value || null,
-        decor_notes:      document.getElementById('f-tag-decor-notes')?.value || null,
-        service_notes:    document.getElementById('f-tag-service-notes')?.value || null,
+        ambience_axes: {
+            quiet_lively:  getScaleValue('quiet_lively'),
+            bright_dim:    getScaleValue('bright_dim'),
+            spacious_cozy: getScaleValue('spacious_cozy'),
+        },
+        facilities:      getChipValues('facilities'),
+        space_style:     getChipValues('style')[0] || null,
+        space_materials: getChipValues('materials'),
+        service_ratings: {
+            greeting: getScaleValue('greeting'),
+            speed:    getScaleValue('speed'),
+        },
+        menu_food:   getChipValues('food'),
+        drink_types: getChipValues('drinks'),
+        atmosphere_notes: document.getElementById('f-visit-ambience-notes')?.value || null,
+        decor_notes:      document.getElementById('f-visit-style-notes')?.value || null,
+        service_notes:    document.getElementById('f-visit-service-notes')?.value || null,
         defects: defects || null,
         defects_tags: defectsTags,
         notes: notes || null,
-        schema_version: 3,
+        schema_version: 4,
         ...ev,
     };
 }
@@ -2435,9 +2575,18 @@ async function loadRecordIntoForm(mode, recordId) {
             // Legacy tasting rows have no bean_type — leave empty so the user picks one on edit.
             setBeanType('tasting', r.bean_type || '');
 
-            setTagValues('atmosphere', r.atmosphere_tags || []);
-            setTagValues('decor',      r.decor_tags || []);
-            setTagValues('service',    r.service_tags || []);
+            const ax = r.ambience_axes || {};
+            setScaleValue('quiet_lively',  ax.quiet_lively ?? null);
+            setScaleValue('bright_dim',    ax.bright_dim ?? null);
+            setScaleValue('spacious_cozy', ax.spacious_cozy ?? null);
+            setChipValues('facilities', r.facilities || []);
+            setChipValues('style',      r.space_style ? [r.space_style] : []);
+            setChipValues('materials',  r.space_materials || []);
+            const sr = r.service_ratings || {};
+            setScaleValue('greeting', sr.greeting ?? null);
+            setScaleValue('speed',    sr.speed ?? null);
+            setChipValues('food',   r.menu_food || []);
+            setChipValues('drinks', r.drink_types || []);
 
             const setNotes = (id, val) => {
                 const el = document.getElementById(id);
@@ -2445,9 +2594,9 @@ async function loadRecordIntoForm(mode, recordId) {
                 el.value = val ?? '';
                 if (val) expandNotesSlot(id, { focus: false });
             };
-            setNotes('f-tag-atmosphere-notes', r.atmosphere_notes);
-            setNotes('f-tag-decor-notes',      r.decor_notes);
-            setNotes('f-tag-service-notes',    r.service_notes);
+            setNotes('f-visit-ambience-notes', r.atmosphere_notes);
+            setNotes('f-visit-style-notes',    r.decor_notes);
+            setNotes('f-visit-service-notes',  r.service_notes);
         }
 
         // CoE

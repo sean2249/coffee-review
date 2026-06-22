@@ -144,6 +144,15 @@ create table coffee.tasting_records (
     bean_name         text,
     bean_type         text check (bean_type in ('single', 'blend')),
     brewing_method    text,
+    -- 探訪心得 v4：氣氛雙極量表 / 設施 / 風格 / 材質 / 服務量表 / 菜單
+    ambience_axes     jsonb not null default '{}'::jsonb,  -- {quiet_lively, bright_dim, spacious_cozy} 各 1-3 或 null
+    facilities        text[] not null default '{}',        -- 設施多選
+    space_style       text,                                -- 空間風格 (單選，可自訂)
+    space_materials   text[] not null default '{}',        -- 材質多選
+    service_ratings   jsonb not null default '{}'::jsonb,  -- {greeting, speed} 各 1-3 或 null
+    menu_food         text[] not null default '{}',        -- 餐點 (輕食/甜點…，可自訂)
+    drink_types       text[] not null default '{}',        -- 飲料類型 (可自訂)
+    -- 舊版多選標籤 (schema_version <= 3)：唯讀保留，新紀錄不再寫入
     atmosphere_tags   text[] not null default '{}',
     decor_tags        text[] not null default '{}',
     service_tags      text[] not null default '{}',
@@ -246,6 +255,24 @@ alter table coffee.shops
     add column if not exists google_data_fetched_at timestamptz;
 -- google_place_id 的 unique 已自動建索引，不需額外 create index
 ```
+
+F. **升級到 v4（探訪心得重構：氣氛量表 / 設施 / 風格 / 材質 / 服務量表）**：在 SQL Editor 執行：
+
+```sql
+alter table coffee.tasting_records
+    add column if not exists ambience_axes   jsonb  not null default '{}'::jsonb,
+    add column if not exists facilities      text[] not null default '{}',
+    add column if not exists space_style     text,
+    add column if not exists space_materials text[] not null default '{}',
+    add column if not exists service_ratings jsonb  not null default '{}'::jsonb,
+    add column if not exists menu_food       text[] not null default '{}',
+    add column if not exists drink_types     text[] not null default '{}';
+
+alter table coffee.tasting_records alter column schema_version set default 4;
+```
+
+舊欄位 `atmosphere_tags` / `decor_tags` / `service_tags` 保留為 legacy（唯讀）：既有紀錄的標籤
+仍會在詳情頁以「（舊版）」標示顯示，新紀錄則改寫入上述 v4 欄位、不再寫入這三欄。
 
 ### 2. 前端配置
 
