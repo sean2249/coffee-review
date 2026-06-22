@@ -215,7 +215,7 @@ const tastingTagSections = [
 const state = {
     shops: [],          // [{id, name, location, intro, ...}]
     shopsLoaded: false, // true after first successful fetch — distinguishes "deleted" from "not loaded yet"
-    listFilter: { type: 'all', shopId: '' },
+    listFilter: { type: 'all', shopKeyword: '', tiers: [], dateFrom: '', dateTo: '' },
     currentForm: null,  // { mode, recordId|null }
     knownOrigins: [],   // distinct origin strings from past cupping records
     knownOriginsLoaded: false,
@@ -370,7 +370,7 @@ const api = {
         if (error) throw error;
     },
 
-    async listRecords({ type = 'all', shopId = '' } = {}) {
+    async listRecords({ type = 'all' } = {}) {
         const sb = await ensureSupabase();
         if (!sb) return [];
         const baseCols = 'id, shop_id, coe_total, coe_tier_id, created_at';
@@ -380,17 +380,17 @@ const api = {
             return (r.data || []).map(x => ({ ...x, _type }));
         };
 
+        // 進階篩選（店家關鍵字 / 徽章 / 日期）一律在前端套用，故這裡只依
+        // 類型決定查哪張表，其餘維度交給 applyAdvancedFilters。
         if (type === 'all' || type === 'cupping') {
-            let q = sb.from(SUPABASE_CONFIG.cuppingTable)
+            const q = sb.from(SUPABASE_CONFIG.cuppingTable)
                 .select(`${baseCols}, bean_name, origin`);
-            if (shopId) q = q.eq('shop_id', shopId);
             tasks.push(q.order('created_at', { ascending: false })
                 .then(r => unwrap(r, 'cupping')));
         }
         if (type === 'all' || type === 'tasting') {
-            let q = sb.from(SUPABASE_CONFIG.tastingTable)
+            const q = sb.from(SUPABASE_CONFIG.tastingTable)
                 .select(`${baseCols}, visit_date, item_ordered, bean_name`);
-            if (shopId) q = q.eq('shop_id', shopId);
             tasks.push(q.order('created_at', { ascending: false })
                 .then(r => unwrap(r, 'tasting')));
         }
@@ -482,7 +482,7 @@ async function renderRoute() {
     wheelState.clear();
 
     if (parts.length === 0 || parts[0] === 'records') {
-        await viewRecordsList(root);
+        await viewRecordsList(root, query);
     } else if (parts[0] === 'new' && !parts[1]) {
         viewNewModePicker(root);
     } else if (parts[0] === 'new' && (parts[1] === 'cupping' || parts[1] === 'tasting')) {
@@ -522,12 +522,169 @@ function viewNotFound(root) {
         </div></div>`;
 }
 
+// ─── Records list filtering ──────────────────────────────────────────────────
+// 進階篩選一律在前端套用（記錄量級小，且日期欄位依類型而異）。
+function recordDateStr(r) {
+    // 杯測用 created_at；品鑑優先 visit_date，缺漏時 fallback created_at（與卡片日期顯示一致）。
+    const iso = r._type === 'tasting' ? (r.visit_date || r.created_at) : r.created_at;
+    return (iso || '').slice(0, 10);
+}
+
+function applyAdvancedFilters(rows) {
+    const f = state.listFilter;
+    // 店家清單尚未成功載入時 shopName() 會回傳空字串，會把所有記錄誤濾掉，
+    // 故 shops 未載入前先略過店家關鍵字篩選。
+    const kw = state.shopsLoaded ? f.shopKeyword.trim().toLowerCase() : '';
+    return rows.filter(r => {
+        if (kw && !shopName(r.shop_id).toLowerCase().includes(kw)) return false;
+        if (f.tiers.length && !f.tiers.includes(r.coe_tier_id)) return false;
+        if (f.dateFrom || f.dateTo) {
+            const d = recordDateStr(r);
+            if (!d) return false;
+            if (f.dateFrom && d < f.dateFrom) return false;
+            if (f.dateTo && d > f.dateTo) return false;
+        }
+        return true;
+    });
+}
+
+// 進階條件數（抽屜內的維度）— 用於 badge 與 empty state 判斷。
+// 徽章逐一計數（選 3 個徽章 → 3），日期範圍有任一 from/to 即算 1。
+function advancedFilterCount() {
+    const f = state.listFilter;
+    let n = f.tiers.length;
+    if (f.dateFrom || f.dateTo) n += 1;
+    return n;
+}
+
+function hasAnyFilter() {
+    const f = state.listFilter;
+    return f.type !== 'all' || f.shopKeyword.trim() !== '' || advancedFilterCount() > 0;
+}
+
+function hydrateFilterFromQuery(query) {
+    state.listFilter = {
+        type: query.type === 'cupping' || query.type === 'tasting' ? query.type : 'all',
+        shopKeyword: query.shop || '',
+        tiers: query.tier ? query.tier.split(',').filter(Boolean) : [],
+        dateFrom: query.from || '',
+        dateTo: query.to || '',
+    };
+}
+
+// 序列化篩選條件到 hash query。用 replaceState 避免觸發 hashchange → 整頁重繪。
+function syncFilterToHash() {
+    const f = state.listFilter;
+    const params = new URLSearchParams();
+    if (f.type && f.type !== 'all') params.set('type', f.type);
+    if (f.shopKeyword.trim()) params.set('shop', f.shopKeyword.trim());
+    if (f.tiers.length) params.set('tier', f.tiers.join(','));
+    if (f.dateFrom) params.set('from', f.dateFrom);
+    if (f.dateTo) params.set('to', f.dateTo);
+    const qs = params.toString();
+    history.replaceState(null, '', '#/records' + (qs ? `?${qs}` : ''));
+}
+
+function updateAdvBadge() {
+    const badge = document.getElementById('filter-adv-badge');
+    if (!badge) return;
+    const n = advancedFilterCount();
+    badge.textContent = n > 0 ? String(n) : '';
+    badge.hidden = n === 0;
+}
+
+// 篩選變更後的共同流程：序列化 → 更新 badge → 重繪卡片。
+function onFilterChange() {
+    syncFilterToHash();
+    updateAdvBadge();
+    loadAndRenderCards();
+}
+
+function openFilterDrawer() {
+    const f = state.listFilter;
+    const tierChips = totalScoreTiers.map(t => `
+        <button type="button" class="filter-chip ${t.cssClass} ${f.tiers.includes(t.id) ? 'selected' : ''}"
+                data-tier-id="${t.id}">${t.medal} | ${escapeHtml(t.label)}</button>`).join('');
+
+    const backdrop = document.createElement('div');
+    backdrop.className = 'modal-backdrop-custom filter-drawer-backdrop';
+    backdrop.innerHTML = `
+        <div class="filter-drawer" role="dialog" aria-modal="true" aria-label="進階篩選">
+            <header class="modal-header">
+                <h3>進階篩選</h3>
+                <button type="button" class="modal-close" aria-label="關閉"><i class="bi bi-x-lg"></i></button>
+            </header>
+            <div class="modal-body">
+                <div class="filter-group">
+                    <div class="filter-group-title">徽章 / 分數區間</div>
+                    <div class="filter-chip-row filter-tier-row">${tierChips}</div>
+                </div>
+                <div class="filter-group">
+                    <div class="filter-group-title">日期範圍</div>
+                    <div class="filter-date-row">
+                        <input type="date" class="form-control form-control-sm" id="filter-date-from"
+                               aria-label="起始日期" value="${f.dateFrom}">
+                        <span class="filter-date-sep">→</span>
+                        <input type="date" class="form-control form-control-sm" id="filter-date-to"
+                               aria-label="結束日期" value="${f.dateTo}">
+                    </div>
+                </div>
+            </div>
+            <footer class="modal-actions filter-drawer-actions">
+                <button type="button" class="btn btn-sm btn-link" id="filter-clear-all">清除全部</button>
+                <button type="button" class="btn btn-sm btn-primary" id="filter-drawer-done">完成</button>
+            </footer>
+        </div>`;
+
+    document.body.appendChild(backdrop);
+    document.body.classList.add('modal-open-custom');
+    requestAnimationFrame(() => backdrop.classList.add('show'));
+
+    const close = () => {
+        backdrop.remove();
+        document.body.classList.remove('modal-open-custom');
+    };
+    backdrop.addEventListener('click', e => { if (e.target === backdrop) close(); });
+    backdrop.querySelector('.modal-close').addEventListener('click', close);
+    backdrop.querySelector('#filter-drawer-done').addEventListener('click', close);
+
+    backdrop.querySelectorAll('[data-tier-id]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const id = btn.dataset.tierId;
+            const i = state.listFilter.tiers.indexOf(id);
+            if (i >= 0) state.listFilter.tiers.splice(i, 1);
+            else state.listFilter.tiers.push(id);
+            btn.classList.toggle('selected');
+            onFilterChange();
+        });
+    });
+
+    const fromEl = backdrop.querySelector('#filter-date-from');
+    const toEl = backdrop.querySelector('#filter-date-to');
+    fromEl.addEventListener('change', () => { state.listFilter.dateFrom = fromEl.value; onFilterChange(); });
+    toEl.addEventListener('change', () => { state.listFilter.dateTo = toEl.value; onFilterChange(); });
+
+    backdrop.querySelector('#filter-clear-all').addEventListener('click', () => {
+        state.listFilter = { type: 'all', shopKeyword: '', tiers: [], dateFrom: '', dateTo: '' };
+        backdrop.querySelectorAll('[data-tier-id]').forEach(b => b.classList.remove('selected'));
+        fromEl.value = '';
+        toEl.value = '';
+        const kwEl = document.getElementById('filter-shop-kw');
+        if (kwEl) kwEl.value = '';
+        document.querySelectorAll('.filter-chip[data-filter-type]').forEach(b =>
+            b.classList.toggle('selected', b.dataset.filterType === 'all'));
+        onFilterChange();
+    });
+}
+
 // ─── View: records list ─────────────────────────────────────────────────────
-async function viewRecordsList(root) {
+async function viewRecordsList(root, query = {}) {
     if (!isCloudReady()) {
         root.innerHTML = renderCloudWarning();
         return;
     }
+
+    hydrateFilterFromQuery(query);
 
     root.innerHTML = `
         <div class="filter-bar">
@@ -537,41 +694,47 @@ async function viewRecordsList(root) {
                 <button type="button" class="filter-chip" data-filter-type="tasting">品鑑</button>
             </div>
             <div class="filter-shop-wrap">
-                <select class="form-select form-select-sm" id="filter-shop">
-                    <option value="">全部店家</option>
-                </select>
+                <input type="search" class="form-control form-control-sm" id="filter-shop-kw"
+                       placeholder="搜尋店家名稱…" autocomplete="off">
             </div>
+            <button type="button" class="btn btn-sm btn-outline-secondary filter-adv-btn" id="filter-adv-btn">
+                <i class="bi bi-sliders"></i>進階篩選<span class="filter-adv-badge" id="filter-adv-badge" hidden></span>
+            </button>
         </div>
         <div id="records-list" class="records-list"></div>`;
 
     await refreshShopsCache();
 
-    // Populate shop filter
-    const shopSel = document.getElementById('filter-shop');
-    state.shops.forEach(s => {
-        const opt = document.createElement('option');
-        opt.value = s.id;
-        opt.textContent = (s.google_place_id ? '📍 ' : '') + s.name;
-        shopSel.appendChild(opt);
+    // Shop keyword search (debounce 200ms)
+    const kwEl = document.getElementById('filter-shop-kw');
+    kwEl.value = state.listFilter.shopKeyword;
+    let kwTimer;
+    kwEl.addEventListener('input', () => {
+        clearTimeout(kwTimer);
+        kwTimer = setTimeout(() => {
+            // 若 debounce 期間已離開 records 視圖（輸入框被移出 DOM），
+            // 就不要再 onFilterChange / replaceState，避免改回 #/records 網址。
+            if (!document.body.contains(kwEl)) return;
+            state.listFilter.shopKeyword = kwEl.value;
+            onFilterChange();
+        }, 200);
     });
-    shopSel.value = state.listFilter.shopId || '';
 
-    // Wire chips
-    document.querySelectorAll('.filter-chip').forEach(btn => {
+    // Type chips
+    document.querySelectorAll('.filter-chip[data-filter-type]').forEach(btn => {
         btn.classList.toggle('selected', btn.dataset.filterType === state.listFilter.type);
         btn.addEventListener('click', () => {
             state.listFilter.type = btn.dataset.filterType;
-            document.querySelectorAll('.filter-chip').forEach(b =>
+            document.querySelectorAll('.filter-chip[data-filter-type]').forEach(b =>
                 b.classList.toggle('selected', b === btn));
-            loadAndRenderCards();
+            onFilterChange();
         });
     });
 
-    shopSel.addEventListener('change', () => {
-        state.listFilter.shopId = shopSel.value;
-        loadAndRenderCards();
-    });
+    // Advanced filter drawer
+    document.getElementById('filter-adv-btn').addEventListener('click', openFilterDrawer);
 
+    updateAdvBadge();
     await loadAndRenderCards();
 }
 
@@ -580,13 +743,18 @@ async function loadAndRenderCards() {
     if (!container) return;
     container.innerHTML = '<div class="empty-state"><i class="bi bi-hourglass-split"></i>讀取中…</div>';
     try {
-        const rows = await api.listRecords(state.listFilter);
+        const rows = applyAdvancedFilters(await api.listRecords({ type: state.listFilter.type }));
         if (rows.length === 0) {
-            container.innerHTML = `<div class="empty-state">
-                <i class="bi bi-inbox"></i>
-                <p>還沒有記錄</p>
-                <a class="btn btn-primary btn-sm" href="#/new">新增第一筆</a>
-            </div>`;
+            container.innerHTML = hasAnyFilter()
+                ? `<div class="empty-state">
+                    <i class="bi bi-funnel"></i>
+                    <p>找不到符合條件的記錄</p>
+                </div>`
+                : `<div class="empty-state">
+                    <i class="bi bi-inbox"></i>
+                    <p>還沒有記錄</p>
+                    <a class="btn btn-primary btn-sm" href="#/new">新增第一筆</a>
+                </div>`;
             return;
         }
         container.innerHTML = rows.map(renderRecordCard).join('');
@@ -3023,10 +3191,11 @@ async function viewShopDetail(root, shopId) {
     }
     root.innerHTML = '<div class="empty-state"><i class="bi bi-hourglass-split"></i>讀取中…</div>';
     try {
-        const [shop, records] = await Promise.all([
+        const [shop, allRecords] = await Promise.all([
             api.getShop(shopId),
-            api.listRecords({ type: 'all', shopId }),
+            api.listRecords({ type: 'all' }),
         ]);
+        const records = allRecords.filter(r => r.shop_id === shopId);
         if (!shop) {
             root.innerHTML = `<div class="card"><div class="card-body">
                 <h3 class="card-title"><i class="bi bi-exclamation-circle"></i>找不到店家</h3>
