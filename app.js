@@ -1190,6 +1190,34 @@ function summarizeRecords(records) {
     };
 }
 
+// Per-shop counts + merged average for the shops list cards (issue #55).
+// Keyed by shop_id; cupping/tasting counted separately but the average merges
+// both types and only includes numeric coe_total (matching summarizeRecords).
+function aggregateShopStats(records) {
+    const byShop = new Map();
+    for (const r of records) {
+        if (!r.shop_id) continue;
+        let s = byShop.get(r.shop_id);
+        if (!s) {
+            s = { cupping: 0, tasting: 0, total: 0, scoreSum: 0, scoreCount: 0 };
+            byShop.set(r.shop_id, s);
+        }
+        s.total += 1;
+        if (r._type === 'tasting') s.tasting += 1;
+        else if (r._type === 'cupping') s.cupping += 1;
+        if (typeof r.coe_total === 'number') {
+            s.scoreSum += r.coe_total;
+            s.scoreCount += 1;
+        }
+    }
+    for (const s of byShop.values()) {
+        s.avgScore = s.scoreCount ? s.scoreSum / s.scoreCount : null;
+        delete s.scoreSum;
+        delete s.scoreCount;
+    }
+    return byShop;
+}
+
 function decodeFlavorMeta(id) {
     if (!id || typeof id !== 'string') return null;
     const l1Start = id.indexOf('__l1-');
@@ -3143,14 +3171,16 @@ async function viewShopsList(root) {
         .addEventListener('click', () => openShopModal({ onSaved: onShopCreated }));
 
     const grid = document.getElementById('shops-grid');
-    const renderGrid = (shops) => {
+    const renderGrid = (shops, stats) => {
         if (shops.length === 0) {
             grid.innerHTML = `<div class="empty-state">
                 <i class="bi bi-search"></i>沒有符合的店家
             </div>`;
             return;
         }
-        grid.innerHTML = shops.map(s => `
+        grid.innerHTML = shops.map(s => {
+            const st = stats.get(s.id) || { cupping: 0, tasting: 0, avgScore: null };
+            return `
             <a class="shop-card" href="#/shops/${s.id}">
                 <div class="shop-card-header">
                     <i class="bi bi-shop"></i>
@@ -3159,12 +3189,21 @@ async function viewShopsList(root) {
                 </div>
                 ${s.location ? `<div class="shop-card-loc"><i class="bi bi-geo-alt"></i>${escapeHtml(s.location)}</div>` : ''}
                 ${s.intro ? `<div class="shop-card-intro">${escapeHtml(s.intro)}</div>` : ''}
-            </a>
-        `).join('');
+                <div class="shop-card-stats">
+                    <span><i class="bi bi-cup-hot"></i>杯測 ${st.cupping}</span>
+                    <span><i class="bi bi-clipboard-heart"></i>品鑑 ${st.tasting}</span>
+                    ${st.avgScore != null ? `<span><i class="bi bi-star-fill"></i>平均 ${st.avgScore.toFixed(1)}</span>` : ''}
+                </div>
+            </a>`;
+        }).join('');
     };
 
     try {
-        const shops = await api.listShops();
+        const [shops, records] = await Promise.all([
+            api.listShops(),
+            api.listRecords({ type: 'all' }),
+        ]);
+        const stats = aggregateShopStats(records);
         state.shops = shops;
         state.shopsLoaded = true;
         if (shops.length === 0) {
@@ -3179,7 +3218,7 @@ async function viewShopsList(root) {
                 .addEventListener('click', () => openShopModal({ onSaved: onShopCreated }));
             return;
         }
-        renderGrid(shops);
+        renderGrid(shops, stats);
 
         document.getElementById('shops-search').addEventListener('input', e => {
             const q = e.target.value.trim().toLowerCase();
@@ -3189,7 +3228,7 @@ async function viewShopsList(root) {
                     (s.location || '').toLowerCase().includes(q) ||
                     (s.intro || '').toLowerCase().includes(q))
                 : shops;
-            renderGrid(filtered);
+            renderGrid(filtered, stats);
         });
     } catch (e) {
         grid.innerHTML =

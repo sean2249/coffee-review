@@ -1184,6 +1184,19 @@ button.card-title {
     -webkit-box-orient: vertical;
     overflow: hidden;
 }
+.shop-card-stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem 0.75rem;
+    margin-top: 0.5rem;
+    color: var(--text-muted);
+    font-size: 0.8rem;
+}
+.shop-card-stats span {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+}
 
 /* ───── Shop detail ────────────────────────────────────────────────────── */
 .shop-detail-header {
