@@ -238,12 +238,59 @@ button.card-title {
     line-height: 1.45;
 }
 
-/* ───── Shop picker (select + add button) ──────────────────────────────── */
+/* ───── Shop picker (trigger button + searchable modal) ────────────────── */
 .shop-picker {
     display: flex;
     gap: 0.4rem;
 }
 .shop-picker .form-select { flex: 1; }
+
+.shop-picker-trigger {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    text-align: left;
+    cursor: pointer;
+}
+.shop-picker-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.shop-picker-label.is-placeholder { color: var(--text-muted); }
+.shop-picker-label .bi { color: var(--accent); }
+.shop-picker-caret {
+    flex: none;
+    color: var(--text-muted);
+    font-size: 0.8em;
+}
+
+.shop-picker-search { width: 100%; margin-bottom: 0.6rem; }
+.shop-picker-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    max-height: 50vh;
+    overflow-y: auto;
+}
+.shop-picker-list-item {
+    padding: 0.6rem 0.75rem;
+    cursor: pointer;
+    border-radius: var(--radius-sm);
+}
+.shop-picker-list-item .bi { color: var(--accent); }
+.shop-picker-list-item:hover { background: var(--accent-tint); }
+.shop-picker-list-item.selected {
+    background: var(--accent-tint);
+    color: var(--accent);
+    font-weight: 500;
+}
+.shop-picker-empty {
+    padding: 0.75rem;
+    color: var(--text-muted);
+    text-align: center;
+}
 
 /* ───── Filter bar (records list) ──────────────────────────────────────── */
 .filter-bar {
