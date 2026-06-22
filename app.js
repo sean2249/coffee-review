@@ -532,7 +532,9 @@ function recordDateStr(r) {
 
 function applyAdvancedFilters(rows) {
     const f = state.listFilter;
-    const kw = f.shopKeyword.trim().toLowerCase();
+    // 店家清單尚未成功載入時 shopName() 會回傳空字串，會把所有記錄誤濾掉，
+    // 故 shops 未載入前先略過店家關鍵字篩選。
+    const kw = state.shopsLoaded ? f.shopKeyword.trim().toLowerCase() : '';
     return rows.filter(r => {
         if (kw && !shopName(r.shop_id).toLowerCase().includes(kw)) return false;
         if (f.tiers.length && !f.tiers.includes(r.coe_tier_id)) return false;
@@ -546,11 +548,11 @@ function applyAdvancedFilters(rows) {
     });
 }
 
-// 進階條件數（抽屜內的維度：徽章、日期）— 用於 badge 與 empty state 判斷。
+// 進階條件數（抽屜內的維度）— 用於 badge 與 empty state 判斷。
+// 徽章逐一計數（選 3 個徽章 → 3），日期範圍有任一 from/to 即算 1。
 function advancedFilterCount() {
     const f = state.listFilter;
-    let n = 0;
-    if (f.tiers.length) n += 1;
+    let n = f.tiers.length;
     if (f.dateFrom || f.dateTo) n += 1;
     return n;
 }
@@ -710,6 +712,9 @@ async function viewRecordsList(root, query = {}) {
     kwEl.addEventListener('input', () => {
         clearTimeout(kwTimer);
         kwTimer = setTimeout(() => {
+            // 若 debounce 期間已離開 records 視圖（輸入框被移出 DOM），
+            // 就不要再 onFilterChange / replaceState，避免改回 #/records 網址。
+            if (!document.body.contains(kwEl)) return;
             state.listFilter.shopKeyword = kwEl.value;
             onFilterChange();
         }, 200);
