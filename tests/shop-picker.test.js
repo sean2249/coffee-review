@@ -21,7 +21,10 @@ const SHOPS = [
 
 function seedShops(shops) {
     const ctx = dom.getInternalVMContext();
-    vm.runInContext(`state.shops = ${JSON.stringify(shops)}; state.shopsLoaded = true;`, ctx);
+    // Pass the data through the context as a global rather than string-interpolating
+    // it into the evaluated snippet — avoids any eval-with-interpolation pitfalls.
+    ctx.__seedShops = shops;
+    vm.runInContext('state.shops = __seedShops; state.shopsLoaded = true; delete __seedShops;', ctx);
 }
 
 beforeEach(async () => {
