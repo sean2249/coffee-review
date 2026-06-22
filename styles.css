@@ -856,7 +856,67 @@ button.card-title {
     font-family: inherit;
 }
 .tag-chip:hover { color: var(--accent); border-color: var(--accent); }
+.tag-chip:focus-visible,
+.scale-seg:focus-visible {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-tint);
+}
 .tag-chip.selected {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+}
+/* Multi-select chips: lighter fill + check icon (distinct from single-select solid fill) */
+.tag-chip-check { display: none; margin-left: 0.3rem; font-size: 0.85rem; }
+.tag-chip-row[data-tag-mode="multi"] .tag-chip.selected {
+    background: var(--accent-tint);
+    border-color: var(--accent);
+    color: var(--accent);
+}
+.tag-chip-row[data-tag-mode="multi"] .tag-chip.selected .tag-chip-check {
+    display: inline-block;
+}
+.tag-chip-add { border-style: dashed; }
+.tag-chip-add .bi { margin-right: 0.15rem; font-size: 0.8rem; }
+
+.tag-multi-hint {
+    font-size: 0.72rem;
+    font-weight: 500;
+    color: var(--text-dim);
+    margin-left: 0.4rem;
+}
+
+/* ───── Bipolar 3-point scales (環境感受 / 服務) — 分段標籤按鈕 ──────────── */
+.scale-row {
+    margin-bottom: 0.7rem;
+}
+.scale-label {
+    display: block;
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin-bottom: 0.3rem;
+}
+.scale-segs {
+    display: flex;
+    gap: 0.4rem;
+}
+.scale-seg {
+    flex: 1;
+    padding: 0.4rem 0.3rem;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-strong);
+    background: var(--bg-elevated);
+    color: var(--text-secondary);
+    font-size: 0.82rem;
+    font-weight: 500;
+    font-family: inherit;
+    cursor: pointer;
+    transition: all 0.12s ease;
+}
+.scale-seg:hover { color: var(--accent); border-color: var(--accent); }
+.scale-seg.selected {
     background: var(--accent);
     border-color: var(--accent);
     color: #fff;
