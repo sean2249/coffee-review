@@ -275,11 +275,33 @@ button.card-title {
     color: #fff;
 }
 .filter-shop-wrap {
-    margin-left: auto;
+    flex: 1 1 8rem;
     min-width: 0;
-    flex-shrink: 1;
 }
-.filter-shop-wrap .form-select { min-width: 10rem; }
+.filter-shop-wrap .form-select,
+.filter-shop-wrap .form-control { min-width: 8rem; }
+
+/* 進階篩選按鈕 + 條件數 badge */
+.filter-adv-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    white-space: nowrap;
+}
+.filter-adv-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.1rem;
+    height: 1.1rem;
+    padding: 0 0.3rem;
+    border-radius: 999px;
+    background: var(--accent);
+    color: #fff;
+    font-size: 0.72rem;
+    font-weight: 700;
+    line-height: 1;
+}
 
 /* ───── Records list ───────────────────────────────────────────────────── */
 .records-list {
@@ -1198,6 +1220,75 @@ body.modal-open-custom { overflow: hidden; }
     justify-content: flex-end;
     gap: 0.4rem;
     margin-top: 0.5rem;
+}
+
+/* ───── 進階篩選抽屜 ──────────────────────────────────────────────────── */
+/* 沿用 .modal-backdrop-custom 的遮罩；面板從右側滑出。 */
+.filter-drawer-backdrop {
+    justify-content: flex-end;
+    align-items: stretch;
+    padding: 0;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+}
+.filter-drawer-backdrop.show { opacity: 1; }
+.filter-drawer {
+    background: var(--bg-card);
+    box-shadow: var(--shadow-lg);
+    width: 100%;
+    max-width: 380px;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    overflow: auto;
+    transform: translateX(100%);
+    transition: transform 0.22s ease;
+}
+.filter-drawer-backdrop.show .filter-drawer { transform: translateX(0); }
+.filter-drawer .modal-header {
+    display: flex;
+    align-items: center;
+    padding: 0.9rem 1.1rem;
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    background: var(--bg-card);
+    z-index: 1;
+}
+.filter-drawer .modal-header h3 { margin: 0; font-size: 1.05rem; font-weight: 700; flex: 1; }
+.filter-drawer .modal-body { padding: 1rem 1.1rem; flex: 1; }
+.filter-group { margin-bottom: 1.3rem; }
+.filter-group-title {
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: var(--text-muted);
+    margin-bottom: 0.55rem;
+}
+.filter-tier-row { flex-wrap: wrap; }
+/* 選取的徽章 chip 顯示對應獎牌色（沿用卡片獎牌的 tier tokens）。 */
+.filter-tier-row .filter-chip.selected { border-color: transparent; }
+.filter-tier-row .filter-chip.t-trash.selected      { background: var(--t1-bg); color: var(--t1-fg); }
+.filter-tier-row .filter-chip.t-commercial.selected { background: var(--t2-bg); color: var(--t2-fg); }
+.filter-tier-row .filter-chip.t-common.selected     { background: var(--t3-bg); color: var(--t3-fg); }
+.filter-tier-row .filter-chip.t-like.selected       { background: var(--t4-bg); color: var(--t4-fg); }
+.filter-tier-row .filter-chip.t-recommend.selected  { background: var(--t5-bg); color: var(--t5-fg); }
+.filter-tier-row .filter-chip.t-amazing.selected    { background: var(--t6-bg); color: var(--t6-fg); }
+.filter-tier-row .filter-chip.t-godly.selected      { background: var(--t7-bg); color: var(--t7-fg); }
+.filter-date-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+.filter-date-row .form-control { flex: 1; min-width: 0; }
+.filter-date-sep { color: var(--text-muted); }
+.filter-drawer-actions {
+    justify-content: space-between;
+    padding: 0.9rem 1.1rem;
+    border-top: 1px solid var(--border);
+    margin-top: 0;
+    position: sticky;
+    bottom: 0;
+    background: var(--bg-card);
 }
 
 /* ───── Google Places UI ──────────────────────────────────────────────── */
