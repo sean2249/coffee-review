@@ -94,7 +94,8 @@ is Traditional Chinese — keep it that way when editing.
 - **Tooling**: ESLint flat config (`eslint.config.js`) + Stylelint (`.stylelintrc.json`).
   Unit tests via **Vitest** (jsdom) in `tests/` — `app.js` is loaded as a classic script
   inside a fresh jsdom window by the `tests/load-app.js` harness (no network: it omits
-  `SUPABASE_CONFIG` so `isCloudReady()` stays false).
+  `window.SUPABASE_CONFIG`, so the merged `SUPABASE_CONFIG` const has empty url/anonKey and
+  `isCloudReady()` stays false).
   `package.json` sets `"type": "module"` package-wide (so the config files load as ESM),
   but the browser files (`app.js`, `sw.js`) are loaded as classic scripts via `<script>` /
   `serviceWorker.register` — ESLint's per-file overrides set `sourceType: 'script'` to
