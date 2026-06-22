@@ -275,12 +275,24 @@ button.card-title {
     overflow-y: auto;
 }
 .shop-picker-list-item {
+    display: block;
+    width: 100%;
     padding: 0.6rem 0.75rem;
-    cursor: pointer;
+    border: none;
     border-radius: var(--radius-sm);
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
 }
 .shop-picker-list-item .bi { color: var(--accent); }
 .shop-picker-list-item:hover { background: var(--accent-tint); }
+.shop-picker-list-item:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px var(--accent-tint);
+    background: var(--accent-tint);
+}
 .shop-picker-list-item.selected {
     background: var(--accent-tint);
     color: var(--accent);

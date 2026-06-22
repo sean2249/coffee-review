@@ -1661,6 +1661,9 @@ function renderShopTriggerLabel() {
 // Searchable shop picker modal. Reuses the custom-modal idiom (see openNewRecordPicker)
 // and the same name/location/intro substring filter as the /shops list view.
 function openShopPicker({ currentId = '', allowEmpty = true, emptyLabel = '— 不指定 —', onPick } = {}) {
+    // Remember the control that opened the dialog so focus can return to it on
+    // close — otherwise keyboard users are stranded on the removed search input.
+    const opener = document.activeElement;
     const backdrop = document.createElement('div');
     backdrop.className = 'modal-backdrop-custom';
     backdrop.innerHTML = `
@@ -1674,7 +1677,7 @@ function openShopPicker({ currentId = '', allowEmpty = true, emptyLabel = '— �
             <div class="modal-body">
                 <input type="search" class="form-control shop-picker-search"
                        placeholder="搜尋店家名稱或地址…" autocomplete="off">
-                <ul class="shop-picker-list"></ul>
+                <div class="shop-picker-list"></div>
             </div>
         </div>`;
     document.body.appendChild(backdrop);
@@ -1688,6 +1691,7 @@ function openShopPicker({ currentId = '', allowEmpty = true, emptyLabel = '— �
         backdrop.remove();
         document.body.classList.remove('modal-open-custom');
         document.removeEventListener('keydown', onKey);
+        if (opener && typeof opener.focus === 'function') opener.focus();
     }
     const pick = id => { close(); if (typeof onPick === 'function') onPick(id); };
 
@@ -1699,21 +1703,22 @@ function openShopPicker({ currentId = '', allowEmpty = true, emptyLabel = '— �
                 (s.location || '').toLowerCase().includes(query) ||
                 (s.intro || '').toLowerCase().includes(query))
             : state.shops;
+        // Options are real <button>s so they're focusable and Enter/Space-activatable.
         let html = '';
         if (allowEmpty) {
             const sel = currentId ? '' : ' selected';
-            html += `<li class="shop-picker-list-item${sel}" data-shop-id="">${escapeHtml(emptyLabel)}</li>`;
+            html += `<button type="button" class="shop-picker-list-item${sel}" data-shop-id="">${escapeHtml(emptyLabel)}</button>`;
         }
         if (state.shops.length === 0) {
-            html += '<li class="shop-picker-empty">尚無店家，請先新增店家。</li>';
+            html += '<div class="shop-picker-empty">尚無店家，請先新增店家。</div>';
         } else if (matches.length === 0) {
-            html += '<li class="shop-picker-empty">找不到符合的店家。</li>';
+            html += '<div class="shop-picker-empty">找不到符合的店家。</div>';
         } else {
             html += matches.map(s => {
                 const sel = s.id === currentId ? ' selected' : '';
                 const pin = s.google_place_id ? '<i class="bi bi-geo-alt-fill"></i> ' : '';
                 const loc = s.location ? ` · ${escapeHtml(s.location)}` : '';
-                return `<li class="shop-picker-list-item${sel}" data-shop-id="${escapeHtml(s.id)}">${pin}${escapeHtml(s.name)}${loc}</li>`;
+                return `<button type="button" class="shop-picker-list-item${sel}" data-shop-id="${escapeHtml(s.id)}">${pin}${escapeHtml(s.name)}${loc}</button>`;
             }).join('');
         }
         listEl.innerHTML = html;
