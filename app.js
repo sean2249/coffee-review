@@ -872,6 +872,7 @@ function renderRecordDetail(mode, r) {
     const score = typeof r.coe_total === 'number' ? r.coe_total.toFixed(1) : '—';
     const title = deriveTitle({ ...r, _type: mode });
     const shop = shopName(r.shop_id);
+    const shopLinkable = !!(r.shop_id && state.shops.find(s => s.id === r.shop_id));
     const date = mode === 'tasting' && r.visit_date ? fmtDate(r.visit_date) : fmtDate(r.created_at);
 
     const estTotal = computeEstimatedTotalFromRecord(r);
@@ -889,7 +890,9 @@ function renderRecordDetail(mode, r) {
             <div class="card-body">
                 <h2 class="detail-title">${escapeHtml(title)}</h2>
                 <div class="detail-meta">
-                    ${shop ? `<span><i class="bi bi-shop"></i>${escapeHtml(shop)}</span>` : ''}
+                    ${shop ? (shopLinkable
+                        ? `<a class="detail-meta-shop" href="#/shops/${r.shop_id}"><i class="bi bi-shop"></i>${escapeHtml(shop)}</a>`
+                        : `<span><i class="bi bi-shop"></i>${escapeHtml(shop)}</span>`) : ''}
                     ${date ? `<span><i class="bi bi-calendar3"></i>${escapeHtml(date)}</span>` : ''}
                     ${mode === 'tasting' && r.price != null
                         ? `<span><i class="bi bi-cash-coin"></i>$${escapeHtml(String(r.price))}</span>`
@@ -3032,7 +3035,14 @@ async function viewShopsList(root) {
             <div class="empty-state"><i class="bi bi-hourglass-split"></i>讀取中…</div>
         </div>`;
 
-    document.getElementById('shops-new').addEventListener('click', () => openShopModal());
+    // After creating a shop here, offer to add a record for it right away so
+    // the user doesn't have to re-find the shop they just created.
+    const onShopCreated = (saved) => {
+        renderRoute();
+        openNewRecordPicker(saved);
+    };
+    document.getElementById('shops-new')
+        .addEventListener('click', () => openShopModal({ onSaved: onShopCreated }));
 
     const grid = document.getElementById('shops-grid');
     const renderGrid = (shops) => {
@@ -3068,7 +3078,7 @@ async function viewShopsList(root) {
                 </button>
             </div>`;
             document.getElementById('shops-new-inline')
-                .addEventListener('click', () => openShopModal());
+                .addEventListener('click', () => openShopModal({ onSaved: onShopCreated }));
             return;
         }
         renderGrid(shops);
