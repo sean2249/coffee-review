@@ -3199,9 +3199,12 @@ async function viewShopsList(root) {
     };
 
     try {
+        // Records are best-effort: a transient records-fetch failure must not
+        // take down the whole shops list — fall back to empty stats (counts 0,
+        // no average) and still render the shops.
         const [shops, records] = await Promise.all([
             api.listShops(),
-            api.listRecords({ type: 'all' }),
+            api.listRecords({ type: 'all' }).catch(() => []),
         ]);
         const stats = aggregateShopStats(records);
         state.shops = shops;
