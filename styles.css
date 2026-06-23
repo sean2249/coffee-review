@@ -1137,12 +1137,13 @@ button.card-title {
 /* ───── Shops list ─────────────────────────────────────────────────────── */
 .shops-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
     gap: 1rem;
 }
 .shop-card {
     display: flex;
     flex-direction: column;
+    aspect-ratio: 4 / 3;
     padding: 1.35rem 1.4rem 1.15rem;
     background: var(--bg-card);
     border: 1px solid var(--border);
