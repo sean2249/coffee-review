@@ -1137,41 +1137,46 @@ button.card-title {
 /* ───── Shops list ─────────────────────────────────────────────────────── */
 .shops-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-    gap: 0.6rem;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 1rem;
 }
 .shop-card {
-    display: block;
-    padding: 0.85rem 1rem;
+    display: flex;
+    flex-direction: column;
+    padding: 1.35rem 1.4rem 1.15rem;
     background: var(--bg-card);
     border: 1px solid var(--border);
-    border-radius: var(--radius-md);
+    border-radius: var(--radius-lg);
     color: var(--text-primary);
     text-decoration: none;
-    box-shadow: var(--shadow-sm);
+    box-shadow: var(--shadow-md);
     transition: border-color 0.15s, box-shadow 0.15s, transform 0.1s;
 }
 .shop-card:hover {
     border-color: var(--accent);
-    box-shadow: var(--shadow-md);
+    box-shadow: var(--shadow-lg);
     color: var(--text-primary);
+    transform: translateY(-1px);
 }
 .shop-card-header {
     display: flex;
     align-items: center;
-    gap: 0.45rem;
+    gap: 0.6rem;
     font-weight: 700;
-    font-size: 1rem;
-    margin-bottom: 0.3rem;
+    font-size: 1.1rem;
+    margin-bottom: 0.5rem;
 }
 .shop-card-header .bi { color: var(--accent); }
-.shop-card-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.shop-card-icon { font-size: 1.4rem; }
+.shop-card-name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
 .shop-card-loc {
     color: var(--text-muted);
-    font-size: 0.82rem;
-    display: flex;
-    align-items: center;
-    gap: 0.25rem;
+    font-size: 0.85rem;
     margin-bottom: 0.3rem;
 }
 .shop-card-intro {
@@ -1186,17 +1191,20 @@ button.card-title {
 }
 .shop-card-stats {
     display: flex;
+    justify-content: flex-end;
     flex-wrap: wrap;
-    gap: 0.3rem 0.75rem;
-    margin-top: 0.5rem;
+    gap: 0.3rem 1.1rem;
+    margin-top: auto;
+    padding-top: 1rem;
     color: var(--text-muted);
-    font-size: 0.8rem;
+    font-size: 0.88rem;
 }
 .shop-card-stats span {
     display: inline-flex;
     align-items: center;
-    gap: 0.25rem;
+    gap: 0.3rem;
 }
+.shop-card-stats .bi { color: var(--text-muted); }
 
 /* ───── Shop detail ────────────────────────────────────────────────────── */
 .shop-detail-header {
@@ -1376,6 +1384,7 @@ body.modal-open-custom { overflow: hidden; }
     font-size: 0.85em;
     margin-left: 0.35rem;
     opacity: 0.85;
+    flex-shrink: 0;
 }
 .bf-option {
     display: flex;

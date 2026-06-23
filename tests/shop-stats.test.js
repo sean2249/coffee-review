@@ -63,3 +63,35 @@ describe('aggregateShopStats', () => {
         expect(m.has('a')).toBe(true);
     });
 });
+
+// formatShopLocation (app.js) — strips a Taiwan postal-code + 縣市 prefix for
+// the compact shops-list address line, while leaving overseas / non-matching
+// addresses untouched.
+describe('formatShopLocation', () => {
+    it('strips postal code + 台灣 + 縣市 before a district', () => {
+        expect(win.formatShopLocation('105台灣臺北市松山區民有里敦化北路222巷6號1F'))
+            .toBe('松山區民有里敦化北路222巷6號1F');
+        expect(win.formatShopLocation('106台灣臺北市大安區誠安里復興南路一段122巷6-3號'))
+            .toBe('大安區誠安里復興南路一段122巷6-3號');
+    });
+
+    it('strips a bare leading postal code even without 台灣', () => {
+        expect(win.formatShopLocation('103臺北市大同區建泰里承德路一段77巷25號'))
+            .toBe('大同區建泰里承德路一段77巷25號');
+    });
+
+    it('leaves overseas addresses untouched', () => {
+        expect(win.formatShopLocation('日本名古屋市中村區名駅2丁目42-2'))
+            .toBe('日本名古屋市中村區名駅2丁目42-2');
+    });
+
+    it('does not strip a 市 not followed by a district token', () => {
+        expect(win.formatShopLocation('臺北市')).toBe('臺北市');
+    });
+
+    it('returns empty string for null / empty input', () => {
+        expect(win.formatShopLocation(null)).toBe('');
+        expect(win.formatShopLocation('')).toBe('');
+        expect(win.formatShopLocation('  ')).toBe('');
+    });
+});
