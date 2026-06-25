@@ -1223,6 +1223,50 @@ function summarizeRecords(records) {
     };
 }
 
+// Per-shop counts + merged average for the shops list cards (issue #55).
+// Keyed by shop_id; cupping/tasting counted separately but the average merges
+// both types and only includes numeric coe_total (matching summarizeRecords).
+function aggregateShopStats(records) {
+    const byShop = new Map();
+    for (const r of records) {
+        if (!r.shop_id) continue;
+        let s = byShop.get(r.shop_id);
+        if (!s) {
+            s = { cupping: 0, tasting: 0, total: 0, scoreSum: 0, scoreCount: 0 };
+            byShop.set(r.shop_id, s);
+        }
+        s.total += 1;
+        if (r._type === 'tasting') s.tasting += 1;
+        else if (r._type === 'cupping') s.cupping += 1;
+        if (typeof r.coe_total === 'number') {
+            s.scoreSum += r.coe_total;
+            s.scoreCount += 1;
+        }
+    }
+    for (const s of byShop.values()) {
+        s.avgScore = s.scoreCount ? s.scoreSum / s.scoreCount : null;
+        delete s.scoreSum;
+        delete s.scoreCount;
+    }
+    return byShop;
+}
+
+// Trim a Taiwan postal-code + 縣市 prefix off a free-text address for compact
+// display on the shops list cards (e.g. "105台灣臺北市松山區民有里…" →
+// "松山區民有里…"). Every strip is guarded so it only fires on Chinese-format
+// addresses: the postal code is only removed when followed by a CJK char (so
+// a Latin "123 Main St" is left alone), and the 縣市 token only when it
+// precedes a 區/鄉/鎮/市 token (so overseas "日本名古屋市…" stays intact).
+function formatShopLocation(location) {
+    if (!location) return '';
+    return location
+        .trim()
+        .replace(/^\d{3,6}\s*(?=[一-龥])/, '')
+        .replace(/^(台灣|臺灣)/, '')
+        .replace(/^[一-龥]{2,3}[縣市](?=[一-龥]{1,3}[區鄉鎮市])/, '')
+        .trim();
+}
+
 function decodeFlavorMeta(id) {
     if (!id || typeof id !== 'string') return null;
     const l1Start = id.indexOf('__l1-');
@@ -3300,28 +3344,43 @@ async function viewShopsList(root) {
         .addEventListener('click', () => openShopModal({ onSaved: onShopCreated }));
 
     const grid = document.getElementById('shops-grid');
-    const renderGrid = (shops) => {
+    const renderGrid = (shops, stats) => {
         if (shops.length === 0) {
             grid.innerHTML = `<div class="empty-state">
                 <i class="bi bi-search"></i>沒有符合的店家
             </div>`;
             return;
         }
-        grid.innerHTML = shops.map(s => `
+        grid.innerHTML = shops.map(s => {
+            const st = stats.get(s.id) || { cupping: 0, tasting: 0, avgScore: null };
+            const loc = formatShopLocation(s.location);
+            return `
             <a class="shop-card" href="#/shops/${s.id}">
                 <div class="shop-card-header">
-                    <i class="bi bi-shop"></i>
+                    <i class="bi bi-shop shop-card-icon"></i>
                     <span class="shop-card-name">${escapeHtml(s.name)}</span>
                     ${s.google_place_id ? '<i class="bi bi-geo-alt-fill shop-place-badge" title="已綁定 Google 地點" aria-label="已綁定 Google 地點"></i>' : ''}
                 </div>
-                ${s.location ? `<div class="shop-card-loc"><i class="bi bi-geo-alt"></i>${escapeHtml(s.location)}</div>` : ''}
+                ${loc ? `<div class="shop-card-loc">${escapeHtml(loc)}</div>` : ''}
                 ${s.intro ? `<div class="shop-card-intro">${escapeHtml(s.intro)}</div>` : ''}
-            </a>
-        `).join('');
+                <div class="shop-card-stats">
+                    <span title="杯測"><i class="bi bi-cup"></i>${st.cupping}</span>
+                    <span title="品鑑"><i class="bi bi-clipboard"></i>${st.tasting}</span>
+                    <span title="平均分數"><i class="bi bi-star"></i>${st.avgScore != null ? st.avgScore.toFixed(1) : '-'}</span>
+                </div>
+            </a>`;
+        }).join('');
     };
 
     try {
-        const shops = await api.listShops();
+        // Records are best-effort: a transient records-fetch failure must not
+        // take down the whole shops list — fall back to empty stats (counts 0,
+        // no average) and still render the shops.
+        const [shops, records] = await Promise.all([
+            api.listShops(),
+            api.listRecords({ type: 'all' }).catch(() => []),
+        ]);
+        const stats = aggregateShopStats(records);
         state.shops = shops;
         state.shopsLoaded = true;
         if (shops.length === 0) {
@@ -3336,7 +3395,7 @@ async function viewShopsList(root) {
                 .addEventListener('click', () => openShopModal({ onSaved: onShopCreated }));
             return;
         }
-        renderGrid(shops);
+        renderGrid(shops, stats);
 
         document.getElementById('shops-search').addEventListener('input', e => {
             const q = e.target.value.trim().toLowerCase();
@@ -3346,7 +3405,7 @@ async function viewShopsList(root) {
                     (s.location || '').toLowerCase().includes(q) ||
                     (s.intro || '').toLowerCase().includes(q))
                 : shops;
-            renderGrid(filtered);
+            renderGrid(filtered, stats);
         });
     } catch (e) {
         grid.innerHTML =
