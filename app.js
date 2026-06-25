@@ -1220,13 +1220,15 @@ function aggregateShopStats(records) {
 
 // Trim a Taiwan postal-code + 縣市 prefix off a free-text address for compact
 // display on the shops list cards (e.g. "105台灣臺北市松山區民有里…" →
-// "松山區民有里…"). The 縣市 token is only stripped when it precedes a
-// 區/鄉/鎮/市 token, so overseas addresses (e.g. "日本名古屋市…") are left intact.
+// "松山區民有里…"). Every strip is guarded so it only fires on Chinese-format
+// addresses: the postal code is only removed when followed by a CJK char (so
+// a Latin "123 Main St" is left alone), and the 縣市 token only when it
+// precedes a 區/鄉/鎮/市 token (so overseas "日本名古屋市…" stays intact).
 function formatShopLocation(location) {
     if (!location) return '';
     return location
         .trim()
-        .replace(/^\d{3,6}\s*/, '')
+        .replace(/^\d{3,6}\s*(?=[一-龥])/, '')
         .replace(/^(台灣|臺灣)/, '')
         .replace(/^[一-龥]{2,3}[縣市](?=[一-龥]{1,3}[區鄉鎮市])/, '')
         .trim();

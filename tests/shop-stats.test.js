@@ -85,6 +85,13 @@ describe('formatShopLocation', () => {
             .toBe('日本名古屋市中村區名駅2丁目42-2');
     });
 
+    it('does not strip leading digits from Latin-format addresses', () => {
+        expect(win.formatShopLocation('123 Main St, Springfield'))
+            .toBe('123 Main St, Springfield');
+        expect(win.formatShopLocation('1600 Pennsylvania Ave NW'))
+            .toBe('1600 Pennsylvania Ave NW');
+    });
+
     it('does not strip a 市 not followed by a district token', () => {
         expect(win.formatShopLocation('臺北市')).toBe('臺北市');
     });
