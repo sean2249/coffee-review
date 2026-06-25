@@ -1143,7 +1143,6 @@ button.card-title {
 .shop-card {
     display: flex;
     flex-direction: column;
-    aspect-ratio: 4 / 3;
     padding: 1.35rem 1.4rem 1.15rem;
     background: var(--bg-card);
     border: 1px solid var(--border);
