@@ -602,8 +602,11 @@ button.card-title {
     margin-bottom: 1rem;
 }
 .score-chip {
-    display: inline-block;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     min-width: 3rem;
+    min-height: 44px; /* 觸控目標下限（WCAG 2.5.5） */
     padding: 0.4rem 0.85rem;
     text-align: center;
     border-radius: 999px;
@@ -1362,6 +1365,13 @@ body.modal-open-custom { overflow: hidden; }
     margin-top: 0.5rem;
 }
 
+/* ───── 確認對話框（取代原生 confirm）─────────────────────────────────── */
+.confirm-dialog { max-width: 380px; }
+.confirm-dialog-message {
+    margin: 0 0 0.75rem;
+    white-space: pre-line; /* message 由 textContent 塞入，靠此保留換行 */
+}
+
 /* ───── 進階篩選抽屜 ──────────────────────────────────────────────────── */
 /* 沿用 .modal-backdrop-custom 的遮罩；面板從右側滑出。 */
 .filter-drawer-backdrop {
@@ -1506,6 +1516,7 @@ hr { border-color: var(--border); opacity: 0.7; }
     transition: opacity 0.2s ease;
 }
 .toast-msg.show { opacity: 1; }
+.toast-msg.error { background: #842029; color: #fff; }
 
 /* ───── Read-only record detail view ──────────────────────────────────── */
 .detail-back-bar {

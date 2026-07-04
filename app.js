@@ -280,7 +280,7 @@ function fmtDate(iso) {
     return d.toLocaleDateString('zh-TW', { year: 'numeric', month: '2-digit', day: '2-digit' });
 }
 
-function showToast(msg, ms = 2000) {
+function showToast(msg, ms = 2000, isError = false) {
     let el = document.getElementById('toastMsg');
     if (!el) {
         el = document.createElement('div');
@@ -289,9 +289,56 @@ function showToast(msg, ms = 2000) {
         document.body.appendChild(el);
     }
     el.textContent = msg;
+    el.classList.toggle('error', isError);
     el.classList.add('show');
     clearTimeout(el._t);
     el._t = setTimeout(() => el.classList.remove('show'), ms);
+}
+
+function showErrorToast(msg) {
+    showToast(msg, 4000, true);
+}
+
+// 取代原生 confirm()：resolve(true) = 確認。message 以 textContent 塞入，
+// 換行靠 .confirm-dialog-message 的 white-space: pre-line 呈現。
+function confirmDialog({ title = '確認', message = '', confirmText = '確認', cancelText = '取消', danger = false } = {}) {
+    return new Promise(resolve => {
+        const opener = document.activeElement;
+        const backdrop = document.createElement('div');
+        backdrop.className = 'modal-backdrop-custom';
+        backdrop.innerHTML = `
+            <div class="modal-shell confirm-dialog" role="dialog" aria-modal="true"
+                 aria-labelledby="confirm-dialog-title">
+                <header class="modal-header">
+                    <h3 id="confirm-dialog-title">${escapeHtml(title)}</h3>
+                </header>
+                <div class="modal-body">
+                    <p class="confirm-dialog-message"></p>
+                    <div class="modal-actions">
+                        <button type="button" class="btn btn-outline-secondary" data-confirm="cancel">${escapeHtml(cancelText)}</button>
+                        <button type="button" class="btn ${danger ? 'btn-danger' : 'btn-primary'}" data-confirm="ok">${escapeHtml(confirmText)}</button>
+                    </div>
+                </div>
+            </div>`;
+        backdrop.querySelector('.confirm-dialog-message').textContent = message;
+
+        const onKey = e => { if (e.key === 'Escape') close(false); };
+        const close = result => {
+            document.removeEventListener('keydown', onKey);
+            backdrop.remove();
+            document.body.classList.remove('modal-open-custom');
+            opener?.focus?.();
+            resolve(result);
+        };
+        backdrop.addEventListener('click', e => { if (e.target === backdrop) close(false); });
+        backdrop.querySelector('[data-confirm="cancel"]').addEventListener('click', () => close(false));
+        backdrop.querySelector('[data-confirm="ok"]').addEventListener('click', () => close(true));
+        document.addEventListener('keydown', onKey);
+
+        document.body.appendChild(backdrop);
+        document.body.classList.add('modal-open-custom');
+        backdrop.querySelector('[data-confirm="cancel"]').focus();
+    });
 }
 
 const NO_CLOUD_MSG = '尚未設定雲端。\n\n' +
@@ -303,7 +350,8 @@ const NO_CLOUD_MSG = '尚未設定雲端。\n\n' +
 async function ensureSupabase() {
     if (!isCloudReady()) return null;
     if (supabaseClient) return supabaseClient;
-    const mod = await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm');
+    // 鎖定確切版本（供應鏈風險控管）：升版時改這裡，勿改回浮動的 @2
+    const mod = await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.110.0/+esm');
     supabaseClient = mod.createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.anonKey, {
         db: { schema: SUPABASE_CONFIG.schema || 'public' },
     });
@@ -320,7 +368,8 @@ async function ensureGoogleMaps() {
     if (googleMapsPromise) return googleMapsPromise;
     googleMapsPromise = (async () => {
         try {
-            const mod = await import('https://cdn.jsdelivr.net/npm/@googlemaps/js-api-loader@1/+esm');
+            // 鎖定確切版本（供應鏈風險控管）：升版時改這裡，勿改回浮動的 @1
+            const mod = await import('https://cdn.jsdelivr.net/npm/@googlemaps/js-api-loader@1.16.10/+esm');
             const loader = new mod.Loader({
                 apiKey: window.GOOGLE_CONFIG.mapsApiKey,
                 version: 'weekly',
@@ -2879,7 +2928,7 @@ async function submitForm() {
         }
     } catch (e) {
         console.error(e);
-        alert('儲存失敗：' + (e.message || e));
+        showErrorToast('儲存失敗：' + (e.message || e));
     } finally {
         saveBtn.disabled = false;
     }
@@ -2893,13 +2942,19 @@ async function deleteCurrentRecord() {
         : (document.getElementById('f-item_ordered').value.trim()
             || document.getElementById('f-tasting-bean').value.trim()
             || '此品鑑記錄');
-    if (!confirm(`刪除「${display}」？此操作無法復原。`)) return;
+    const ok = await confirmDialog({
+        title: '刪除記錄',
+        message: `刪除「${display}」？此操作無法復原。`,
+        confirmText: '刪除',
+        danger: true,
+    });
+    if (!ok) return;
     try {
         await api.deleteRecord(mode, recordId);
         showToast('✓ 已刪除');
         navigate('/records');
     } catch (e) {
-        alert('刪除失敗：' + (e.message || e));
+        showErrorToast('刪除失敗：' + (e.message || e));
     }
 }
 
@@ -2907,7 +2962,7 @@ async function loadRecordIntoForm(mode, recordId) {
     try {
         const r = await api.getRecord(mode, recordId);
         if (!r) {
-            alert('找不到記錄');
+            showErrorToast('找不到記錄');
             navigate('/records');
             return;
         }
@@ -3046,7 +3101,7 @@ async function loadRecordIntoForm(mode, recordId) {
         updateEstimatedTotalDisplay();
     } catch (e) {
         console.error(e);
-        alert('讀取失敗：' + (e.message || e));
+        showErrorToast('讀取失敗：' + (e.message || e));
     }
 }
 
@@ -3195,12 +3250,12 @@ function openShopModal({ shop = null, onSaved = null } = {}) {
                 // details / message 會帶到具體 column 名稱（"...(google_place_id)=..." 或 "...(name)=..."）
                 const hint = `${e2.details || ''} ${e2.message || ''}`;
                 if (hint.includes('google_place_id')) {
-                    alert('此 Google 地點已綁定到其他店家');
+                    showErrorToast('此 Google 地點已綁定到其他店家');
                 } else {
-                    alert('店家名稱已存在');
+                    showErrorToast('店家名稱已存在');
                 }
             } else {
-                alert('儲存失敗：' + (e2.message || e2));
+                showErrorToast('儲存失敗：' + (e2.message || e2));
             }
         }
     });
@@ -3308,9 +3363,9 @@ async function openPlaceBackfillDialog(shop) {
         } catch (err) {
             confirmBtn.disabled = false;
             if (err.code === '23505') {
-                alert('此 Google 地點已綁定到其他店家');
+                showErrorToast('此 Google 地點已綁定到其他店家');
             } else {
-                alert('補完失敗：' + (err.message || err));
+                showErrorToast('補完失敗：' + (err.message || err));
             }
         }
     });
@@ -3592,18 +3647,23 @@ async function viewShopDetail(root, shopId) {
             backfillEl.addEventListener('click', () => openPlaceBackfillDialog(shop));
         }
         document.getElementById('shop-delete').addEventListener('click', async () => {
-            if (records.length > 0) {
-                if (!confirm(`「${shop.name}」目前有 ${records.length} 筆相關記錄。\n\n刪除店家會：\n• 連帶刪除所有品鑑記錄\n• 杯測記錄保留但失去店家連結\n\n確定要刪除嗎？`)) return;
-            } else {
-                if (!confirm(`刪除店家「${shop.name}」？`)) return;
-            }
+            const message = records.length > 0
+                ? `「${shop.name}」目前有 ${records.length} 筆相關記錄。\n\n刪除店家會：\n• 連帶刪除所有品鑑記錄\n• 杯測記錄保留但失去店家連結\n\n確定要刪除嗎？`
+                : `刪除店家「${shop.name}」？`;
+            const ok = await confirmDialog({
+                title: '刪除店家',
+                message,
+                confirmText: '刪除',
+                danger: true,
+            });
+            if (!ok) return;
             try {
                 await api.deleteShop(shopId);
                 await refreshShopsCache();
                 showToast('✓ 已刪除店家');
                 navigate('/shops');
             } catch (e) {
-                alert('刪除失敗：' + (e.message || e));
+                showErrorToast('刪除失敗：' + (e.message || e));
             }
         });
     } catch (e) {
