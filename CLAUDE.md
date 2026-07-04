@@ -100,8 +100,8 @@ is Traditional Chinese — keep it that way when editing.
   but the browser files (`app.js`, `sw.js`) are loaded as classic scripts via `<script>` /
   `serviceWorker.register` — ESLint's per-file overrides set `sourceType: 'script'` to
   match.
-- **CI**: `.github/workflows/lint.yml` runs `npm run lint` on PRs (tests are **not** run in
-  CI — run `npm test` locally); `deploy.yml` injects
+- **CI**: `.github/workflows/lint.yml` runs `npm run lint` and `npm test` on PRs;
+  `deploy.yml` injects
   `config.js` from secrets and publishes to GitHub Pages on push to `main`.
 
 ## File layout
@@ -184,7 +184,7 @@ npm install
 npm run lint        # lint:js + lint:css
 npm run lint:js
 npm run lint:css
-npm test            # vitest run (7 files, jsdom — no network)
+npm test            # vitest run (jsdom — no network)
 ```
 
 There is **no dev server and no build step** (unit tests run under Vitest — see above; no
@@ -209,7 +209,7 @@ bump `VERSION` in `sw.js:6`.
   card list / detail card still renders sensibly with old records (treat missing keys as
   default).
 - Anything that changes app-shell URLs → bump `sw.js` VERSION.
-- After edits: `npm run lint` (CI fails the PR otherwise) and `npm test` (not in CI, but
+- After edits: `npm run lint` and `npm test` (CI runs both and fails the PR otherwise;
   the suite covers scoring, flavor wheel, filters, estimated total, and the pickers).
 
 ## Things to leave alone unless asked
