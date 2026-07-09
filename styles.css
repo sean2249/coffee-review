@@ -85,20 +85,28 @@ body {
 .tabbar-btn {
     flex: 1;
     display: flex;
-    flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 0.15rem;
     color: var(--text-muted);
     text-decoration: none;
     font-size: 0.72rem;
     font-weight: 500;
     transition: color 0.15s;
 }
+.tabbar-btn-pill {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.15rem;
+    padding: 0.3rem 0.9rem;
+    border-radius: var(--radius-lg);
+    transition: background-color 0.15s;
+}
 .tabbar-btn .bi { font-size: 1.35rem; line-height: 1; }
 .tabbar-btn:hover { color: var(--accent); }
-.tabbar-btn.active { color: var(--accent); }
-.tabbar-btn.active .bi { transform: translateY(-1px); }
+.tabbar-btn.active { color: var(--accent); font-weight: 700; }
+.tabbar-btn.active .tabbar-btn-pill { background: var(--accent-tint); }
 
 /* ───── Cards ──────────────────────────────────────────────────────────── */
 .card {
@@ -252,6 +260,7 @@ button.card-title {
     gap: 0.5rem;
     text-align: left;
     cursor: pointer;
+    background-image: none;
 }
 .shop-picker-label {
     overflow: hidden;
