@@ -106,7 +106,7 @@ body {
 .tabbar-btn .bi { font-size: 1.35rem; line-height: 1; }
 .tabbar-btn:hover { color: var(--accent); }
 .tabbar-btn.active { color: var(--accent); font-weight: 700; }
-.tabbar-btn.active .tabbar-btn-pill { background: var(--accent-tint); }
+.tabbar-btn.active .tabbar-btn-pill { background-color: var(--accent-tint); }
 
 /* ───── Cards ──────────────────────────────────────────────────────────── */
 .card {
