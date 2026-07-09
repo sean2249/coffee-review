@@ -571,7 +571,10 @@ function updateTabbarActive() {
     if (first === 'new') activeRoute = '/new';
     else if (first === 'shops') activeRoute = '/shops';
     document.querySelectorAll('.tabbar-btn').forEach(a => {
-        a.classList.toggle('active', a.dataset.route === activeRoute);
+        const isActive = a.dataset.route === activeRoute;
+        a.classList.toggle('active', isActive);
+        if (isActive) a.setAttribute('aria-current', 'page');
+        else a.removeAttribute('aria-current');
     });
 }
 
