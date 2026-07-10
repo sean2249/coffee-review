@@ -393,9 +393,12 @@ function setupDraftAutosave(mode, recordId) {
 
     let timer = null;
     const schedule = () => {
+        // 同步在事件當下就把 payload 算好（此時表單仍掛載）；setTimeout 只負責寫入。
+        // 如此即使使用者輸入後立刻離開頁面（表單被卸載、DOM 消失），最後一次輸入
+        // 仍會被存下，也不會因 buildFormPayload 讀不到 #f-shop 而在 timeout 內丟錯。
+        const current = JSON.stringify(buildFormPayload(mode));
         clearTimeout(timer);
         timer = setTimeout(() => {
-            const current = JSON.stringify(buildFormPayload(mode));
             if (current === baseline) {
                 clearDraft(key); // 改回原狀 → 不留草稿
             } else {
