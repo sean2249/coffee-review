@@ -3011,6 +3011,142 @@ async function deleteCurrentRecord() {
     }
 }
 
+// 把一份 record 形狀物件（來自 api 或草稿）套進目前掛載的表單 DOM。
+function applyRecordToForm(mode, r) {
+    // shop — the hidden input holds any id regardless of cache, so a deleted
+    // shop's FK is preserved on save; renderShopTriggerLabel shows the fallback.
+    const shopSel = document.getElementById('f-shop');
+    shopSel.value = r.shop_id || '';
+    renderShopTriggerLabel();
+    refreshImportBeanForShop(mode, shopSel.value);
+
+    // common fields
+    document.getElementById('f-defects').value = r.defects || '';
+    document.getElementById('f-notes').value = r.notes || '';
+    if (r.notes) expandNotesSlot('f-notes', { focus: false });
+    updateDefectsSummary();
+
+    if (mode === 'cupping') {
+        document.getElementById('f-cupping-bean').value = r.bean_name || '';
+        ['origin', 'process', 'grind', 'water_temp', 'ratio', 'method', 'extraction_time', 'blend_composition']
+            .forEach(k => {
+                const el = document.getElementById(`f-${k}`);
+                if (el && r[k] != null) el.value = r[k];
+            });
+        setBrewingMethodChip(r.method || '');
+        setProcessChip(r.process || '');
+        populateOriginDatalist();
+        if (r.roast != null) {
+            const roastRadio = document.querySelector(`input[name="roast"][value="${CSS.escape(r.roast)}"]`);
+            if (roastRadio) roastRadio.checked = true;
+        }
+        // Legacy rows have no bean_type. Only auto-pick when there's an
+        // unambiguous signal (a blend_composition); otherwise force the
+        // user to choose on save.
+        const fallback = r.blend_composition ? 'blend' : '';
+        setBeanType('cupping', r.bean_type || fallback);
+    } else {
+        const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val ?? ''; };
+        set('f-visit_date', r.visit_date || '');
+        set('f-price', r.price ?? '');
+        set('f-item_ordered', r.item_ordered || '');
+        applyItemValue(r.item_ordered || '');
+        set('f-tasting-bean', r.bean_name || '');
+        // Legacy tasting rows have no bean_type — leave empty so the user picks one on edit.
+        setBeanType('tasting', r.bean_type || '');
+
+        const ax = r.ambience_axes || {};
+        setScaleValue('quiet_lively',  ax.quiet_lively ?? null);
+        setScaleValue('bright_dim',    ax.bright_dim ?? null);
+        setScaleValue('spacious_cozy', ax.spacious_cozy ?? null);
+        setChipValues('facilities', r.facilities || []);
+        setChipValues('style',      r.space_style ? [r.space_style] : []);
+        setChipValues('materials',  r.space_materials || []);
+        const sr = r.service_ratings || {};
+        setScaleValue('greeting', sr.greeting ?? null);
+        setScaleValue('speed',    sr.speed ?? null);
+        setChipValues('food',   r.menu_food || []);
+        setChipValues('drinks', r.drink_types || []);
+
+        const setNotes = (id, val) => {
+            const el = document.getElementById(id);
+            if (!el) return;
+            el.value = val ?? '';
+            if (val) expandNotesSlot(id, { focus: false });
+        };
+        setNotes('f-visit-ambience-notes', r.atmosphere_notes);
+        setNotes('f-visit-style-notes',    r.decor_notes);
+        setNotes('f-visit-service-notes',  r.service_notes);
+    }
+
+    // CoE
+    coeState.coeTotal = typeof r.coe_total === 'number' ? r.coe_total : 82;
+    coeState.selectedTierId = r.coe_tier_id || tierFromScore(coeState.coeTotal).id;
+    renderTierMedals();
+    renderScoreChips(tierById(coeState.selectedTierId));
+    refreshTotalDisplay();
+
+    // Evaluations
+    if (r.evaluations) {
+        referenceFields.forEach(f => {
+            const data = r.evaluations[f.key];
+            if (!data) return;
+            if (typeof data.score === 'number') setReferenceScore(f.key, data.score);
+            const notesEl = document.getElementById(`${f.key}_notes`);
+            if (notesEl) {
+                notesEl.value = data.notes || '';
+                if (data.notes) expandNotesSlot(`${f.key}_notes`, { focus: false });
+            }
+            const chipSpec = evaluationOptions[f.key];
+            if (chipSpec) {
+                Object.keys(chipSpec).forEach(subKey => {
+                    writeChipGroup(`${f.key}_${subKey}`, data[subKey]);
+                });
+            }
+            if (f.hasFlavorWheel && Array.isArray(data.flavors)) {
+                applyFlavorSelections(`${f.key}_flavorList`, data.flavors);
+            }
+            updateRefSummary(f.key);
+        });
+    }
+
+    if (r.observation) {
+        observationFields.forEach(f => {
+            const data = r.observation[f.key];
+            if (!data) return;
+            const notesEl = document.getElementById(`${f.key}_notes`);
+            if (notesEl) {
+                notesEl.value = data.notes || '';
+                if (data.notes) expandNotesSlot(`${f.key}_notes`, { focus: false });
+            }
+            if (f.key === 'aroma') {
+                const dry = document.getElementById(`${f.key}_dryAroma`);
+                const wet = document.getElementById(`${f.key}_wetAroma`);
+                if (dry) dry.value = data.dryAroma || '';
+                if (wet) wet.value = data.wetAroma || '';
+            }
+            const chipSpec = observationOptions[f.key];
+            if (chipSpec) {
+                Object.keys(chipSpec).forEach(subKey => {
+                    writeChipGroup(`${f.key}_${subKey}`, data[subKey]);
+                });
+            }
+            if (f.hasFlavorWheel && Array.isArray(data.flavors)) {
+                applyFlavorSelections(`${f.key}_flavorList`, data.flavors);
+            }
+            updateObservationSummary(f.key);
+        });
+    }
+
+    // Defects chip
+    if (Array.isArray(r.defects_tags)) {
+        writeChipGroup('defects_tags', r.defects_tags);
+    }
+    updateDefectsSummary();
+
+    updateEstimatedTotalDisplay();
+}
+
 async function loadRecordIntoForm(mode, recordId) {
     try {
         const r = await api.getRecord(mode, recordId);
@@ -3020,138 +3156,7 @@ async function loadRecordIntoForm(mode, recordId) {
             return;
         }
 
-        // shop — the hidden input holds any id regardless of cache, so a deleted
-        // shop's FK is preserved on save; renderShopTriggerLabel shows the fallback.
-        const shopSel = document.getElementById('f-shop');
-        shopSel.value = r.shop_id || '';
-        renderShopTriggerLabel();
-        refreshImportBeanForShop(mode, shopSel.value);
-
-        // common fields
-        document.getElementById('f-defects').value = r.defects || '';
-        document.getElementById('f-notes').value = r.notes || '';
-        if (r.notes) expandNotesSlot('f-notes', { focus: false });
-        updateDefectsSummary();
-
-        if (mode === 'cupping') {
-            document.getElementById('f-cupping-bean').value = r.bean_name || '';
-            ['origin', 'process', 'grind', 'water_temp', 'ratio', 'method', 'extraction_time', 'blend_composition']
-                .forEach(k => {
-                    const el = document.getElementById(`f-${k}`);
-                    if (el && r[k] != null) el.value = r[k];
-                });
-            setBrewingMethodChip(r.method || '');
-            setProcessChip(r.process || '');
-            populateOriginDatalist();
-            if (r.roast != null) {
-                const roastRadio = document.querySelector(`input[name="roast"][value="${CSS.escape(r.roast)}"]`);
-                if (roastRadio) roastRadio.checked = true;
-            }
-            // Legacy rows have no bean_type. Only auto-pick when there's an
-            // unambiguous signal (a blend_composition); otherwise force the
-            // user to choose on save.
-            const fallback = r.blend_composition ? 'blend' : '';
-            setBeanType('cupping', r.bean_type || fallback);
-        } else {
-            const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val ?? ''; };
-            set('f-visit_date', r.visit_date || '');
-            set('f-price', r.price ?? '');
-            set('f-item_ordered', r.item_ordered || '');
-            applyItemValue(r.item_ordered || '');
-            set('f-tasting-bean', r.bean_name || '');
-            // Legacy tasting rows have no bean_type — leave empty so the user picks one on edit.
-            setBeanType('tasting', r.bean_type || '');
-
-            const ax = r.ambience_axes || {};
-            setScaleValue('quiet_lively',  ax.quiet_lively ?? null);
-            setScaleValue('bright_dim',    ax.bright_dim ?? null);
-            setScaleValue('spacious_cozy', ax.spacious_cozy ?? null);
-            setChipValues('facilities', r.facilities || []);
-            setChipValues('style',      r.space_style ? [r.space_style] : []);
-            setChipValues('materials',  r.space_materials || []);
-            const sr = r.service_ratings || {};
-            setScaleValue('greeting', sr.greeting ?? null);
-            setScaleValue('speed',    sr.speed ?? null);
-            setChipValues('food',   r.menu_food || []);
-            setChipValues('drinks', r.drink_types || []);
-
-            const setNotes = (id, val) => {
-                const el = document.getElementById(id);
-                if (!el) return;
-                el.value = val ?? '';
-                if (val) expandNotesSlot(id, { focus: false });
-            };
-            setNotes('f-visit-ambience-notes', r.atmosphere_notes);
-            setNotes('f-visit-style-notes',    r.decor_notes);
-            setNotes('f-visit-service-notes',  r.service_notes);
-        }
-
-        // CoE
-        coeState.coeTotal = typeof r.coe_total === 'number' ? r.coe_total : 82;
-        coeState.selectedTierId = r.coe_tier_id || tierFromScore(coeState.coeTotal).id;
-        renderTierMedals();
-        renderScoreChips(tierById(coeState.selectedTierId));
-        refreshTotalDisplay();
-
-        // Evaluations
-        if (r.evaluations) {
-            referenceFields.forEach(f => {
-                const data = r.evaluations[f.key];
-                if (!data) return;
-                if (typeof data.score === 'number') setReferenceScore(f.key, data.score);
-                const notesEl = document.getElementById(`${f.key}_notes`);
-                if (notesEl) {
-                    notesEl.value = data.notes || '';
-                    if (data.notes) expandNotesSlot(`${f.key}_notes`, { focus: false });
-                }
-                const chipSpec = evaluationOptions[f.key];
-                if (chipSpec) {
-                    Object.keys(chipSpec).forEach(subKey => {
-                        writeChipGroup(`${f.key}_${subKey}`, data[subKey]);
-                    });
-                }
-                if (f.hasFlavorWheel && Array.isArray(data.flavors)) {
-                    applyFlavorSelections(`${f.key}_flavorList`, data.flavors);
-                }
-                updateRefSummary(f.key);
-            });
-        }
-
-        if (r.observation) {
-            observationFields.forEach(f => {
-                const data = r.observation[f.key];
-                if (!data) return;
-                const notesEl = document.getElementById(`${f.key}_notes`);
-                if (notesEl) {
-                    notesEl.value = data.notes || '';
-                    if (data.notes) expandNotesSlot(`${f.key}_notes`, { focus: false });
-                }
-                if (f.key === 'aroma') {
-                    const dry = document.getElementById(`${f.key}_dryAroma`);
-                    const wet = document.getElementById(`${f.key}_wetAroma`);
-                    if (dry) dry.value = data.dryAroma || '';
-                    if (wet) wet.value = data.wetAroma || '';
-                }
-                const chipSpec = observationOptions[f.key];
-                if (chipSpec) {
-                    Object.keys(chipSpec).forEach(subKey => {
-                        writeChipGroup(`${f.key}_${subKey}`, data[subKey]);
-                    });
-                }
-                if (f.hasFlavorWheel && Array.isArray(data.flavors)) {
-                    applyFlavorSelections(`${f.key}_flavorList`, data.flavors);
-                }
-                updateObservationSummary(f.key);
-            });
-        }
-
-        // Defects chip
-        if (Array.isArray(r.defects_tags)) {
-            writeChipGroup('defects_tags', r.defects_tags);
-        }
-        updateDefectsSummary();
-
-        updateEstimatedTotalDisplay();
+        applyRecordToForm(mode, r);
     } catch (e) {
         console.error(e);
         showErrorToast('讀取失敗：' + (e.message || e));
