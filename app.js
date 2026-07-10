@@ -280,6 +280,59 @@ function fmtDate(iso) {
     return d.toLocaleDateString('zh-TW', { year: 'numeric', month: '2-digit', day: '2-digit' });
 }
 
+// ─── Form draft autosave (localStorage) ──────────────────────────────────────
+// 草稿 = 一份 record 形狀的 payload（buildFormPayload 產出、applyRecordToForm 還原）。
+// 讀寫全包 try/catch：隱私模式 / 配額滿時靜默降級，不影響表單運作。
+const DRAFT_PREFIX = 'coffee-review:draft:';
+const DRAFT_SCHEMA = 1;
+const DRAFT_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 天過期保護
+
+function draftKey(mode, recordId) {
+    return DRAFT_PREFIX + (recordId ? `${mode}/${recordId}` : `new/${mode}`);
+}
+
+function writeDraft(key, mode, payload) {
+    try {
+        localStorage.setItem(key, JSON.stringify({
+            schema: DRAFT_SCHEMA,
+            savedAt: Date.now(),
+            mode,
+            payload,
+        }));
+    } catch { /* localStorage 不可用 → 略過 */ }
+}
+
+function readDraft(key) {
+    let raw;
+    try {
+        raw = localStorage.getItem(key);
+    } catch { return null; }
+    if (!raw) return null;
+
+    let obj;
+    try {
+        obj = JSON.parse(raw);
+    } catch {
+        clearDraft(key); // 壞掉的 JSON 直接清掉
+        return null;
+    }
+    if (!obj || obj.schema !== DRAFT_SCHEMA || typeof obj.savedAt !== 'number') {
+        clearDraft(key); // 版本不符 / 結構壞掉
+        return null;
+    }
+    if (Date.now() - obj.savedAt > DRAFT_TTL_MS) {
+        clearDraft(key); // 過期
+        return null;
+    }
+    return obj; // { schema, savedAt, mode, payload }
+}
+
+function clearDraft(key) {
+    try {
+        localStorage.removeItem(key);
+    } catch { /* ignore */ }
+}
+
 function showToast(msg, ms = 2000, isError = false) {
     let el = document.getElementById('toastMsg');
     if (!el) {
