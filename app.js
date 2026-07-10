@@ -333,6 +333,87 @@ function clearDraft(key) {
     } catch { /* ignore */ }
 }
 
+function formatDraftAge(savedAt) {
+    const diff = Date.now() - savedAt;
+    const min = Math.floor(diff / 60000);
+    if (min < 1) return '剛剛';
+    if (min < 60) return `${min} 分鐘前`;
+    const hr = Math.floor(min / 60);
+    if (hr < 24) return `${hr} 小時前`;
+    return `${Math.floor(hr / 24)} 天前`;
+}
+
+// 內嵌還原列，插在表單最上方（不用 modal）。onRestore / onDiscard 由呼叫端提供。
+function showDraftBanner(form, draft, onRestore, onDiscard) {
+    form.querySelector('.draft-banner')?.remove();
+    const banner = document.createElement('div');
+    banner.className = 'draft-banner';
+    banner.setAttribute('role', 'status');
+    banner.innerHTML = `
+        <span class="draft-banner-text">
+            <i class="bi bi-clock-history"></i>
+            發現未儲存的草稿（${escapeHtml(formatDraftAge(draft.savedAt))}），要還原嗎？
+        </span>
+        <span class="draft-banner-actions">
+            <button type="button" class="btn btn-sm btn-primary" data-draft="restore">還原</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" data-draft="discard">刪除草稿</button>
+        </span>`;
+    banner.querySelector('[data-draft="restore"]').addEventListener('click', () => {
+        onRestore();
+        banner.remove();
+        showToast('✓ 已還原草稿');
+    });
+    banner.querySelector('[data-draft="discard"]').addEventListener('click', () => {
+        onDiscard();
+        banner.remove();
+    });
+    form.prepend(banner);
+}
+
+// 掛在 viewForm 尾端：進場偵測草稿 → 顯示 banner；並綁 debounce 自動儲存。
+function setupDraftAutosave(mode, recordId) {
+    const form = document.querySelector('.record-form');
+    if (!form) return;
+    const key = draftKey(mode, recordId);
+
+    // baseline = 目前乾淨表單的序列化；草稿只在偏離 baseline 後才寫，
+    // 改回原狀則清除，避免把 pristine 表單也存成草稿。
+    let baseline = JSON.stringify(buildFormPayload(mode));
+
+    const existing = readDraft(key);
+    if (existing && existing.payload) {
+        showDraftBanner(form, existing,
+            () => {
+                applyRecordToForm(mode, existing.payload);
+                baseline = JSON.stringify(buildFormPayload(mode)); // 還原後以草稿為新 baseline
+            },
+            () => clearDraft(key),
+        );
+    }
+
+    let timer = null;
+    const schedule = () => {
+        clearTimeout(timer);
+        timer = setTimeout(() => {
+            const current = JSON.stringify(buildFormPayload(mode));
+            if (current === baseline) {
+                clearDraft(key); // 改回原狀 → 不留草稿
+            } else {
+                writeDraft(key, mode, JSON.parse(current));
+            }
+        }, 300);
+    };
+
+    // input/change 抓原生輸入；click 抓 chip / 風味輪 / CoE / 分數等非輸入互動。
+    form.addEventListener('input', schedule);
+    form.addEventListener('change', schedule);
+    form.addEventListener('click', schedule);
+
+    // 供 submit 成功後清草稿 + 取消尚未觸發的 debounce（避免 clear 後又被寫回）。
+    state.currentForm.draftKey = key;
+    state.currentForm.cancelDraftSave = () => clearTimeout(timer);
+}
+
 function showToast(msg, ms = 2000, isError = false) {
     let el = document.getElementById('toastMsg');
     if (!el) {
@@ -1458,6 +1539,9 @@ async function viewForm(root, { mode, recordId, prefillShopId = null }) {
         document.getElementById('f-save-label').textContent = '儲存';
         document.getElementById('f-delete').hidden = true;
     }
+
+    // baseline 需拍在表單完整初始化／還原之後。
+    setupDraftAutosave(mode, recordId);
 }
 
 function applyShopPrefill(shopId) {
@@ -2972,9 +3056,13 @@ async function submitForm() {
         const payload = buildFormPayload(mode);
         if (recordId) {
             await api.updateRecord(mode, recordId, payload);
+            state.currentForm?.cancelDraftSave?.();
+            if (state.currentForm?.draftKey) clearDraft(state.currentForm.draftKey);
             showToast('✓ 已更新');
         } else {
             const created = await api.createRecord(mode, payload);
+            state.currentForm?.cancelDraftSave?.();
+            if (state.currentForm?.draftKey) clearDraft(state.currentForm.draftKey);
             showToast('✓ 已儲存');
             navigate(`/${mode}/${created.id}`);
             return;
