@@ -280,6 +280,143 @@ function fmtDate(iso) {
     return d.toLocaleDateString('zh-TW', { year: 'numeric', month: '2-digit', day: '2-digit' });
 }
 
+// ─── Form draft autosave (localStorage) ──────────────────────────────────────
+// 草稿 = 一份 record 形狀的 payload（buildFormPayload 產出、applyRecordToForm 還原）。
+// 讀寫全包 try/catch：隱私模式 / 配額滿時靜默降級，不影響表單運作。
+const DRAFT_PREFIX = 'coffee-review:draft:';
+const DRAFT_SCHEMA = 1;
+const DRAFT_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 天過期保護
+
+function draftKey(mode, recordId) {
+    return DRAFT_PREFIX + (recordId ? `${mode}/${recordId}` : `new/${mode}`);
+}
+
+function writeDraft(key, mode, payload) {
+    try {
+        localStorage.setItem(key, JSON.stringify({
+            schema: DRAFT_SCHEMA,
+            savedAt: Date.now(),
+            mode,
+            payload,
+        }));
+    } catch { /* localStorage 不可用 → 略過 */ }
+}
+
+function readDraft(key) {
+    let raw;
+    try {
+        raw = localStorage.getItem(key);
+    } catch { return null; }
+    if (!raw) return null;
+
+    let obj;
+    try {
+        obj = JSON.parse(raw);
+    } catch {
+        clearDraft(key); // 壞掉的 JSON 直接清掉
+        return null;
+    }
+    if (!obj || obj.schema !== DRAFT_SCHEMA || typeof obj.savedAt !== 'number') {
+        clearDraft(key); // 版本不符 / 結構壞掉
+        return null;
+    }
+    if (Date.now() - obj.savedAt > DRAFT_TTL_MS) {
+        clearDraft(key); // 過期
+        return null;
+    }
+    return obj; // { schema, savedAt, mode, payload }
+}
+
+function clearDraft(key) {
+    try {
+        localStorage.removeItem(key);
+    } catch { /* ignore */ }
+}
+
+function formatDraftAge(savedAt) {
+    const diff = Date.now() - savedAt;
+    const min = Math.floor(diff / 60000);
+    if (min < 1) return '剛剛';
+    if (min < 60) return `${min} 分鐘前`;
+    const hr = Math.floor(min / 60);
+    if (hr < 24) return `${hr} 小時前`;
+    return `${Math.floor(hr / 24)} 天前`;
+}
+
+// 內嵌還原列，插在表單最上方（不用 modal）。onRestore / onDiscard 由呼叫端提供。
+function showDraftBanner(form, draft, onRestore, onDiscard) {
+    form.querySelector('.draft-banner')?.remove();
+    const banner = document.createElement('div');
+    banner.className = 'draft-banner';
+    banner.setAttribute('role', 'status');
+    banner.innerHTML = `
+        <span class="draft-banner-text">
+            <i class="bi bi-clock-history"></i>
+            發現未儲存的草稿（${escapeHtml(formatDraftAge(draft.savedAt))}），要還原嗎？
+        </span>
+        <span class="draft-banner-actions">
+            <button type="button" class="btn btn-sm btn-primary" data-draft="restore">還原</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" data-draft="discard">刪除草稿</button>
+        </span>`;
+    banner.querySelector('[data-draft="restore"]').addEventListener('click', () => {
+        onRestore();
+        banner.remove();
+        showToast('✓ 已還原草稿');
+    });
+    banner.querySelector('[data-draft="discard"]').addEventListener('click', () => {
+        onDiscard();
+        banner.remove();
+    });
+    form.prepend(banner);
+}
+
+// 掛在 viewForm 尾端：進場偵測草稿 → 顯示 banner；並綁 debounce 自動儲存。
+function setupDraftAutosave(mode, recordId) {
+    const form = document.querySelector('.record-form');
+    if (!form) return;
+    const key = draftKey(mode, recordId);
+
+    // baseline = 目前乾淨表單的序列化；草稿只在偏離 baseline 後才寫，
+    // 改回原狀則清除，避免把 pristine 表單也存成草稿。
+    let baseline = JSON.stringify(buildFormPayload(mode));
+
+    const existing = readDraft(key);
+    if (existing && existing.payload) {
+        showDraftBanner(form, existing,
+            () => {
+                applyRecordToForm(mode, existing.payload);
+                baseline = JSON.stringify(buildFormPayload(mode)); // 還原後以草稿為新 baseline
+            },
+            () => clearDraft(key),
+        );
+    }
+
+    let timer = null;
+    const schedule = () => {
+        // 同步在事件當下就把 payload 算好（此時表單仍掛載）；setTimeout 只負責寫入。
+        // 如此即使使用者輸入後立刻離開頁面（表單被卸載、DOM 消失），最後一次輸入
+        // 仍會被存下，也不會因 buildFormPayload 讀不到 #f-shop 而在 timeout 內丟錯。
+        const current = JSON.stringify(buildFormPayload(mode));
+        clearTimeout(timer);
+        timer = setTimeout(() => {
+            if (current === baseline) {
+                clearDraft(key); // 改回原狀 → 不留草稿
+            } else {
+                writeDraft(key, mode, JSON.parse(current));
+            }
+        }, 300);
+    };
+
+    // input/change 抓原生輸入；click 抓 chip / 風味輪 / CoE / 分數等非輸入互動。
+    form.addEventListener('input', schedule);
+    form.addEventListener('change', schedule);
+    form.addEventListener('click', schedule);
+
+    // 供 submit 成功後清草稿 + 取消尚未觸發的 debounce（避免 clear 後又被寫回）。
+    state.currentForm.draftKey = key;
+    state.currentForm.cancelDraftSave = () => clearTimeout(timer);
+}
+
 function showToast(msg, ms = 2000, isError = false) {
     let el = document.getElementById('toastMsg');
     if (!el) {
@@ -1408,6 +1545,9 @@ async function viewForm(root, { mode, recordId, prefillShopId = null }) {
         document.getElementById('f-save-label').textContent = '儲存';
         document.getElementById('f-delete').hidden = true;
     }
+
+    // baseline 需拍在表單完整初始化／還原之後。
+    setupDraftAutosave(mode, recordId);
 }
 
 function applyShopPrefill(shopId) {
@@ -2922,9 +3062,13 @@ async function submitForm() {
         const payload = buildFormPayload(mode);
         if (recordId) {
             await api.updateRecord(mode, recordId, payload);
+            state.currentForm?.cancelDraftSave?.();
+            if (state.currentForm?.draftKey) clearDraft(state.currentForm.draftKey);
             showToast('✓ 已更新');
         } else {
             const created = await api.createRecord(mode, payload);
+            state.currentForm?.cancelDraftSave?.();
+            if (state.currentForm?.draftKey) clearDraft(state.currentForm.draftKey);
             showToast('✓ 已儲存');
             navigate(`/${mode}/${created.id}`);
             return;
@@ -2961,6 +3105,142 @@ async function deleteCurrentRecord() {
     }
 }
 
+// 把一份 record 形狀物件（來自 api 或草稿）套進目前掛載的表單 DOM。
+function applyRecordToForm(mode, r) {
+    // shop — the hidden input holds any id regardless of cache, so a deleted
+    // shop's FK is preserved on save; renderShopTriggerLabel shows the fallback.
+    const shopSel = document.getElementById('f-shop');
+    shopSel.value = r.shop_id || '';
+    renderShopTriggerLabel();
+    refreshImportBeanForShop(mode, shopSel.value);
+
+    // common fields
+    document.getElementById('f-defects').value = r.defects || '';
+    document.getElementById('f-notes').value = r.notes || '';
+    if (r.notes) expandNotesSlot('f-notes', { focus: false });
+    updateDefectsSummary();
+
+    if (mode === 'cupping') {
+        document.getElementById('f-cupping-bean').value = r.bean_name || '';
+        ['origin', 'process', 'grind', 'water_temp', 'ratio', 'method', 'extraction_time', 'blend_composition']
+            .forEach(k => {
+                const el = document.getElementById(`f-${k}`);
+                if (el && r[k] != null) el.value = r[k];
+            });
+        setBrewingMethodChip(r.method || '');
+        setProcessChip(r.process || '');
+        populateOriginDatalist();
+        if (r.roast != null) {
+            const roastRadio = document.querySelector(`input[name="roast"][value="${CSS.escape(r.roast)}"]`);
+            if (roastRadio) roastRadio.checked = true;
+        }
+        // Legacy rows have no bean_type. Only auto-pick when there's an
+        // unambiguous signal (a blend_composition); otherwise force the
+        // user to choose on save.
+        const fallback = r.blend_composition ? 'blend' : '';
+        setBeanType('cupping', r.bean_type || fallback);
+    } else {
+        const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val ?? ''; };
+        set('f-visit_date', r.visit_date || '');
+        set('f-price', r.price ?? '');
+        set('f-item_ordered', r.item_ordered || '');
+        applyItemValue(r.item_ordered || '');
+        set('f-tasting-bean', r.bean_name || '');
+        // Legacy tasting rows have no bean_type — leave empty so the user picks one on edit.
+        setBeanType('tasting', r.bean_type || '');
+
+        const ax = r.ambience_axes || {};
+        setScaleValue('quiet_lively',  ax.quiet_lively ?? null);
+        setScaleValue('bright_dim',    ax.bright_dim ?? null);
+        setScaleValue('spacious_cozy', ax.spacious_cozy ?? null);
+        setChipValues('facilities', r.facilities || []);
+        setChipValues('style',      r.space_style ? [r.space_style] : []);
+        setChipValues('materials',  r.space_materials || []);
+        const sr = r.service_ratings || {};
+        setScaleValue('greeting', sr.greeting ?? null);
+        setScaleValue('speed',    sr.speed ?? null);
+        setChipValues('food',   r.menu_food || []);
+        setChipValues('drinks', r.drink_types || []);
+
+        const setNotes = (id, val) => {
+            const el = document.getElementById(id);
+            if (!el) return;
+            el.value = val ?? '';
+            if (val) expandNotesSlot(id, { focus: false });
+        };
+        setNotes('f-visit-ambience-notes', r.atmosphere_notes);
+        setNotes('f-visit-style-notes',    r.decor_notes);
+        setNotes('f-visit-service-notes',  r.service_notes);
+    }
+
+    // CoE
+    coeState.coeTotal = typeof r.coe_total === 'number' ? r.coe_total : 82;
+    coeState.selectedTierId = r.coe_tier_id || tierFromScore(coeState.coeTotal).id;
+    renderTierMedals();
+    renderScoreChips(tierById(coeState.selectedTierId));
+    refreshTotalDisplay();
+
+    // Evaluations
+    if (r.evaluations) {
+        referenceFields.forEach(f => {
+            const data = r.evaluations[f.key];
+            if (!data) return;
+            if (typeof data.score === 'number') setReferenceScore(f.key, data.score);
+            const notesEl = document.getElementById(`${f.key}_notes`);
+            if (notesEl) {
+                notesEl.value = data.notes || '';
+                if (data.notes) expandNotesSlot(`${f.key}_notes`, { focus: false });
+            }
+            const chipSpec = evaluationOptions[f.key];
+            if (chipSpec) {
+                Object.keys(chipSpec).forEach(subKey => {
+                    writeChipGroup(`${f.key}_${subKey}`, data[subKey]);
+                });
+            }
+            if (f.hasFlavorWheel && Array.isArray(data.flavors)) {
+                applyFlavorSelections(`${f.key}_flavorList`, data.flavors);
+            }
+            updateRefSummary(f.key);
+        });
+    }
+
+    if (r.observation) {
+        observationFields.forEach(f => {
+            const data = r.observation[f.key];
+            if (!data) return;
+            const notesEl = document.getElementById(`${f.key}_notes`);
+            if (notesEl) {
+                notesEl.value = data.notes || '';
+                if (data.notes) expandNotesSlot(`${f.key}_notes`, { focus: false });
+            }
+            if (f.key === 'aroma') {
+                const dry = document.getElementById(`${f.key}_dryAroma`);
+                const wet = document.getElementById(`${f.key}_wetAroma`);
+                if (dry) dry.value = data.dryAroma || '';
+                if (wet) wet.value = data.wetAroma || '';
+            }
+            const chipSpec = observationOptions[f.key];
+            if (chipSpec) {
+                Object.keys(chipSpec).forEach(subKey => {
+                    writeChipGroup(`${f.key}_${subKey}`, data[subKey]);
+                });
+            }
+            if (f.hasFlavorWheel && Array.isArray(data.flavors)) {
+                applyFlavorSelections(`${f.key}_flavorList`, data.flavors);
+            }
+            updateObservationSummary(f.key);
+        });
+    }
+
+    // Defects chip
+    if (Array.isArray(r.defects_tags)) {
+        writeChipGroup('defects_tags', r.defects_tags);
+    }
+    updateDefectsSummary();
+
+    updateEstimatedTotalDisplay();
+}
+
 async function loadRecordIntoForm(mode, recordId) {
     try {
         const r = await api.getRecord(mode, recordId);
@@ -2970,138 +3250,7 @@ async function loadRecordIntoForm(mode, recordId) {
             return;
         }
 
-        // shop — the hidden input holds any id regardless of cache, so a deleted
-        // shop's FK is preserved on save; renderShopTriggerLabel shows the fallback.
-        const shopSel = document.getElementById('f-shop');
-        shopSel.value = r.shop_id || '';
-        renderShopTriggerLabel();
-        refreshImportBeanForShop(mode, shopSel.value);
-
-        // common fields
-        document.getElementById('f-defects').value = r.defects || '';
-        document.getElementById('f-notes').value = r.notes || '';
-        if (r.notes) expandNotesSlot('f-notes', { focus: false });
-        updateDefectsSummary();
-
-        if (mode === 'cupping') {
-            document.getElementById('f-cupping-bean').value = r.bean_name || '';
-            ['origin', 'process', 'grind', 'water_temp', 'ratio', 'method', 'extraction_time', 'blend_composition']
-                .forEach(k => {
-                    const el = document.getElementById(`f-${k}`);
-                    if (el && r[k] != null) el.value = r[k];
-                });
-            setBrewingMethodChip(r.method || '');
-            setProcessChip(r.process || '');
-            populateOriginDatalist();
-            if (r.roast != null) {
-                const roastRadio = document.querySelector(`input[name="roast"][value="${CSS.escape(r.roast)}"]`);
-                if (roastRadio) roastRadio.checked = true;
-            }
-            // Legacy rows have no bean_type. Only auto-pick when there's an
-            // unambiguous signal (a blend_composition); otherwise force the
-            // user to choose on save.
-            const fallback = r.blend_composition ? 'blend' : '';
-            setBeanType('cupping', r.bean_type || fallback);
-        } else {
-            const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val ?? ''; };
-            set('f-visit_date', r.visit_date || '');
-            set('f-price', r.price ?? '');
-            set('f-item_ordered', r.item_ordered || '');
-            applyItemValue(r.item_ordered || '');
-            set('f-tasting-bean', r.bean_name || '');
-            // Legacy tasting rows have no bean_type — leave empty so the user picks one on edit.
-            setBeanType('tasting', r.bean_type || '');
-
-            const ax = r.ambience_axes || {};
-            setScaleValue('quiet_lively',  ax.quiet_lively ?? null);
-            setScaleValue('bright_dim',    ax.bright_dim ?? null);
-            setScaleValue('spacious_cozy', ax.spacious_cozy ?? null);
-            setChipValues('facilities', r.facilities || []);
-            setChipValues('style',      r.space_style ? [r.space_style] : []);
-            setChipValues('materials',  r.space_materials || []);
-            const sr = r.service_ratings || {};
-            setScaleValue('greeting', sr.greeting ?? null);
-            setScaleValue('speed',    sr.speed ?? null);
-            setChipValues('food',   r.menu_food || []);
-            setChipValues('drinks', r.drink_types || []);
-
-            const setNotes = (id, val) => {
-                const el = document.getElementById(id);
-                if (!el) return;
-                el.value = val ?? '';
-                if (val) expandNotesSlot(id, { focus: false });
-            };
-            setNotes('f-visit-ambience-notes', r.atmosphere_notes);
-            setNotes('f-visit-style-notes',    r.decor_notes);
-            setNotes('f-visit-service-notes',  r.service_notes);
-        }
-
-        // CoE
-        coeState.coeTotal = typeof r.coe_total === 'number' ? r.coe_total : 82;
-        coeState.selectedTierId = r.coe_tier_id || tierFromScore(coeState.coeTotal).id;
-        renderTierMedals();
-        renderScoreChips(tierById(coeState.selectedTierId));
-        refreshTotalDisplay();
-
-        // Evaluations
-        if (r.evaluations) {
-            referenceFields.forEach(f => {
-                const data = r.evaluations[f.key];
-                if (!data) return;
-                if (typeof data.score === 'number') setReferenceScore(f.key, data.score);
-                const notesEl = document.getElementById(`${f.key}_notes`);
-                if (notesEl) {
-                    notesEl.value = data.notes || '';
-                    if (data.notes) expandNotesSlot(`${f.key}_notes`, { focus: false });
-                }
-                const chipSpec = evaluationOptions[f.key];
-                if (chipSpec) {
-                    Object.keys(chipSpec).forEach(subKey => {
-                        writeChipGroup(`${f.key}_${subKey}`, data[subKey]);
-                    });
-                }
-                if (f.hasFlavorWheel && Array.isArray(data.flavors)) {
-                    applyFlavorSelections(`${f.key}_flavorList`, data.flavors);
-                }
-                updateRefSummary(f.key);
-            });
-        }
-
-        if (r.observation) {
-            observationFields.forEach(f => {
-                const data = r.observation[f.key];
-                if (!data) return;
-                const notesEl = document.getElementById(`${f.key}_notes`);
-                if (notesEl) {
-                    notesEl.value = data.notes || '';
-                    if (data.notes) expandNotesSlot(`${f.key}_notes`, { focus: false });
-                }
-                if (f.key === 'aroma') {
-                    const dry = document.getElementById(`${f.key}_dryAroma`);
-                    const wet = document.getElementById(`${f.key}_wetAroma`);
-                    if (dry) dry.value = data.dryAroma || '';
-                    if (wet) wet.value = data.wetAroma || '';
-                }
-                const chipSpec = observationOptions[f.key];
-                if (chipSpec) {
-                    Object.keys(chipSpec).forEach(subKey => {
-                        writeChipGroup(`${f.key}_${subKey}`, data[subKey]);
-                    });
-                }
-                if (f.hasFlavorWheel && Array.isArray(data.flavors)) {
-                    applyFlavorSelections(`${f.key}_flavorList`, data.flavors);
-                }
-                updateObservationSummary(f.key);
-            });
-        }
-
-        // Defects chip
-        if (Array.isArray(r.defects_tags)) {
-            writeChipGroup('defects_tags', r.defects_tags);
-        }
-        updateDefectsSummary();
-
-        updateEstimatedTotalDisplay();
+        applyRecordToForm(mode, r);
     } catch (e) {
         console.error(e);
         showErrorToast('讀取失敗：' + (e.message || e));
