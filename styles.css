@@ -1794,3 +1794,15 @@ hr { border-color: var(--border); opacity: 0.7; }
     gap: 0.4rem;
     flex-shrink: 0;
 }
+
+/* ───── Account (個人) ────────────────────────────────────────────────── */
+.account-card { max-width: 22rem; margin: 2rem auto; }
+.account-avatar {
+    width: 5rem; height: 5rem; border-radius: 50%;
+    object-fit: cover; margin-bottom: 0.75rem;
+}
+.account-avatar-placeholder {
+    font-size: 4rem; color: var(--text-muted); line-height: 1;
+    display: block; margin-bottom: 0.5rem;
+}
+.account-email { word-break: break-all; }

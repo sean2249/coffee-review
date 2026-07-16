@@ -3915,5 +3915,6 @@ async function viewShopDetail(root, shopId) {
 window.addEventListener('hashchange', renderRoute);
 document.addEventListener('DOMContentLoaded', () => {
     if (!location.hash) location.hash = '#/records';
+    initAuth();
     renderRoute();
 });
