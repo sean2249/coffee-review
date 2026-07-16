@@ -492,6 +492,9 @@ async function ensureSupabase() {
     const mod = await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.110.0/+esm');
     supabaseClient = mod.createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.anonKey, {
         db: { schema: SUPABASE_CONFIG.schema || 'public' },
+        // supabase-js 預設是 implicit flow（token 落在 URL hash，會撞到本 app 的 hash router，
+        // 登入回跳後停在「找不到頁面」）。強制 PKCE：回跳改帶 ?code= 在 query，不干擾 hash router。
+        auth: { flowType: 'pkce' },
     });
     return supabaseClient;
 }

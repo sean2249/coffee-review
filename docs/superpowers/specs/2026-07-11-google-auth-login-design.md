@@ -62,7 +62,9 @@ banner 風格。不引框架、不改 build，沿用 Supabase JS 內建 auth。
   若 `isCloudReady()` → 建 client → `getSession()` → 寫 `state.user` →
   註冊 `onAuthStateChange` 更新 `state.user`，若目前停在 `#/me` 則重繪。
 - `createClient` 沿用預設 auth 選項（`persistSession` / `autoRefreshToken` /
-  `detectSessionInUrl` / PKCE 皆預設開），只保留既有 `db.schema`，不新增選項。
+  `detectSessionInUrl` 皆預設開），保留既有 `db.schema`，並**明確指定 `auth.flowType: 'pkce'`**。
+  （supabase-js v2 預設是 implicit flow，token 會落在 URL hash 撞到本 app 的 hash router；
+  PKCE 改帶 `?code=` 在 query，才不干擾路由。）
 - **登入**：`signInWithOAuth({ provider:'google', options:{ redirectTo: origin+pathname } })`。
   回跳帶 `?code=` 在 query string（不干擾 hash router），`detectSessionInUrl`
   自動換 token 並清 URL；`onAuthStateChange` 觸發 `SIGNED_IN` → 更新 UI。

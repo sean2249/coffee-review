@@ -276,6 +276,9 @@ alter table coffee.tasting_records alter column schema_version set default 4;
 
 G. **升級到多租戶第一階段（#78：加 `user_id`）**：在 SQL Editor 執行：
 
+> ⚠️ 這段 `alter table` 必須在**部署新前端之前**先跑。前端 insert 會帶上 `user_id`，
+> 欄位不存在時 PostgREST 會拒絕所有新增。此欄為 nullable、additive，提前套用對現行版本零影響。
+
 ```sql
 alter table coffee.cupping_records add column if not exists user_id uuid references auth.users(id);
 alter table coffee.tasting_records add column if not exists user_id uuid references auth.users(id);
