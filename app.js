@@ -234,6 +234,7 @@ const state = {
     knownOriginsLoaded: false,
     knownItems: [],     // distinct item_ordered strings from past tasting records
     knownItemsLoaded: false,
+    user: null,         // 目前登入者（Supabase session user）或 null
 };
 
 const COMMON_COUNTRIES = [
@@ -548,7 +549,7 @@ const api = {
         const sb = await ensureSupabase();
         if (!sb) throw new Error('cloud_not_ready');
         const { data, error } = await sb.from(SUPABASE_CONFIG.shopsTable)
-            .insert(payload).select().single();
+            .insert(stampUserId(payload)).select().single();
         if (error) throw error;
         return data;
     },
@@ -612,7 +613,7 @@ const api = {
         const sb = await ensureSupabase();
         if (!sb) throw new Error('cloud_not_ready');
         const table = type === 'tasting' ? SUPABASE_CONFIG.tastingTable : SUPABASE_CONFIG.cuppingTable;
-        const { data, error } = await sb.from(table).insert(payload).select().single();
+        const { data, error } = await sb.from(table).insert(stampUserId(payload)).select().single();
         if (error) throw error;
         return data;
     },
@@ -634,6 +635,53 @@ const api = {
         if (error) throw error;
     },
 };
+
+// ─── Auth (Google OAuth session) ─────────────────────────────────────────────
+// 登入純為多租戶鋪路：本階段不強制 RLS，未登入照樣可讀寫。
+function currentUserId() {
+    return state.user?.id ?? null;
+}
+
+function setSessionUser(user) {
+    state.user = user || null;
+    // 若正停在個人頁，登入狀態變化要即時反映到 UI。
+    if (parseHash().parts[0] === 'me') renderRoute();
+}
+
+// 新增時蓋上擁有者；未登入為 null。刻意不放進 buildFormPayload，避免污染草稿快照。
+function stampUserId(payload) {
+    return { ...payload, user_id: currentUserId() };
+}
+
+async function signInWithGoogle() {
+    const sb = await ensureSupabase();
+    if (!sb) return;
+    // 回跳到 app 根（origin+pathname）；PKCE 的 ?code= 落在 query，不干擾 hash router。
+    const redirectTo = window.location.origin + window.location.pathname;
+    const { error } = await sb.auth.signInWithOAuth({
+        provider: 'google',
+        options: { redirectTo },
+    });
+    if (error) showErrorToast('登入失敗：' + (error.message || error));
+}
+
+async function signOutUser() {
+    const sb = await ensureSupabase();
+    if (!sb) return;
+    const { error } = await sb.auth.signOut();
+    if (error) showErrorToast('登出失敗：' + (error.message || error));
+}
+
+async function initAuth() {
+    if (!isCloudReady()) return;
+    const sb = await ensureSupabase();
+    if (!sb) return;
+    const { data } = await sb.auth.getSession();
+    setSessionUser(data?.session?.user ?? null);
+    sb.auth.onAuthStateChange((_event, session) => {
+        setSessionUser(session?.user ?? null);
+    });
+}
 
 async function refreshShopsCache() {
     if (!isCloudReady()) return;
