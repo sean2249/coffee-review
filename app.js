@@ -683,6 +683,41 @@ async function initAuth() {
     });
 }
 
+// ─── View: 個人 ──────────────────────────────────────────────────────────────
+function accountMarkup({ cloudReady, user }) {
+    if (!cloudReady) return renderCloudWarning();
+    if (!user) {
+        return `<div class="card account-card"><div class="card-body text-center">
+            <i class="bi bi-person-circle account-avatar-placeholder"></i>
+            <h3 class="card-title">個人</h3>
+            <p class="text-muted">登入以綁定你的記錄與店家。</p>
+            <button class="btn btn-primary" id="account-signin">
+                <i class="bi bi-google me-2"></i>使用 Google 登入
+            </button>
+        </div></div>`;
+    }
+    const meta = user.user_metadata || {};
+    const name = meta.full_name || meta.name || '';
+    const avatar = meta.avatar_url || '';
+    const email = user.email || '';
+    return `<div class="card account-card"><div class="card-body text-center">
+        ${avatar
+            ? `<img class="account-avatar" src="${escapeHtml(avatar)}" alt="" referrerpolicy="no-referrer">`
+            : '<i class="bi bi-person-circle account-avatar-placeholder"></i>'}
+        ${name ? `<h3 class="card-title">${escapeHtml(name)}</h3>` : ''}
+        ${email ? `<p class="text-muted account-email">${escapeHtml(email)}</p>` : ''}
+        <button class="btn btn-outline-secondary" id="account-signout">
+            <i class="bi bi-box-arrow-right me-2"></i>登出
+        </button>
+    </div></div>`;
+}
+
+function viewAccount(root) {
+    root.innerHTML = accountMarkup({ cloudReady: isCloudReady(), user: state.user });
+    document.getElementById('account-signin')?.addEventListener('click', signInWithGoogle);
+    document.getElementById('account-signout')?.addEventListener('click', signOutUser);
+}
+
 async function refreshShopsCache() {
     if (!isCloudReady()) return;
     try {
@@ -742,6 +777,8 @@ async function renderRoute() {
         await viewShopsList(root);
     } else if (parts[0] === 'shops' && parts[1]) {
         await viewShopDetail(root, parts[1]);
+    } else if (parts[0] === 'me') {
+        viewAccount(root);
     } else {
         viewNotFound(root);
     }
@@ -755,6 +792,7 @@ function updateTabbarActive() {
     let activeRoute = '/records';
     if (first === 'new') activeRoute = '/new';
     else if (first === 'shops') activeRoute = '/shops';
+    else if (first === 'me') activeRoute = '/me';
     document.querySelectorAll('.tabbar-btn').forEach(a => {
         const isActive = a.dataset.route === activeRoute;
         a.classList.toggle('active', isActive);
