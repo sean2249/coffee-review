@@ -57,7 +57,7 @@ jobs:
               echo "GOOGLE_MAPS_API_KEY not set — Google Places features will be disabled in the deployed site."
           fi
 
-      - uses: actions/configure-pages@v5
+      - uses: actions/configure-pages@v6
 
       - uses: actions/upload-pages-artifact@v3
         with:
