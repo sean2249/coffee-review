@@ -274,6 +274,37 @@ alter table coffee.tasting_records alter column schema_version set default 4;
 舊欄位 `atmosphere_tags` / `decor_tags` / `service_tags` 保留為 legacy（唯讀）：既有紀錄的標籤
 仍會在詳情頁以「（舊版）」標示顯示，新紀錄則改寫入上述 v4 欄位、不再寫入這三欄。
 
+G. **升級到多租戶第一階段（#78：加 `user_id`）**：在 SQL Editor 執行：
+
+> ⚠️ 這段 `alter table` 必須在**部署新前端之前**先跑。前端 insert 會帶上 `user_id`，
+> 欄位不存在時 PostgREST 會拒絕所有新增。此欄為 nullable、additive，提前套用對現行版本零影響。
+
+```sql
+alter table coffee.cupping_records add column if not exists user_id uuid references auth.users(id);
+alter table coffee.tasting_records add column if not exists user_id uuid references auth.users(id);
+alter table coffee.shops           add column if not exists user_id uuid references auth.users(id);
+```
+
+回填既有資料給某帳號（該帳號需先用 Google 登入過一次，`auth.users` 才有列）：
+
+```sql
+update coffee.cupping_records c set user_id = u.id
+    from auth.users u where u.email = '你的登入信箱' and c.user_id is null;
+update coffee.tasting_records t set user_id = u.id
+    from auth.users u where u.email = '你的登入信箱' and t.user_id is null;
+update coffee.shops s set user_id = u.id
+    from auth.users u where u.email = '你的登入信箱' and s.user_id is null;
+```
+
+> RLS 本階段**仍維持 open access**（未登入照樣可讀寫）；真正的每列存取隔離留待後續。
+
+**啟用 Google 登入**：Supabase Dashboard → Authentication → Providers → Google，
+填入 Google Cloud OAuth 的 Client ID / Secret；Authentication → URL Configuration
+的 *Redirect URLs* 加入本機 static server（如 `http://localhost:8000`）與
+GitHub Pages 網址（如 `https://<user>.github.io/coffee-review/`）。
+Google Cloud Console 的 OAuth *Authorized redirect URI* 需填
+`https://<project-ref>.supabase.co/auth/v1/callback`。
+
 ### 2. 前端配置
 
 連線資訊**不放在 repo**。兩種來源擇一：

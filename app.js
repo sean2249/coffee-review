@@ -234,6 +234,7 @@ const state = {
     knownOriginsLoaded: false,
     knownItems: [],     // distinct item_ordered strings from past tasting records
     knownItemsLoaded: false,
+    user: null,         // 目前登入者（Supabase session user）或 null
 };
 
 const COMMON_COUNTRIES = [
@@ -491,6 +492,9 @@ async function ensureSupabase() {
     const mod = await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.110.0/+esm');
     supabaseClient = mod.createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.anonKey, {
         db: { schema: SUPABASE_CONFIG.schema || 'public' },
+        // supabase-js 預設是 implicit flow（token 落在 URL hash，會撞到本 app 的 hash router，
+        // 登入回跳後停在「找不到頁面」）。強制 PKCE：回跳改帶 ?code= 在 query，不干擾 hash router。
+        auth: { flowType: 'pkce' },
     });
     return supabaseClient;
 }
@@ -548,7 +552,7 @@ const api = {
         const sb = await ensureSupabase();
         if (!sb) throw new Error('cloud_not_ready');
         const { data, error } = await sb.from(SUPABASE_CONFIG.shopsTable)
-            .insert(payload).select().single();
+            .insert(stampUserId(payload)).select().single();
         if (error) throw error;
         return data;
     },
@@ -612,7 +616,7 @@ const api = {
         const sb = await ensureSupabase();
         if (!sb) throw new Error('cloud_not_ready');
         const table = type === 'tasting' ? SUPABASE_CONFIG.tastingTable : SUPABASE_CONFIG.cuppingTable;
-        const { data, error } = await sb.from(table).insert(payload).select().single();
+        const { data, error } = await sb.from(table).insert(stampUserId(payload)).select().single();
         if (error) throw error;
         return data;
     },
@@ -634,6 +638,114 @@ const api = {
         if (error) throw error;
     },
 };
+
+// ─── Auth (Google OAuth session) ─────────────────────────────────────────────
+// 登入純為多租戶鋪路：本階段不強制 RLS，未登入照樣可讀寫。
+function currentUserId() {
+    return state.user?.id ?? null;
+}
+
+function setSessionUser(user) {
+    state.user = user || null;
+    // 若正停在個人頁，登入狀態變化要即時反映到 UI。
+    if (parseHash().parts[0] === 'me') renderRoute();
+}
+
+// 新增時蓋上擁有者；未登入為 null。刻意不放進 buildFormPayload，避免污染草稿快照。
+function stampUserId(payload) {
+    return { ...payload, user_id: currentUserId() };
+}
+
+async function signInWithGoogle() {
+    // 這是 click handler，且 ensureSupabase 會動態 import（CDN 失敗會 reject）。
+    // 包 try/catch 才不會冒出 unhandled rejection，錯誤一律走 toast。
+    try {
+        const sb = await ensureSupabase();
+        if (!sb) return;
+        // 回跳到 app 根（origin+pathname）；PKCE 的 ?code= 落在 query，不干擾 hash router。
+        const redirectTo = window.location.origin + window.location.pathname;
+        const { error } = await sb.auth.signInWithOAuth({
+            provider: 'google',
+            options: { redirectTo },
+        });
+        if (error) showErrorToast('登入失敗：' + (error.message || error));
+    } catch (e) {
+        showErrorToast('登入失敗：' + (e.message || e));
+    }
+}
+
+async function signOutUser() {
+    try {
+        const sb = await ensureSupabase();
+        if (!sb) return;
+        const { error } = await sb.auth.signOut();
+        if (error) showErrorToast('登出失敗：' + (error.message || error));
+    } catch (e) {
+        showErrorToast('登出失敗：' + (e.message || e));
+    }
+}
+
+async function initAuth() {
+    if (!isCloudReady()) return;
+    // 開場 fire-and-forget；失敗就維持登出狀態，不打斷首屏，也不冒 unhandled rejection。
+    try {
+        const sb = await ensureSupabase();
+        if (!sb) return;
+        const { data } = await sb.auth.getSession();
+        setSessionUser(data?.session?.user ?? null);
+        sb.auth.onAuthStateChange((_event, session) => {
+            setSessionUser(session?.user ?? null);
+        });
+    } catch (e) {
+        console.error('initAuth 失敗：', e);
+    }
+}
+
+// ─── View: 個人 ──────────────────────────────────────────────────────────────
+// 頭像來自 OAuth provider profile；只允許 http/https，擋掉 data:/file: 等非預期 scheme
+// （escapeHtml 已防屬性逃逸，這層是避免載入非預期資源，兼顧未來多 provider）。
+function safeHttpUrl(url) {
+    try {
+        const u = new URL(url);
+        return (u.protocol === 'http:' || u.protocol === 'https:') ? url : '';
+    } catch {
+        return '';
+    }
+}
+
+function accountMarkup({ cloudReady, user }) {
+    if (!cloudReady) return renderCloudWarning();
+    if (!user) {
+        return `<div class="card account-card"><div class="card-body text-center">
+            <i class="bi bi-person-circle account-avatar-placeholder"></i>
+            <h3 class="card-title">個人</h3>
+            <p class="text-muted">登入以綁定你的記錄與店家。</p>
+            <button class="btn btn-primary" id="account-signin">
+                <i class="bi bi-google me-2"></i>使用 Google 登入
+            </button>
+        </div></div>`;
+    }
+    const meta = user.user_metadata || {};
+    const name = meta.full_name || meta.name || '';
+    const avatar = safeHttpUrl(meta.avatar_url || '');
+    const email = user.email || '';
+    return `<div class="card account-card"><div class="card-body text-center">
+        ${avatar
+            ? `<img class="account-avatar" src="${escapeHtml(avatar)}" alt="" referrerpolicy="no-referrer">`
+            : '<i class="bi bi-person-circle account-avatar-placeholder"></i>'}
+        ${name ? `<h3 class="card-title">${escapeHtml(name)}</h3>` : ''}
+        ${email ? `<p class="text-muted account-email">${escapeHtml(email)}</p>` : ''}
+        <button class="btn btn-outline-secondary" id="account-signout">
+            <i class="bi bi-box-arrow-right me-2"></i>登出
+        </button>
+    </div></div>`;
+}
+
+function viewAccount(root) {
+    root.innerHTML = accountMarkup({ cloudReady: isCloudReady(), user: state.user });
+    document.getElementById('account-signin')?.addEventListener('click', signInWithGoogle);
+    document.getElementById('account-signout')?.addEventListener('click', signOutUser);
+}
 
 async function refreshShopsCache() {
     if (!isCloudReady()) return;
@@ -694,6 +806,8 @@ async function renderRoute() {
         await viewShopsList(root);
     } else if (parts[0] === 'shops' && parts[1]) {
         await viewShopDetail(root, parts[1]);
+    } else if (parts[0] === 'me') {
+        viewAccount(root);
     } else {
         viewNotFound(root);
     }
@@ -707,6 +821,7 @@ function updateTabbarActive() {
     let activeRoute = '/records';
     if (first === 'new') activeRoute = '/new';
     else if (first === 'shops') activeRoute = '/shops';
+    else if (first === 'me') activeRoute = '/me';
     document.querySelectorAll('.tabbar-btn').forEach(a => {
         const isActive = a.dataset.route === activeRoute;
         a.classList.toggle('active', isActive);
@@ -3829,5 +3944,6 @@ async function viewShopDetail(root, shopId) {
 window.addEventListener('hashchange', renderRoute);
 document.addEventListener('DOMContentLoaded', () => {
     if (!location.hash) location.hash = '#/records';
+    initAuth();
     renderRoute();
 });
