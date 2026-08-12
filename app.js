@@ -657,36 +657,62 @@ function stampUserId(payload) {
 }
 
 async function signInWithGoogle() {
-    const sb = await ensureSupabase();
-    if (!sb) return;
-    // 回跳到 app 根（origin+pathname）；PKCE 的 ?code= 落在 query，不干擾 hash router。
-    const redirectTo = window.location.origin + window.location.pathname;
-    const { error } = await sb.auth.signInWithOAuth({
-        provider: 'google',
-        options: { redirectTo },
-    });
-    if (error) showErrorToast('登入失敗：' + (error.message || error));
+    // 這是 click handler，且 ensureSupabase 會動態 import（CDN 失敗會 reject）。
+    // 包 try/catch 才不會冒出 unhandled rejection，錯誤一律走 toast。
+    try {
+        const sb = await ensureSupabase();
+        if (!sb) return;
+        // 回跳到 app 根（origin+pathname）；PKCE 的 ?code= 落在 query，不干擾 hash router。
+        const redirectTo = window.location.origin + window.location.pathname;
+        const { error } = await sb.auth.signInWithOAuth({
+            provider: 'google',
+            options: { redirectTo },
+        });
+        if (error) showErrorToast('登入失敗：' + (error.message || error));
+    } catch (e) {
+        showErrorToast('登入失敗：' + (e.message || e));
+    }
 }
 
 async function signOutUser() {
-    const sb = await ensureSupabase();
-    if (!sb) return;
-    const { error } = await sb.auth.signOut();
-    if (error) showErrorToast('登出失敗：' + (error.message || error));
+    try {
+        const sb = await ensureSupabase();
+        if (!sb) return;
+        const { error } = await sb.auth.signOut();
+        if (error) showErrorToast('登出失敗：' + (error.message || error));
+    } catch (e) {
+        showErrorToast('登出失敗：' + (e.message || e));
+    }
 }
 
 async function initAuth() {
     if (!isCloudReady()) return;
-    const sb = await ensureSupabase();
-    if (!sb) return;
-    const { data } = await sb.auth.getSession();
-    setSessionUser(data?.session?.user ?? null);
-    sb.auth.onAuthStateChange((_event, session) => {
-        setSessionUser(session?.user ?? null);
-    });
+    // 開場 fire-and-forget；失敗就維持登出狀態，不打斷首屏，也不冒 unhandled rejection。
+    try {
+        const sb = await ensureSupabase();
+        if (!sb) return;
+        const { data } = await sb.auth.getSession();
+        setSessionUser(data?.session?.user ?? null);
+        sb.auth.onAuthStateChange((_event, session) => {
+            setSessionUser(session?.user ?? null);
+        });
+    } catch (e) {
+        console.error('initAuth 失敗：', e);
+    }
 }
 
 // ─── View: 個人 ──────────────────────────────────────────────────────────────
+// 頭像來自 OAuth provider profile；只允許 http/https，擋掉 data:/file: 等非預期 scheme
+// （escapeHtml 已防屬性逃逸，這層是避免載入非預期資源，兼顧未來多 provider）。
+function safeHttpUrl(url) {
+    try {
+        const u = new URL(url);
+        return (u.protocol === 'http:' || u.protocol === 'https:') ? url : '';
+    } catch {
+        return '';
+    }
+}
+
 function accountMarkup({ cloudReady, user }) {
     if (!cloudReady) return renderCloudWarning();
     if (!user) {
@@ -701,7 +727,7 @@ function accountMarkup({ cloudReady, user }) {
     }
     const meta = user.user_metadata || {};
     const name = meta.full_name || meta.name || '';
-    const avatar = meta.avatar_url || '';
+    const avatar = safeHttpUrl(meta.avatar_url || '');
     const email = user.email || '';
     return `<div class="card account-card"><div class="card-body text-center">
         ${avatar

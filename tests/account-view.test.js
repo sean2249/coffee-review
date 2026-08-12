@@ -34,6 +34,30 @@ describe('accountMarkup', () => {
         });
         expect(html).not.toContain('<b>hack</b>');
     });
+
+    it('drops a non-http(s) avatar scheme and falls back to the placeholder', () => {
+        const html = win.accountMarkup({
+            cloudReady: true,
+            user: { email: 'x', user_metadata: { full_name: 'Sean', avatar_url: 'data:image/png;base64,AAAA' } },
+        });
+        expect(html).not.toContain('data:image/png');
+        expect(html).not.toContain('<img');
+        expect(html).toContain('account-avatar-placeholder');
+    });
+});
+
+describe('safeHttpUrl', () => {
+    it('keeps http and https URLs', () => {
+        expect(win.safeHttpUrl('https://x/y.png')).toBe('https://x/y.png');
+        expect(win.safeHttpUrl('http://x/y.png')).toBe('http://x/y.png');
+    });
+
+    it('rejects non-http(s) schemes and malformed input', () => {
+        expect(win.safeHttpUrl('data:image/png;base64,AAAA')).toBe('');
+        expect(win.safeHttpUrl('javascript:alert(1)')).toBe('');
+        expect(win.safeHttpUrl('not a url')).toBe('');
+        expect(win.safeHttpUrl('')).toBe('');
+    });
 });
 
 describe('#/me route', () => {
