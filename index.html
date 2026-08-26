@@ -250,14 +250,6 @@
                 </div>
             </div>
 
-            <!-- Tasting-only: vibe/decor/service chips + notes -->
-            <div class="card" data-mode-only="tasting">
-                <div class="card-body">
-                    <h3 class="card-title"><i class="bi bi-emoji-smile"></i>探訪心得</h3>
-                    <div id="tagSections"></div>
-                </div>
-            </div>
-
             <!-- CoE total (shared) -->
             <div class="card coe-card">
                 <div class="card-body">
@@ -311,6 +303,7 @@
                     </button>
                 </header>
                 <form class="modal-body" id="shop-modal-form">
+                    <!-- 店家資料一律取自 Google Places：沒有任何手動輸入的店名/位置欄位。 -->
                     <div class="mb-2 sm-place-row" hidden>
                         <label for="sm-place-search" class="form-label">Google Places 搜尋</label>
                         <div class="input-group">
@@ -320,23 +313,15 @@
                             </button>
                         </div>
                         <div id="sm-place-results" class="sm-place-results"></div>
-                        <div class="form-text">選定後會自動帶入店名與地址，下方欄位仍可手動修改。</div>
+                        <div class="form-text">店名與地址一律以 Google Places 為準，不可手動修改。</div>
                     </div>
-                    <div class="mb-2">
-                        <label for="sm-name" class="form-label">店家名稱 *</label>
-                        <input type="text" class="form-control" id="sm-name" required maxlength="120">
-                    </div>
-                    <div class="mb-2">
-                        <label for="sm-location" class="form-label">位置</label>
-                        <input type="text" class="form-control" id="sm-location" placeholder="例：台北市大安區">
-                    </div>
-                    <div class="mb-2">
-                        <label for="sm-intro" class="form-label">介紹 / 備註</label>
-                        <textarea class="form-control" id="sm-intro" rows="3"></textarea>
+                    <div class="empty-state sm-place-unavailable" hidden>
+                        <i class="bi bi-exclamation-triangle"></i>
+                        <p>需先設定 Google Maps API key 才能新增店家。</p>
                     </div>
                     <div class="modal-actions">
                         <button type="button" class="btn btn-outline-secondary" data-action="cancel">取消</button>
-                        <button type="submit" class="btn btn-primary">儲存</button>
+                        <button type="submit" class="btn btn-primary" id="sm-save" disabled>儲存</button>
                     </div>
                 </form>
             </div>

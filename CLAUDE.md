@@ -129,14 +129,24 @@ purpose.md, 口感.md design notes (Chinese)
 | `#/records` (default) | List with type + shop filters |
 | `#/new[/cupping\|tasting]` | Empty form, mode selectable |
 | `#/cupping/<id>` / `#/tasting/<id>` | Edit (same template, mode locked) |
-| `#/shops` / `#/shops/<id>` | Shop CRUD + per-shop records |
+| `#/shops` / `#/shops/<id>` | Shop registry + per-shop records + 我的店家筆記 |
+| `#/me` | Google sign-in / sign-out |
+
+Every data route is gated by `renderAccessGate(root)` — it renders the cloud warning when
+`isCloudReady()` is false, the sign-in prompt when `state.user` is null, and returns
+`true` in both cases so the caller bails before issuing any query. Bootstrap `await`s
+`initAuth()` before the first `renderRoute()`, otherwise a signed-in user's first paint
+would be the sign-in prompt.
 
 **Two record types share one form template** (`#tpl-form` in index.html). The mode toggle
 flips visibility via `data-mode-only="cupping|tasting"` and `data-mode-text="..."`.
 `setFormMode` (app.js:1290) sets display + `required` on shop select.
 
-**Supabase API layer**: `api` object (app.js:327) wraps the schema-scoped client; tables
-live in the `coffee` schema by default (`cupping_records`, `tasting_records`, `shops`).
+**Supabase API layer**: `api` object wraps the schema-scoped client; tables live in the
+`coffee` schema by default (`cupping_records`, `tasting_records`, `shops`, `shop_notes`).
+Inserts are stamped by the api layer, never by `buildFormPayload` (that would pollute the
+draft snapshot): records get `stampUserId` (owner), shops get `stampCreatedBy` (a note,
+not access control). Updates never restamp.
 Use `maybeSingle()` for fetch-by-id so a missing row resolves to `{data: null}` instead
 of throwing PGRST116. The schema SQL is in README.md — when changing columns, update the
 SQL block there too.
@@ -205,6 +215,10 @@ bump `VERSION` in `sw.js:6`.
   `buildFormPayload` / `loadRecordIntoForm` branch in app.js.
 - Adding a column? Add to (1) `buildFormPayload`, (2) `loadRecordIntoForm`, (3) the SQL
   block in README.md, and (4) the Supabase project schema. There are no migrations.
+- Shop-level experience (氛圍 / 設施 / 風格 / 材質 / 服務 / 餐點 / 飲料) lives in
+  `coffee.shop_notes` — one row per (shop, user) — **not** in `tasting_records`. Its
+  editor is `initTagSections(container)` mounted by the shop detail page; payload
+  assembly is `buildShopNotePayload` / `applyShopNoteToEditor`.
 - Adding evaluation fields? Update `referenceFields` / `observationFields` and verify the
   card list / detail card still renders sensibly with old records (treat missing keys as
   default).
@@ -214,8 +228,15 @@ bump `VERSION` in `sw.js:6`.
 
 ## Things to leave alone unless asked
 
-- The RLS "open access" policy in README.md is intentional for personal use; do not switch
-  to auth-based policies without explicit request.
+- RLS is **per-row isolated** (README section H), not open access. Records and
+  `shop_notes` are `user_id = auth.uid()`; `shops` is a shared registry readable by any
+  signed-in user. `anon` has no grants on the `coffee` schema at all. Don't loosen this.
+- `coffee.shops` is a **projection of Google Places**: `name` / `location` / `lat` / `lng`
+  only ever come from the Places API, and the UI offers no free-text field for them
+  (create = place picker, update = "從 Google 重新同步"). A DB trigger freezes
+  `google_place_id`. Don't add a manual name input "for convenience".
+- Shop-to-record FKs are `ON DELETE RESTRICT` on purpose — shops and records are
+  independent tables, so deleting a shop must never touch anyone's records.
 - The CoE total (`coe_total`) is **input, not computed** — don't "fix" it by summing
   reference scores. (Separately, the **預估總分 / estimated total** *is* a deliberate
   computed display — `36 + 8 reference scores`, `computeEstimatedTotalFromRecord` — shown

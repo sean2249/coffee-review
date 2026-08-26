@@ -69,30 +69,49 @@ create extension if not exists pgcrypto;
 -- 建立獨立 schema
 create schema if not exists coffee;
 
--- 開放 PostgREST 與 anon 角色存取
-grant usage on schema coffee to anon, authenticated, service_role;
-grant all on all tables    in schema coffee to anon, authenticated, service_role;
-grant all on all sequences in schema coffee to anon, authenticated, service_role;
+-- 開放 PostgREST 存取。**刻意不含 anon** —— 本 schema 的資料一律需要登入，
+-- 連 schema usage 都不給，未登入者連表都解析不到（RLS 之外的第二道防線）。
+-- 日後新增表/序列也不會漏掉：default privileges 同樣不含 anon。
+grant usage on schema coffee to authenticated, service_role;
+grant all on all tables    in schema coffee to authenticated, service_role;
+grant all on all sequences in schema coffee to authenticated, service_role;
 alter default privileges in schema coffee
-    grant all on tables to anon, authenticated, service_role;
+    grant all on tables to authenticated, service_role;
 alter default privileges in schema coffee
-    grant all on sequences to anon, authenticated, service_role;
+    grant all on sequences to authenticated, service_role;
 
--- shops — 店家主表
+-- shops — 店家公共 registry（所有登入者共享）
+-- 身分由 google_place_id 定義；name / location / lat / lng 全部是 Google Places 的
+-- 投影，App 不提供手動輸入，只能透過「從 Google 重新同步」更新。
+-- name 刻意「不」設 unique：不同分店本來就可能同名（例：星巴克）。
 create table coffee.shops (
     id                      uuid primary key default gen_random_uuid(),
-    name                    text not null unique,
+    name                    text not null,
     location                text,
-    intro                   text,
-    google_place_id         text unique,
+    google_place_id         text not null unique,
     lat                     numeric,
     lng                     numeric,
     google_data_fetched_at  timestamptz,
+    created_by              uuid references auth.users(id),   -- 建立者註記，不參與存取控制
     created_at              timestamptz not null default now(),
     updated_at              timestamptz not null default now()
 );
 create index shops_name_idx on coffee.shops(lower(name));
 -- google_place_id 的 unique 已自動建索引，不需額外 create index
+
+-- 店家身分不可變：擋掉「把一家店偷換成另一個 Google 地點」。
+create or replace function coffee.shops_freeze_place_id()
+returns trigger language plpgsql as $$
+begin
+    if new.google_place_id is distinct from old.google_place_id then
+        raise exception 'google_place_id is immutable';
+    end if;
+    return new;
+end;
+$$;
+create trigger shops_freeze_place_id
+    before update on coffee.shops
+    for each row execute function coffee.shops_freeze_place_id();
 
 create or replace function coffee.touch_updated_at()
 returns trigger language plpgsql as $$
@@ -102,12 +121,13 @@ create trigger shops_touch_updated_at
     before update on coffee.shops
     for each row execute function coffee.touch_updated_at();
 
--- cupping_records — 杯測 (自家沖煮 / 豆評估)。shop_id 選填。
+-- cupping_records — 杯測 (自家沖煮 / 豆評估)。shop_id 選填。私有：只有 owner 讀得到。
 -- bean_type: 'single' (單品) | 'blend' (配方豆)
 --   配方豆時 origin / process 留空，改用 blend_composition 描述組成。
 create table coffee.cupping_records (
     id                 uuid primary key default gen_random_uuid(),
-    shop_id            uuid references coffee.shops(id) on delete set null,
+    -- restrict：店家與記錄是兩張獨立的表，刪店家不得改動或摧毀任何人的記錄
+    shop_id            uuid references coffee.shops(id) on delete restrict,
     title              text,
     bean_name          text,
     bean_type          text check (bean_type in ('single', 'blend')),
@@ -126,17 +146,19 @@ create table coffee.cupping_records (
     coe_tier_id        text,
     evaluations        jsonb not null default '{}'::jsonb,
     observation        jsonb not null default '{}'::jsonb,
-    schema_version     int   not null default 2,
+    schema_version     int   not null default 3,
+    user_id            uuid references auth.users(id),
     created_at         timestamptz not null default now()
 );
 create index cupping_shop_id_idx    on coffee.cupping_records(shop_id);
 create index cupping_created_at_idx on coffee.cupping_records(created_at desc);
 
--- tasting_records — 品鑑 (店家飲品)。shop_id 必填 + cascade delete。
+-- tasting_records — 品鑑「這次喝的那一杯」。shop_id 必填。私有：只有 owner 讀得到。
+-- 店家體驗（氛圍 / 設施 / 風格 / 材質 / 服務 / 餐點 / 飲料）不在這裡，見 shop_notes。
 -- bean_type: 'single' (單品) | 'blend' (配方豆)
 create table coffee.tasting_records (
     id                uuid primary key default gen_random_uuid(),
-    shop_id           uuid not null references coffee.shops(id) on delete cascade,
+    shop_id           uuid not null references coffee.shops(id) on delete restrict,
     title             text,
     visit_date        date,
     item_ordered      text,
@@ -144,40 +166,72 @@ create table coffee.tasting_records (
     bean_name         text,
     bean_type         text check (bean_type in ('single', 'blend')),
     brewing_method    text,
-    -- 探訪心得 v4：氣氛雙極量表 / 設施 / 風格 / 材質 / 服務量表 / 菜單
-    ambience_axes     jsonb not null default '{}'::jsonb,  -- {quiet_lively, bright_dim, spacious_cozy} 各 1-3 或 null
-    facilities        text[] not null default '{}',        -- 設施多選
-    space_style       text,                                -- 空間風格 (單選，可自訂)
-    space_materials   text[] not null default '{}',        -- 材質多選
-    service_ratings   jsonb not null default '{}'::jsonb,  -- {greeting, speed} 各 1-3 或 null
-    menu_food         text[] not null default '{}',        -- 餐點 (輕食/甜點…，可自訂)
-    drink_types       text[] not null default '{}',        -- 飲料類型 (可自訂)
-    -- 舊版多選標籤 (schema_version <= 3)：唯讀保留，新紀錄不再寫入
-    atmosphere_tags   text[] not null default '{}',
-    decor_tags        text[] not null default '{}',
-    service_tags      text[] not null default '{}',
-    atmosphere_notes  text,
-    decor_notes       text,
-    service_notes     text,
     defects           text,
     notes             text,
     coe_total         numeric,
     coe_tier_id       text,
     evaluations       jsonb not null default '{}'::jsonb,
     observation       jsonb not null default '{}'::jsonb,
-    schema_version    int   not null default 2,
+    schema_version    int   not null default 5,
+    user_id           uuid references auth.users(id),
     created_at        timestamptz not null default now()
 );
 create index tasting_shop_id_idx    on coffee.tasting_records(shop_id);
 create index tasting_created_at_idx on coffee.tasting_records(created_at desc);
 
--- RLS — 個人用 = open access；多人用務必改
-alter table coffee.shops             enable row level security;
-alter table coffee.cupping_records   enable row level security;
-alter table coffee.tasting_records   enable row level security;
-create policy "open access" on coffee.shops           for all using (true) with check (true);
-create policy "open access" on coffee.cupping_records for all using (true) with check (true);
-create policy "open access" on coffee.tasting_records for all using (true) with check (true);
+-- shop_notes — 我對這家店的個人筆記（介紹 + 店家體驗）。每人每店一筆，完全私有。
+-- 店家本身是共享的，「對店家的評價」不是 —— 所以這些欄位不放在 shops 上。
+create table coffee.shop_notes (
+    id                     uuid primary key default gen_random_uuid(),
+    shop_id                uuid not null references coffee.shops(id) on delete cascade,
+    user_id                uuid not null references auth.users(id),
+    intro                  text,                                -- 個人介紹 / 備註
+    ambience_axes          jsonb  not null default '{}'::jsonb, -- {quiet_lively, bright_dim, spacious_cozy} 各 1-3 或 null
+    facilities             text[] not null default '{}',        -- 設施多選
+    space_style            text,                                -- 空間風格 (單選，可自訂)
+    space_materials        text[] not null default '{}',        -- 材質多選
+    service_ratings        jsonb  not null default '{}'::jsonb, -- {greeting, speed} 各 1-3 或 null
+    menu_food              text[] not null default '{}',        -- 餐點 (可自訂)
+    drink_types            text[] not null default '{}',        -- 飲料類型 (可自訂)
+    ambience_notes         text,
+    style_notes            text,
+    service_notes          text,
+    -- 舊版多選標籤 (tasting schema_version <= 3 遷移而來)：唯讀保留
+    legacy_atmosphere_tags text[] not null default '{}',
+    legacy_decor_tags      text[] not null default '{}',
+    legacy_service_tags    text[] not null default '{}',
+    schema_version         int    not null default 1,
+    created_at             timestamptz not null default now(),
+    updated_at             timestamptz not null default now(),
+    unique (shop_id, user_id)
+);
+create index shop_notes_shop_id_idx on coffee.shop_notes(shop_id);
+create trigger shop_notes_touch_updated_at
+    before update on coffee.shop_notes
+    for each row execute function coffee.touch_updated_at();
+
+-- RLS — 每列隔離。記錄與筆記只有 owner 讀得到；店家是共享 registry。
+-- anon 一律無權：上面的 grant 區塊本來就沒給它任何權限，policy 再擋一層。
+alter table coffee.shops           enable row level security;
+alter table coffee.shop_notes      enable row level security;
+alter table coffee.cupping_records enable row level security;
+alter table coffee.tasting_records enable row level security;
+
+-- 店家：所有登入者可讀、可新增、可更新（更新的唯一路徑是「從 Google 重新同步」，
+-- 寫進去的值來自 Places API 而非使用者輸入）。只有建立者可刪，且上面的 FK
+-- restrict 會讓還有記錄的店家刪不掉。
+create policy "shops readable"   on coffee.shops for select to authenticated using (true);
+create policy "shops insertable" on coffee.shops for insert to authenticated with check (auth.uid() is not null);
+create policy "shops updatable"  on coffee.shops for update to authenticated using (true) with check (true);
+create policy "shops deletable"  on coffee.shops for delete to authenticated using (created_by = auth.uid());
+
+-- 記錄與筆記：只有 owner。
+create policy "own notes"   on coffee.shop_notes      for all to authenticated
+    using (user_id = auth.uid()) with check (user_id = auth.uid());
+create policy "own cupping" on coffee.cupping_records for all to authenticated
+    using (user_id = auth.uid()) with check (user_id = auth.uid());
+create policy "own tasting" on coffee.tasting_records for all to authenticated
+    using (user_id = auth.uid()) with check (user_id = auth.uid());
 ```
 
 B. **曝光 schema 給 API**：Dashboard → Settings → API → 找 *Exposed schemas* → 加入 `coffee`。
@@ -217,8 +271,8 @@ create table if not exists coffee.tags (
     created_at  timestamptz not null default now()
 );
 alter table coffee.tags enable row level security;
-create policy "open access" on coffee.tags for all using (true) with check (true);
-grant all on coffee.tags to anon, authenticated, service_role;
+create policy "tags readable" on coffee.tags for select to authenticated using (true);
+grant all on coffee.tags to authenticated, service_role;
 
 alter table coffee.cupping_records
     add column if not exists tag_ids uuid[] not null default '{}';
@@ -298,6 +352,180 @@ update coffee.shops s set user_id = u.id
 
 > RLS 本階段**仍維持 open access**（未登入照樣可讀寫）；真正的每列存取隔離留待後續。
 
+H. **升級到多租戶第二階段（RLS 收緊 + 店家/品鑑拆表）**
+
+這一刀做三件事：(1) 每列存取隔離 —— 未登入什麼都讀不到；(2) `shops` 變成純 Google Places
+投影的公共 registry，個人標註搬到新的 `shop_notes`；(3) 店家體驗欄位從 `tasting_records`
+搬到 `shop_notes`（每人每店一筆，而不是每次到訪一筆）。
+
+> ⚠️ **執行順序很重要**。additive 的部分（H-1 ~ H-3）可以先跑；`drop column` 與
+> RLS 收緊（H-4 ~ H-6）**必須等新前端部署完**才能執行 —— 舊前端還會送已刪除的欄位，
+> 提前跑會讓線上版所有寫入被 PostgREST 拒絕、所有讀取變空白。
+
+**H-1 建表 + 備份**
+
+```sql
+create table if not exists coffee.shop_notes (
+    id                     uuid primary key default gen_random_uuid(),
+    shop_id                uuid not null references coffee.shops(id) on delete cascade,
+    user_id                uuid not null references auth.users(id),
+    intro                  text,
+    ambience_axes          jsonb  not null default '{}'::jsonb,
+    facilities             text[] not null default '{}',
+    space_style            text,
+    space_materials        text[] not null default '{}',
+    service_ratings        jsonb  not null default '{}'::jsonb,
+    menu_food              text[] not null default '{}',
+    drink_types            text[] not null default '{}',
+    ambience_notes         text,
+    style_notes            text,
+    service_notes          text,
+    legacy_atmosphere_tags text[] not null default '{}',
+    legacy_decor_tags      text[] not null default '{}',
+    legacy_service_tags    text[] not null default '{}',
+    schema_version         int    not null default 1,
+    created_at             timestamptz not null default now(),
+    updated_at             timestamptz not null default now(),
+    unique (shop_id, user_id)
+);
+create index if not exists shop_notes_shop_id_idx on coffee.shop_notes(shop_id);
+create trigger shop_notes_touch_updated_at
+    before update on coffee.shop_notes
+    for each row execute function coffee.touch_updated_at();
+
+-- drop column 前的安全網，驗收完再手動清掉
+create table coffee._backup_tasting as select * from coffee.tasting_records;
+create table coffee._backup_shops   as select * from coffee.shops;
+```
+
+**H-2 回填遺漏的 owner**（未登入時新增的列 `user_id` 是 null，收緊後會對所有人隱形）
+
+```sql
+update coffee.cupping_records c set user_id = u.id
+    from auth.users u where u.email = '你的登入信箱' and c.user_id is null;
+update coffee.tasting_records t set user_id = u.id
+    from auth.users u where u.email = '你的登入信箱' and t.user_id is null;
+update coffee.shops s set user_id = u.id
+    from auth.users u where u.email = '你的登入信箱' and s.user_id is null;
+-- 驗證：三張表都應該回 0
+select count(*) from coffee.cupping_records where user_id is null;
+select count(*) from coffee.tasting_records where user_id is null;
+select count(*) from coffee.shops           where user_id is null;
+```
+
+**H-3 把店家體驗搬進 shop_notes**
+
+沒有店家體驗資料的品鑑不會產生筆記。同一個 (店家, 使用者) 有多筆品鑑時，取最新一筆。
+
+```sql
+insert into coffee.shop_notes (
+    shop_id, user_id, ambience_axes, facilities, space_style, space_materials,
+    service_ratings, menu_food, drink_types, ambience_notes, style_notes, service_notes,
+    legacy_atmosphere_tags, legacy_decor_tags, legacy_service_tags)
+select distinct on (t.shop_id, t.user_id)
+    t.shop_id, t.user_id, t.ambience_axes, t.facilities, t.space_style, t.space_materials,
+    t.service_ratings, t.menu_food, t.drink_types, t.atmosphere_notes, t.decor_notes, t.service_notes,
+    t.atmosphere_tags, t.decor_tags, t.service_tags
+from coffee.tasting_records t
+where t.user_id is not null
+  and (t.ambience_axes <> '{}'::jsonb or t.facilities <> '{}' or t.space_style is not null
+       or t.space_materials <> '{}' or t.service_ratings <> '{}'::jsonb or t.menu_food <> '{}'
+       or t.drink_types <> '{}' or t.atmosphere_notes is not null or t.decor_notes is not null
+       or t.service_notes is not null or t.atmosphere_tags <> '{}' or t.decor_tags <> '{}'
+       or t.service_tags <> '{}')
+order by t.shop_id, t.user_id, t.created_at desc
+on conflict (shop_id, user_id) do nothing;
+
+-- 驗證：筆數應等於「有店家體驗資料的 (店家, 使用者) 組合數」，且逐欄抽查對得起來
+select count(*) from coffee.shop_notes;
+```
+
+**H-4 ⚠️ 部署新前端之後才執行：拿掉搬走的欄位**
+
+```sql
+alter table coffee.tasting_records
+    drop column ambience_axes, drop column facilities, drop column space_style,
+    drop column space_materials, drop column service_ratings, drop column menu_food,
+    drop column drink_types, drop column atmosphere_notes, drop column decor_notes,
+    drop column service_notes, drop column atmosphere_tags, drop column decor_tags,
+    drop column service_tags;
+alter table coffee.tasting_records alter column schema_version set default 5;
+alter table coffee.shops drop column intro;   -- 個人標註已改由 shop_notes.intro 承載
+```
+
+**H-5 ⚠️ 部署新前端之後才執行：店家改成 Google Places 投影**
+
+```sql
+alter table coffee.shops rename column user_id to created_by;   -- 語意：建立者，不參與存取控制
+alter table coffee.shops alter column google_place_id set not null;
+alter table coffee.shops drop constraint shops_name_key;        -- 不同分店可以同名
+
+-- 店家身分不可變
+create or replace function coffee.shops_freeze_place_id()
+returns trigger language plpgsql as $$
+begin
+    if new.google_place_id is distinct from old.google_place_id then
+        raise exception 'google_place_id is immutable';
+    end if;
+    return new;
+end;
+$$;
+create trigger shops_freeze_place_id
+    before update on coffee.shops
+    for each row execute function coffee.shops_freeze_place_id();
+
+-- 兩張表獨立：刪店家不得改動或摧毀任何人的記錄
+alter table coffee.tasting_records drop constraint tasting_records_shop_id_fkey;
+alter table coffee.tasting_records add  constraint tasting_records_shop_id_fkey
+    foreign key (shop_id) references coffee.shops(id) on delete restrict;
+alter table coffee.cupping_records drop constraint cupping_records_shop_id_fkey;
+alter table coffee.cupping_records add  constraint cupping_records_shop_id_fkey
+    foreign key (shop_id) references coffee.shops(id) on delete restrict;
+```
+
+**H-6 ⚠️ 最後一步：收緊 RLS**
+
+執行後未登入就再也讀不到任何資料。policy 與 grant 雙保險。
+
+```sql
+drop policy if exists "open access" on coffee.shops;
+drop policy if exists "open access" on coffee.cupping_records;
+drop policy if exists "open access" on coffee.tasting_records;
+drop policy if exists "open access" on coffee.tags;
+
+-- 舊安裝當初把 table / sequence / schema usage 都 grant 給 anon 了，這裡要全部收回。
+-- 只收 table 是不夠的：default privileges 沒收乾淨的話，日後新增的表或序列
+-- 又會自動開給 anon。
+revoke all on all tables    in schema coffee from anon;
+revoke all on all sequences in schema coffee from anon;
+revoke usage on schema coffee from anon;
+alter default privileges in schema coffee revoke all on tables    from anon;
+alter default privileges in schema coffee revoke all on sequences from anon;
+
+alter table coffee.shop_notes enable row level security;
+
+create policy "shops readable"   on coffee.shops for select to authenticated using (true);
+create policy "shops insertable" on coffee.shops for insert to authenticated with check (auth.uid() is not null);
+create policy "shops updatable"  on coffee.shops for update to authenticated using (true) with check (true);
+create policy "shops deletable"  on coffee.shops for delete to authenticated using (created_by = auth.uid());
+
+create policy "own notes"   on coffee.shop_notes      for all to authenticated
+    using (user_id = auth.uid()) with check (user_id = auth.uid());
+create policy "own cupping" on coffee.cupping_records for all to authenticated
+    using (user_id = auth.uid()) with check (user_id = auth.uid());
+create policy "own tasting" on coffee.tasting_records for all to authenticated
+    using (user_id = auth.uid()) with check (user_id = auth.uid());
+
+-- tags 目前 app 沒用到，收成登入者唯讀
+create policy "tags readable" on coffee.tags for select to authenticated using (true);
+```
+
+**驗收**：用 anon key 直打 REST 應該拿不到任何資料。
+
+```bash
+curl -s "$SUPABASE_URL/rest/v1/cupping_records?select=*" -H "apikey: $SUPABASE_ANON_KEY"
+```
+
 **啟用 Google 登入**：Supabase Dashboard → Authentication → Providers → Google，
 填入 Google Cloud OAuth 的 Client ID / Secret；Authentication → URL Configuration
 的 *Redirect URLs* 加入本機 static server（如 `http://localhost:8000`）與
@@ -320,7 +548,7 @@ cp config.example.js config.js
 
 **B. 部署到 GitHub Pages**
 
-在 repo Settings 加以下 secret（前兩個必要，第三個啟用 Google Places 補完才需要）：
+在 repo Settings 加以下 secret（三個都是必要的 —— 沒有 `GOOGLE_MAPS_API_KEY` 就無法新增店家）：
 
 | Name | Value |
 |---|---|
@@ -333,8 +561,14 @@ Settings → Pages → Source 選 **GitHub Actions**。
 
 ### ⚠️ 安全提醒
 
-`anon key` 會出現在前端 JS bundle，任何能打開頁面的人都拿得到。上面的 `open access` 政策表示
-*只要有 anon key 的人都能 CRUD 全部資料*。這對個人用工具是合理的；若要分享公開部署或多人共用，請改用 `auth.uid()` 比對 + Supabase Auth。
+`anon key` 會出現在前端 JS bundle，任何能打開頁面的人都拿得到 —— 所以安全邊界不能靠它。
+本 schema 的 RLS 已收成每列隔離，且 `anon` 角色對 `coffee` schema **連 usage 都沒有**
+（表、序列、default privileges 一併不給），未登入者連表都解析不到。
+在那之上，記錄與 `shop_notes` 只有 `user_id = auth.uid()` 的人讀得到；`shops` 是共享
+registry，只有登入者能讀，而且刪除限建立者。
+
+若你是從舊版（`open access`）升級上來的，務必確認 section H 的 H-6 已經跑過 ——
+在那之前，只要有 anon key 的人都能 CRUD 全部資料。
 
 ## 開發者：Lint
 
