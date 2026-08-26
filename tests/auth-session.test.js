@@ -34,3 +34,33 @@ describe('stampUserId', () => {
         expect(p).toEqual({ a: 1 });
     });
 });
+
+describe('stampCreatedBy', () => {
+    // 店家是共享 registry：user_id 對它沒有存取控制意義，只記錄建立者。
+    it('adds created_by = null when logged out', () => {
+        win.setSessionUser(null);
+        expect(win.stampCreatedBy({ name: 'x' })).toEqual({ name: 'x', created_by: null });
+    });
+
+    it('adds the logged-in user id', () => {
+        win.setSessionUser({ id: 'user-1' });
+        expect(win.stampCreatedBy({ name: 'x' })).toEqual({ name: 'x', created_by: 'user-1' });
+    });
+
+    it('never writes user_id — that column is gone from shops', () => {
+        win.setSessionUser({ id: 'user-1' });
+        expect(win.stampCreatedBy({ name: 'x' })).not.toHaveProperty('user_id');
+    });
+});
+
+describe('isSignedIn', () => {
+    it('is false when logged out', () => {
+        win.setSessionUser(null);
+        expect(win.isSignedIn()).toBe(false);
+    });
+
+    it('is true when logged in', () => {
+        win.setSessionUser({ id: 'user-1' });
+        expect(win.isSignedIn()).toBe(true);
+    });
+});

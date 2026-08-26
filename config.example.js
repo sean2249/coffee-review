@@ -18,8 +18,8 @@ window.SUPABASE_CONFIG = {
     // shopsTable:   'shops',
 };
 
-// 可選：啟用 Google Places 自動補完（店家搜尋 / Google Maps 連結）。
-// 留空字串或整段刪除即停用該功能，不影響其他流程。
+// 必要：店家資料一律取自 Google Places（店名 / 地址 / 座標皆不可手動輸入）。
+// 留空字串或整段刪除將無法新增店家 —— 其餘功能不受影響。
 window.GOOGLE_CONFIG = {
     mapsApiKey: '',           // Google Cloud Console → APIs & Services → Credentials
 };

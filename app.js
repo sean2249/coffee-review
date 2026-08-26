@@ -19,6 +19,7 @@ const SUPABASE_CONFIG = Object.assign({
     cuppingTable: 'cupping_records',
     tastingTable: 'tasting_records',
     shopsTable:   'shops',
+    shopNotesTable: 'shop_notes',
 }, (typeof window !== 'undefined' && window.SUPABASE_CONFIG) || {});
 
 // ─── Tier definitions ────────────────────────────────────────────────────────
@@ -552,7 +553,7 @@ const api = {
         const sb = await ensureSupabase();
         if (!sb) throw new Error('cloud_not_ready');
         const { data, error } = await sb.from(SUPABASE_CONFIG.shopsTable)
-            .insert(stampUserId(payload)).select().single();
+            .insert(stampCreatedBy(payload)).select().single();
         if (error) throw error;
         return data;
     },
@@ -637,23 +638,66 @@ const api = {
         const { error } = await sb.from(table).delete().eq('id', id);
         if (error) throw error;
     },
+
+    // 店家筆記：每人每店最多一筆。RLS 已限定 user_id = auth.uid()，這裡仍明寫
+    // .eq('user_id') 讓查詢在 policy 之外也語意清楚。
+    async getShopNote(shopId) {
+        const sb = await ensureSupabase();
+        if (!sb) return null;
+        const uid = currentUserId();
+        if (!uid) return null;
+        const { data, error } = await sb.from(SUPABASE_CONFIG.shopNotesTable)
+            .select('*').eq('shop_id', shopId).eq('user_id', uid).maybeSingle();
+        if (error) throw error;
+        return data;
+    },
+
+    async upsertShopNote(shopId, payload) {
+        const sb = await ensureSupabase();
+        if (!sb) throw new Error('cloud_not_ready');
+        const uid = currentUserId();
+        if (!uid) throw new Error('not_signed_in');
+        const { data, error } = await sb.from(SUPABASE_CONFIG.shopNotesTable)
+            .upsert({ ...payload, shop_id: shopId, user_id: uid },
+                { onConflict: 'shop_id,user_id' })
+            .select().single();
+        if (error) throw error;
+        return data;
+    },
 };
 
 // ─── Auth (Google OAuth session) ─────────────────────────────────────────────
-// 登入純為多租戶鋪路：本階段不強制 RLS，未登入照樣可讀寫。
+// RLS 已收緊成每列隔離：未登入時 anon 讀不到任何資料，所以除了個人頁以外的頁面
+// 一律 gate 到登入提示（見 renderSignInRequired）。
 function currentUserId() {
     return state.user?.id ?? null;
 }
 
-function setSessionUser(user) {
-    state.user = user || null;
-    // 若正停在個人頁，登入狀態變化要即時反映到 UI。
-    if (parseHash().parts[0] === 'me') renderRoute();
+function isSignedIn() {
+    return !!state.user;
 }
 
-// 新增時蓋上擁有者；未登入為 null。刻意不放進 buildFormPayload，避免污染草稿快照。
+// bootstrap 期間（initAuth 尚未回來）先不重繪：首次 render 由 bootstrap 自己發，
+// 否則 getSession / INITIAL_SESSION 會各觸發一次，開場重複拉資料。
+let authBootstrapped = false;
+
+function setSessionUser(user) {
+    const nextId = user?.id ?? null;
+    const changed = currentUserId() !== nextId;
+    state.user = user || null;
+    // 登入/登出會改變每一頁能看到什麼（RLS 依 auth.uid() 過濾），所以一律重繪，
+    // 不再只重繪個人頁。比對 uid 是為了濾掉 TOKEN_REFRESHED 這類同人事件。
+    if (authBootstrapped && changed) renderRoute();
+}
+
+// 新增時蓋上擁有者。刻意不放進 buildFormPayload，避免污染草稿快照。
 function stampUserId(payload) {
     return { ...payload, user_id: currentUserId() };
+}
+
+// 店家是共享 registry，user_id 對它沒有存取控制意義，只記錄「誰第一次把這家店加進來」。
+function stampCreatedBy(payload) {
+    return { ...payload, created_by: currentUserId() };
 }
 
 async function signInWithGoogle() {
@@ -996,10 +1040,7 @@ function openFilterDrawer() {
 
 // ─── View: records list ─────────────────────────────────────────────────────
 async function viewRecordsList(root, query = {}) {
-    if (!isCloudReady()) {
-        root.innerHTML = renderCloudWarning();
-        return;
-    }
+    if (renderAccessGate(root)) return;
 
     hydrateFilterFromQuery(query);
 
@@ -1125,6 +1166,33 @@ function renderCloudWarning() {
     </div></div>`;
 }
 
+// 未登入時的統一擋板。資料頁一律走這裡，不發任何查詢 —— RLS 也會擋，但前端先擋
+// 才不會讓使用者看到一片空清單、以為資料不見了。
+function renderSignInRequired() {
+    return `<div class="card account-card"><div class="card-body text-center">
+        <i class="bi bi-lock account-avatar-placeholder"></i>
+        <h3 class="card-title">請先登入</h3>
+        <p class="text-muted">你的記錄與店家筆記只有登入後才看得到。</p>
+        <button class="btn btn-primary" id="gate-signin">
+            <i class="bi bi-google me-2"></i>使用 Google 登入
+        </button>
+    </div></div>`;
+}
+
+// 所有資料頁共用的前置檢查。回傳 true 代表已經接手渲染，呼叫端應直接 return。
+function renderAccessGate(root) {
+    if (!isCloudReady()) {
+        root.innerHTML = renderCloudWarning();
+        return true;
+    }
+    if (!isSignedIn()) {
+        root.innerHTML = renderSignInRequired();
+        document.getElementById('gate-signin')?.addEventListener('click', signInWithGoogle);
+        return true;
+    }
+    return false;
+}
+
 // ─── New record mode picker (shared by #/new page and shop dialog) ───────────
 // Returns the two record-type option anchors. Pass a shopId to carry it into the
 // form via ?shop= so the new record is pre-linked to that shop.
@@ -1147,6 +1215,7 @@ function newModePickerOptions(shopId = null) {
 
 // ─── View: new record mode picker ───────────────────────────────────────────
 function viewNewModePicker(root) {
+    if (renderAccessGate(root)) return;
     root.innerHTML = `
         <div class="card new-mode-picker-card">
             <div class="card-body">
@@ -1159,10 +1228,7 @@ function viewNewModePicker(root) {
 
 // ─── View: record detail (read-only) ───────────────────────────────────────
 async function viewRecordDetail(root, { mode, recordId }) {
-    if (!isCloudReady()) {
-        root.innerHTML = renderCloudWarning();
-        return;
-    }
+    if (renderAccessGate(root)) return;
     root.innerHTML = '<div class="empty-state"><i class="bi bi-hourglass-split"></i>讀取中…</div>';
     try {
         await refreshShopsCache();
@@ -1220,7 +1286,7 @@ function renderRecordDetail(mode, r) {
 
         ${renderDetailBasicCard(mode, r)}
         ${mode === 'cupping' ? renderDetailBrewingCard(r) : ''}
-        ${mode === 'tasting' ? renderDetailTastingTagsCard(r) : ''}
+        ${mode === 'tasting' ? renderShopNoteLinkCard(r) : ''}
 
         <div class="card coe-card">
             <div class="card-body">
@@ -1314,8 +1380,26 @@ function renderDetailBrewingCard(r) {
         </div>`;
 }
 
-function renderDetailTastingTagsCard(r) {
-    const notesP = n => n ? `<p class="detail-tag-notes">${escapeHtml(n)}</p>` : '';
+// 店家體驗已不屬於單次品鑑，品鑑詳情頁只留一個往店家頁的入口。
+function renderShopNoteLinkCard(r) {
+    if (!r.shop_id) return '';
+    return `
+        <div class="card">
+            <div class="card-body">
+                <h3 class="card-title"><i class="bi bi-emoji-smile"></i>店家體驗</h3>
+                <p class="text-muted">環境、設施、服務等體驗屬於店家而非單次品鑑，記在店家頁。</p>
+                <a class="btn btn-outline-secondary btn-sm" href="#/shops/${encodeURIComponent(r.shop_id)}">
+                    <i class="bi bi-shop"></i>查看我對這家店的筆記
+                </a>
+            </div>
+        </div>`;
+}
+
+// 店家體驗的唯讀渲染。吃的是 coffee.shop_notes 的一列（不再是品鑑記錄），
+// 由店家頁使用。回傳空字串代表這份筆記還沒填任何體驗欄位。
+function renderShopNoteSections(n) {
+    if (!n) return '';
+    const notesP = s => s ? `<p class="detail-tag-notes">${escapeHtml(s)}</p>` : '';
     const evalRow = (k, v) => `<div class="detail-eval-row">
         <span class="detail-eval-key">${escapeHtml(k)}</span>
         <span class="detail-eval-val">${escapeHtml(v)}</span></div>`;
@@ -1324,40 +1408,32 @@ function renderDetailTastingTagsCard(r) {
             <div class="detail-tag-section-title"><i class="bi ${icon}"></i>${escapeHtml(label)}</div>
             ${body}</div>` : '';
 
-    const ax = r.ambience_axes || {};
+    const ax = n.ambience_axes || {};
     const ambienceBody = ambienceAxes.filter(a => ax[a.key])
         .map(a => evalRow(a.label, axisValueLabel(a, ax[a.key]))).join('')
-        + renderChipRow(r.facilities) + notesP(r.atmosphere_notes);
+        + renderChipRow(n.facilities) + notesP(n.ambience_notes);
 
-    const styleBody = (r.space_style ? renderChipRow([r.space_style]) : '')
-        + renderChipRow(r.space_materials) + notesP(r.decor_notes);
+    const styleBody = (n.space_style ? renderChipRow([n.space_style]) : '')
+        + renderChipRow(n.space_materials) + notesP(n.style_notes);
 
     const chipGroup = (label, arr) => arr && arr.length
         ? evalRow(label, arr.join('、')) : '';
-    const sr = r.service_ratings || {};
+    const sr = n.service_ratings || {};
     const serviceBody = serviceAxes.filter(a => sr[a.key])
         .map(a => evalRow(a.label, axisValueLabel(a, sr[a.key]))).join('')
-        + chipGroup('餐點', r.menu_food)
-        + chipGroup('飲料', r.drink_types)
-        + notesP(r.service_notes);
+        + chipGroup('餐點', n.menu_food)
+        + chipGroup('飲料', n.drink_types)
+        + notesP(n.service_notes);
 
     const legacy = legacyTagSections.map(sec => {
-        const tags = r[`${sec.key}_tags`] || [];
+        const tags = n[`legacy_${sec.key}_tags`] || [];
         return tags.length ? section(sec.icon, `${sec.label}（舊版）`, renderChipRow(tags)) : '';
     }).join('');
 
-    const sections = section('bi-music-note-beamed', '環境感受', ambienceBody)
+    return section('bi-music-note-beamed', '環境感受', ambienceBody)
         + section('bi-easel', '空間風格', styleBody)
         + section('bi-person-check', '服務', serviceBody)
         + legacy;
-    if (!sections) return '';
-    return `
-        <div class="card">
-            <div class="card-body">
-                <h3 class="card-title"><i class="bi bi-emoji-smile"></i>探訪心得</h3>
-                ${sections}
-            </div>
-        </div>`;
 }
 
 function renderChipRow(values) {
@@ -1615,10 +1691,7 @@ function decodeFlavorMeta(id) {
 
 // ─── View: record form (杯測 / 品鑑) ─────────────────────────────────────────
 async function viewForm(root, { mode, recordId, prefillShopId = null }) {
-    if (!isCloudReady()) {
-        root.innerHTML = renderCloudWarning();
-        return;
-    }
+    if (renderAccessGate(root)) return;
 
     // Mount the template
     const tpl = document.getElementById('tpl-form');
@@ -1630,7 +1703,6 @@ async function viewForm(root, { mode, recordId, prefillShopId = null }) {
     setFormMode(mode);
     initCoeWidget();
     initEvaluationAccordion();
-    initTagSections();
     bindFormHandlers();
 
     await refreshShopsCache();
@@ -2087,8 +2159,7 @@ function openShopPicker({ currentId = '', allowEmpty = true, emptyLabel = '— �
         const matches = query
             ? state.shops.filter(s =>
                 (s.name || '').toLowerCase().includes(query) ||
-                (s.location || '').toLowerCase().includes(query) ||
-                (s.intro || '').toLowerCase().includes(query))
+                (s.location || '').toLowerCase().includes(query))
             : state.shops;
         // Options are real <button>s so they're focusable and Enter/Space-activatable.
         let html = '';
@@ -2778,14 +2849,15 @@ function sectionTitle(icon, label, multi = false) {
     </div>`;
 }
 
-function initTagSections() {
-    const root = document.getElementById('tagSections');
+// 店家體驗編輯器（環境/設施/風格/材質/服務/餐點/飲料）。原本掛在品鑑表單裡，
+// 現在店家體驗屬於「我對這家店」而非「這次喝的那杯」，改由店家頁掛載。
+function initTagSections(root) {
     if (!root) return;
     root.innerHTML = `
         <div class="tag-section">
             ${sectionTitle('bi-music-note-beamed', '環境感受')}
             ${ambienceAxes.map(scaleRowHtml).join('')}
-            <div class="mt-2">${notesSlotHtml('f-visit-ambience-notes')}</div>
+            <div class="mt-2">${notesSlotHtml('sn-ambience-notes')}</div>
         </div>
         <div class="tag-section">
             ${sectionTitle('bi-shop', '設施', true)}
@@ -2794,7 +2866,7 @@ function initTagSections() {
         <div class="tag-section">
             ${sectionTitle('bi-easel', '空間風格')}
             ${chipRowHtml('style', styleOptions, 'single', true)}
-            <div class="mt-2">${notesSlotHtml('f-visit-style-notes')}</div>
+            <div class="mt-2">${notesSlotHtml('sn-style-notes')}</div>
         </div>
         <div class="tag-section">
             ${sectionTitle('bi-bricks', '材質', true)}
@@ -2803,7 +2875,7 @@ function initTagSections() {
         <div class="tag-section">
             ${sectionTitle('bi-person-check', '服務')}
             ${serviceAxes.map(scaleRowHtml).join('')}
-            <div class="mt-2">${notesSlotHtml('f-visit-service-notes')}</div>
+            <div class="mt-2">${notesSlotHtml('sn-service-notes')}</div>
         </div>
         <div class="tag-section">
             ${sectionTitle('bi-egg-fried', '餐點', true)}
@@ -2814,9 +2886,12 @@ function initTagSections() {
             ${chipRowHtml('drinks', drinkOptions, 'multi', true)}
         </div>`;
 
-    setChipValues('drinks', drinkDefaults); // 新表單預設；編輯時 loadRecordIntoForm 會覆蓋
+    setChipValues('drinks', drinkDefaults); // 新筆記預設；載入既有筆記時會被覆蓋
 
     root.addEventListener('click', e => {
+        // 這裡自帶備註展開的委派：店家頁沒有 .record-form 可以掛。
+        const toggle = e.target.closest('.notes-toggle');
+        if (toggle) { expandNotesSlot(toggle.dataset.notesTarget); return; }
         const seg = e.target.closest('.scale-seg');
         if (seg) {
             const sel = seg.classList.contains('selected');
@@ -3103,27 +3178,12 @@ function buildFormPayload(mode) {
         item_ordered: document.getElementById('f-item_ordered').value.trim() || null,
         bean_name: document.getElementById('f-tasting-bean').value.trim() || null,
         bean_type: getBeanType('tasting') || null,
-        ambience_axes: {
-            quiet_lively:  getScaleValue('quiet_lively'),
-            bright_dim:    getScaleValue('bright_dim'),
-            spacious_cozy: getScaleValue('spacious_cozy'),
-        },
-        facilities:      getChipValues('facilities'),
-        space_style:     getChipValues('style')[0] || null,
-        space_materials: getChipValues('materials'),
-        service_ratings: {
-            greeting: getScaleValue('greeting'),
-            speed:    getScaleValue('speed'),
-        },
-        menu_food:   getChipValues('food'),
-        drink_types: getChipValues('drinks'),
-        atmosphere_notes: document.getElementById('f-visit-ambience-notes')?.value || null,
-        decor_notes:      document.getElementById('f-visit-style-notes')?.value || null,
-        service_notes:    document.getElementById('f-visit-service-notes')?.value || null,
+        // v5 起店家體驗（環境/設施/風格/材質/服務/餐點/飲料）不再存在品鑑記錄裡，
+        // 改存到 coffee.shop_notes（每人每店一筆）。
         defects: defects || null,
         defects_tags: defectsTags,
         notes: notes || null,
-        schema_version: 4,
+        schema_version: 5,
         ...ev,
     };
 }
@@ -3263,29 +3323,7 @@ function applyRecordToForm(mode, r) {
         set('f-tasting-bean', r.bean_name || '');
         // Legacy tasting rows have no bean_type — leave empty so the user picks one on edit.
         setBeanType('tasting', r.bean_type || '');
-
-        const ax = r.ambience_axes || {};
-        setScaleValue('quiet_lively',  ax.quiet_lively ?? null);
-        setScaleValue('bright_dim',    ax.bright_dim ?? null);
-        setScaleValue('spacious_cozy', ax.spacious_cozy ?? null);
-        setChipValues('facilities', r.facilities || []);
-        setChipValues('style',      r.space_style ? [r.space_style] : []);
-        setChipValues('materials',  r.space_materials || []);
-        const sr = r.service_ratings || {};
-        setScaleValue('greeting', sr.greeting ?? null);
-        setScaleValue('speed',    sr.speed ?? null);
-        setChipValues('food',   r.menu_food || []);
-        setChipValues('drinks', r.drink_types || []);
-
-        const setNotes = (id, val) => {
-            const el = document.getElementById(id);
-            if (!el) return;
-            el.value = val ?? '';
-            if (val) expandNotesSlot(id, { focus: false });
-        };
-        setNotes('f-visit-ambience-notes', r.atmosphere_notes);
-        setNotes('f-visit-style-notes',    r.decor_notes);
-        setNotes('f-visit-service-notes',  r.service_notes);
+        // 店家體驗欄位已搬到 shop_notes，品鑑表單不再載入它們。
     }
 
     // CoE
@@ -3372,33 +3410,30 @@ async function loadRecordIntoForm(mode, recordId) {
     }
 }
 
-// ─── Shop modal ──────────────────────────────────────────────────────────────
-function openShopModal({ shop = null, onSaved = null } = {}) {
+// ─── Shop modal（新增店家 — 純 Google Places 選取器） ─────────────────────────
+// 店家是共享 registry，身分由 google_place_id 定義，name/location/lat/lng 全是
+// Google 的投影。所以這裡不提供任何手動輸入欄位，也沒有「編輯」路徑
+// （要更新客觀資訊請走 openPlaceResyncDialog）。
+function openShopModal({ onSaved = null } = {}) {
     const tpl = document.getElementById('tpl-shop-modal');
     const node = tpl.content.firstElementChild.cloneNode(true);
     document.body.appendChild(node);
     document.body.classList.add('modal-open-custom');
 
-    const nameEl = node.querySelector('#sm-name');
-    const locEl  = node.querySelector('#sm-location');
-    const intEl  = node.querySelector('#sm-intro');
-    const titleEl = node.querySelector('#shop-modal-title');
     const placeRow = node.querySelector('.sm-place-row');
+    const unavailableEl = node.querySelector('.sm-place-unavailable');
     const placeSearchEl = node.querySelector('#sm-place-search');
     const placeSearchBtn = node.querySelector('#sm-place-search-btn');
     const placeResultsEl = node.querySelector('#sm-place-results');
+    const saveBtn = node.querySelector('#sm-save');
 
-    if (shop) {
-        titleEl.textContent = '編輯店家';
-        nameEl.value = shop.name || '';
-        locEl.value  = shop.location || '';
-        intEl.value  = shop.intro || '';
-    }
-
-    // Stashed Google place data, merged into payload on submit if present.
+    // 選定的 Google 地點。沒選就不能存 —— 這是「店名只能來自 Google」的落點。
     let pendingPlace = null;
 
-    if (isGoogleMapsReady() && placeRow) {
+    if (!isGoogleMapsReady()) {
+        unavailableEl.hidden = false;
+        saveBtn.hidden = true;
+    } else {
         placeRow.hidden = false;
         const runPlaceSearch = async () => {
             const query = placeSearchEl.value.trim();
@@ -3409,6 +3444,7 @@ function openShopModal({ shop = null, onSaved = null } = {}) {
             // Clear any previously-stashed selection so a new search doesn't carry
             // stale google_place_id/lat/lng into the save payload.
             pendingPlace = null;
+            saveBtn.disabled = true;
             placeResultsEl.innerHTML = '<div class="empty-state small"><i class="bi bi-hourglass-split"></i>搜尋中…</div>';
             const g = await ensureGoogleMaps();
             if (!g) {
@@ -3438,15 +3474,16 @@ function openShopModal({ shop = null, onSaved = null } = {}) {
                     btn.addEventListener('click', () => {
                         const idx = Number(btn.dataset.idx);
                         const place = places[idx];
-                        if (!place) return;
-                        if (place.displayName) nameEl.value = place.displayName;
-                        if (place.formattedAddress) locEl.value = place.formattedAddress;
+                        if (!place || !place.id || !place.displayName) return;
                         pendingPlace = {
-                            google_place_id: place.id || null,
+                            name: place.displayName,
+                            location: place.formattedAddress || null,
+                            google_place_id: place.id,
                             lat: place.location?.lat?.() ?? place.location?.lat ?? null,
                             lng: place.location?.lng?.() ?? place.location?.lng ?? null,
                         };
-                        placeResultsEl.innerHTML = `<div class="empty-state small"><i class="bi bi-check-circle"></i>已套用：${escapeHtml(place.displayName || '')}</div>`;
+                        saveBtn.disabled = false;
+                        placeResultsEl.innerHTML = `<div class="empty-state small"><i class="bi bi-check-circle"></i>已選擇：${escapeHtml(place.displayName)}</div>`;
                     });
                 });
             } catch (err) {
@@ -3476,26 +3513,11 @@ function openShopModal({ shop = null, onSaved = null } = {}) {
 
     node.querySelector('#shop-modal-form').addEventListener('submit', async e => {
         e.preventDefault();
-        const payload = {
-            name: nameEl.value.trim(),
-            location: locEl.value.trim() || null,
-            intro: intEl.value.trim() || null,
-        };
-        if (!payload.name) {
-            nameEl.focus();
-            return;
-        }
-        if (pendingPlace) {
-            payload.google_place_id = pendingPlace.google_place_id;
-            payload.lat = pendingPlace.lat;
-            payload.lng = pendingPlace.lng;
-            payload.google_data_fetched_at = new Date().toISOString();
-        }
+        if (!pendingPlace) return;
+        const payload = { ...pendingPlace, google_data_fetched_at: new Date().toISOString() };
         try {
-            const saved = shop
-                ? await api.updateShop(shop.id, payload)
-                : await api.createShop(payload);
-            showToast(shop ? '✓ 已更新店家' : '✓ 已新增店家');
+            const saved = await api.createShop(payload);
+            showToast('✓ 已新增店家');
             await refreshShopsCache();
             close();
             if (typeof onSaved === 'function') onSaved(saved);
@@ -3512,40 +3534,38 @@ function openShopModal({ shop = null, onSaved = null } = {}) {
                 }
             }
         } catch (e2) {
-            // Postgres unique_violation — Supabase passes the SQLSTATE through .code
+            // Postgres unique_violation — Supabase passes the SQLSTATE through .code。
+            // name 已不再 unique，所以唯一可能的衝突就是 google_place_id。
             if (e2.code === '23505') {
-                // details / message 會帶到具體 column 名稱（"...(google_place_id)=..." 或 "...(name)=..."）
-                const hint = `${e2.details || ''} ${e2.message || ''}`;
-                if (hint.includes('google_place_id')) {
-                    showErrorToast('此 Google 地點已綁定到其他店家');
-                } else {
-                    showErrorToast('店家名稱已存在');
-                }
+                showErrorToast('這家店已經在清單裡了');
             } else {
                 showErrorToast('儲存失敗：' + (e2.message || e2));
             }
         }
     });
 
-    setTimeout(() => nameEl.focus(), 0);
+    setTimeout(() => placeSearchEl?.focus(), 0);
 }
 
-// ─── Google Places backfill dialog ──────────────────────────────────────────
-async function openPlaceBackfillDialog(shop) {
+// ─── Google Places 重新同步 ─────────────────────────────────────────────────
+// 店家客觀資訊（name / location / lat / lng）的唯一更新路徑。身分固定為既有的
+// google_place_id，所以這裡是「用 id 重抓一次」，不是重新搜尋挑一家 —— 挑錯家
+// 等於把店偷換掉，DB trigger 也會擋。
+async function openPlaceResyncDialog(shop) {
     const backdrop = document.createElement('div');
     backdrop.className = 'modal-backdrop-custom';
     backdrop.innerHTML = `
         <div class="modal-shell" role="dialog" aria-modal="true">
             <header class="modal-header">
-                <h3>Google 補完 — ${escapeHtml(shop.name)}</h3>
+                <h3>從 Google 重新同步</h3>
                 <button type="button" class="modal-close" aria-label="關閉">
                     <i class="bi bi-x-lg"></i>
                 </button>
             </header>
             <div class="modal-body">
-                <div class="mb-2 text-muted small">以下是 Google Places 找到的候選，選一筆寫入此店家。</div>
+                <div class="mb-2 text-muted small">店名與地址一律以 Google Places 為準，不可手動修改。</div>
                 <div id="bf-results">
-                    <div class="empty-state"><i class="bi bi-hourglass-split"></i>搜尋中…</div>
+                    <div class="empty-state"><i class="bi bi-hourglass-split"></i>讀取中…</div>
                 </div>
                 <div class="modal-actions">
                     <button type="button" class="btn btn-outline-secondary" data-action="cancel">取消</button>
@@ -3568,7 +3588,12 @@ async function openPlaceBackfillDialog(shop) {
 
     const resultsEl = backdrop.querySelector('#bf-results');
     const confirmBtn = backdrop.querySelector('#bf-confirm');
-    let selected = null;
+    let fresh = null;
+
+    if (!shop.google_place_id) {
+        resultsEl.innerHTML = '<div class="empty-state error"><i class="bi bi-exclamation-triangle"></i>此店家沒有綁定 Google 地點，無法同步</div>';
+        return;
+    }
 
     const g = await ensureGoogleMaps();
     if (!g) {
@@ -3578,76 +3603,59 @@ async function openPlaceBackfillDialog(shop) {
 
     try {
         const { Place } = await g.maps.importLibrary('places');
-        const query = `${shop.name} ${shop.location || ''}`.trim();
-        const { places } = await Place.searchByText({
-            textQuery: query,
-            fields: ['id', 'displayName', 'formattedAddress', 'location'],
-            maxResultCount: 5,
-        });
-        if (!places || places.length === 0) {
-            resultsEl.innerHTML = '<div class="empty-state"><i class="bi bi-inbox"></i>找不到候選</div>';
-            return;
-        }
-        resultsEl.innerHTML = places.map((p, i) => `
-            <label class="bf-option">
-                <input type="radio" name="bf-pick" value="${i}">
-                <div>
-                    <div class="bf-option-name">${escapeHtml(p.displayName || '')}</div>
-                    <div class="bf-option-addr">${escapeHtml(p.formattedAddress || '')}</div>
-                </div>
-            </label>
-        `).join('');
-        resultsEl.addEventListener('change', e => {
-            const idx = Number(e.target.value);
-            if (Number.isInteger(idx)) {
-                selected = places[idx];
-                confirmBtn.disabled = false;
-            }
-        });
+        const place = new Place({ id: shop.google_place_id });
+        await place.fetchFields({ fields: ['id', 'displayName', 'formattedAddress', 'location'] });
+        fresh = {
+            name: place.displayName || shop.name,
+            location: place.formattedAddress || shop.location,
+            lat: place.location?.lat?.() ?? place.location?.lat ?? null,
+            lng: place.location?.lng?.() ?? place.location?.lng ?? null,
+        };
+        const row = (label, before, after) => `
+            <div class="detail-eval-row">
+                <span class="detail-eval-key">${escapeHtml(label)}</span>
+                <span class="detail-eval-val">${escapeHtml(after || '—')}${
+                    (before || '') !== (after || '')
+                        ? `<span class="text-muted small">（原：${escapeHtml(before || '—')}）</span>`
+                        : ''}</span>
+            </div>`;
+        resultsEl.innerHTML = row('店名', shop.name, fresh.name)
+            + row('位置', shop.location, fresh.location);
+        confirmBtn.disabled = false;
     } catch (err) {
         resultsEl.innerHTML = `<div class="empty-state error">
-            <i class="bi bi-exclamation-triangle"></i>搜尋失敗：${escapeHtml(err.message || String(err))}
+            <i class="bi bi-exclamation-triangle"></i>讀取失敗：${escapeHtml(err.message || String(err))}
         </div>`;
         return;
     }
 
     confirmBtn.addEventListener('click', async () => {
-        if (!selected) return;
+        if (!fresh) return;
         confirmBtn.disabled = true;
         try {
+            // 刻意不送 google_place_id：店家身分不可變（DB trigger 也擋）。
             await api.updateShop(shop.id, {
-                name: selected.displayName || shop.name,
-                location: selected.formattedAddress || shop.location,
-                google_place_id: selected.id || null,
-                lat: selected.location?.lat?.() ?? selected.location?.lat ?? null,
-                lng: selected.location?.lng?.() ?? selected.location?.lng ?? null,
+                ...fresh,
                 google_data_fetched_at: new Date().toISOString(),
             });
-            showToast('✓ 已補完');
+            showToast('✓ 已同步');
             await refreshShopsCache();
             close();
             renderRoute();
         } catch (err) {
             confirmBtn.disabled = false;
-            if (err.code === '23505') {
-                showErrorToast('此 Google 地點已綁定到其他店家');
-            } else {
-                showErrorToast('補完失敗：' + (err.message || err));
-            }
+            showErrorToast('同步失敗：' + (err.message || err));
         }
     });
 }
 
 // ─── View: shops list ───────────────────────────────────────────────────────
 async function viewShopsList(root) {
-    if (!isCloudReady()) {
-        root.innerHTML = renderCloudWarning();
-        return;
-    }
+    if (renderAccessGate(root)) return;
     root.innerHTML = `
         <div class="page-action-bar shops-action-bar">
             <input type="search" class="form-control shops-search-input" id="shops-search"
-                   placeholder="搜尋店名、位置或介紹…" autocomplete="off">
+                   placeholder="搜尋店名或位置…" autocomplete="off">
             <button class="btn btn-primary" id="shops-new">
                 <i class="bi bi-plus-lg me-1"></i>新增店家
             </button>
@@ -3684,7 +3692,6 @@ async function viewShopsList(root) {
                     ${s.google_place_id ? '<i class="bi bi-geo-alt-fill shop-place-badge" title="已綁定 Google 地點" aria-label="已綁定 Google 地點"></i>' : ''}
                 </div>
                 ${loc ? `<div class="shop-card-loc">${escapeHtml(loc)}</div>` : ''}
-                ${s.intro ? `<div class="shop-card-intro">${escapeHtml(s.intro)}</div>` : ''}
                 <div class="shop-card-stats">
                     <span title="杯測"><i class="bi bi-cup"></i>${st.cupping}</span>
                     <span title="品鑑"><i class="bi bi-clipboard"></i>${st.tasting}</span>
@@ -3724,8 +3731,7 @@ async function viewShopsList(root) {
             const filtered = q
                 ? shops.filter(s =>
                     (s.name || '').toLowerCase().includes(q) ||
-                    (s.location || '').toLowerCase().includes(q) ||
-                    (s.intro || '').toLowerCase().includes(q))
+                    (s.location || '').toLowerCase().includes(q))
                 : shops;
             renderGrid(filtered, stats);
         });
@@ -3830,16 +3836,135 @@ function renderShopSummaryCard(summary) {
         </div>`;
 }
 
+// ─── Shop note card (我對這家店的個人筆記 + 店家體驗) ────────────────────────
+// 唯讀態。note 為 null 代表還沒建立。
+function renderShopNoteCard(note) {
+    const sections = renderShopNoteSections(note);
+    const intro = note?.intro
+        ? `<p class="shop-detail-intro">${escapeHtml(note.intro)}</p>` : '';
+    const body = (intro || sections)
+        ? intro + sections
+        : '<div class="empty-state"><i class="bi bi-journal-plus"></i><p>還沒有這家店的筆記</p></div>';
+    return `
+        <div class="card" id="shop-note-card">
+            <div class="card-body">
+                <h3 class="card-title">
+                    <i class="bi bi-emoji-smile"></i>我的店家筆記
+                    <button class="btn btn-outline-secondary btn-sm ms-auto" id="shop-note-edit">
+                        <i class="bi bi-pencil"></i>${note ? '編輯' : '新增'}
+                    </button>
+                </h3>
+                ${body}
+            </div>
+        </div>`;
+}
+
+// 編輯態的空殼。欄位值一律由 applyShopNoteToEditor 填，這裡不插值 —— 避免
+// intro 由樣板填、其他欄位由 apply 填的雙頭馬車。
+function renderShopNoteEditor() {
+    return `
+        <div class="card" id="shop-note-card">
+            <div class="card-body">
+                <h3 class="card-title"><i class="bi bi-emoji-smile"></i>我的店家筆記</h3>
+                <div class="mb-3">
+                    <label class="form-label" for="sn-intro">介紹 / 備註</label>
+                    <textarea class="form-control" id="sn-intro" rows="3"></textarea>
+                </div>
+                <div id="shop-note-sections"></div>
+                <div class="modal-actions mt-3">
+                    <button type="button" class="btn btn-outline-secondary" id="shop-note-cancel">取消</button>
+                    <button type="button" class="btn btn-primary" id="shop-note-save">
+                        <i class="bi bi-cloud-arrow-up me-1"></i>儲存
+                    </button>
+                </div>
+            </div>
+        </div>`;
+}
+
+function buildShopNotePayload() {
+    return {
+        intro: document.getElementById('sn-intro')?.value.trim() || null,
+        ambience_axes: {
+            quiet_lively:  getScaleValue('quiet_lively'),
+            bright_dim:    getScaleValue('bright_dim'),
+            spacious_cozy: getScaleValue('spacious_cozy'),
+        },
+        facilities:      getChipValues('facilities'),
+        space_style:     getChipValues('style')[0] || null,
+        space_materials: getChipValues('materials'),
+        service_ratings: {
+            greeting: getScaleValue('greeting'),
+            speed:    getScaleValue('speed'),
+        },
+        menu_food:   getChipValues('food'),
+        drink_types: getChipValues('drinks'),
+        ambience_notes: document.getElementById('sn-ambience-notes')?.value || null,
+        style_notes:    document.getElementById('sn-style-notes')?.value || null,
+        service_notes:  document.getElementById('sn-service-notes')?.value || null,
+        schema_version: 1,
+    };
+}
+
+function applyShopNoteToEditor(note) {
+    if (!note) return;
+    const introEl = document.getElementById('sn-intro');
+    if (introEl) introEl.value = note.intro || '';
+    const ax = note.ambience_axes || {};
+    setScaleValue('quiet_lively',  ax.quiet_lively ?? null);
+    setScaleValue('bright_dim',    ax.bright_dim ?? null);
+    setScaleValue('spacious_cozy', ax.spacious_cozy ?? null);
+    setChipValues('facilities', note.facilities || []);
+    setChipValues('style',      note.space_style ? [note.space_style] : []);
+    setChipValues('materials',  note.space_materials || []);
+    const sr = note.service_ratings || {};
+    setScaleValue('greeting', sr.greeting ?? null);
+    setScaleValue('speed',    sr.speed ?? null);
+    setChipValues('food',   note.menu_food || []);
+    setChipValues('drinks', note.drink_types || []);
+
+    const setNotes = (id, val) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.value = val ?? '';
+        if (val) expandNotesSlot(id, { focus: false });
+    };
+    setNotes('sn-ambience-notes', note.ambience_notes);
+    setNotes('sn-style-notes',    note.style_notes);
+    setNotes('sn-service-notes',  note.service_notes);
+}
+
+// 掛載唯讀卡並接上「編輯」；編輯完存檔後重新掛回唯讀卡，不整頁重繪。
+function mountShopNoteCard(host, shopId, note) {
+    host.innerHTML = renderShopNoteCard(note);
+    document.getElementById('shop-note-edit').addEventListener('click', () => {
+        host.innerHTML = renderShopNoteEditor();
+        initTagSections(document.getElementById('shop-note-sections'));
+        applyShopNoteToEditor(note);
+        document.getElementById('shop-note-cancel').addEventListener('click', () =>
+            mountShopNoteCard(host, shopId, note));
+        const saveBtn = document.getElementById('shop-note-save');
+        saveBtn.addEventListener('click', async () => {
+            saveBtn.disabled = true;
+            try {
+                const saved = await api.upsertShopNote(shopId, buildShopNotePayload());
+                showToast('✓ 已儲存筆記');
+                mountShopNoteCard(host, shopId, saved);
+            } catch (e) {
+                saveBtn.disabled = false;
+                showErrorToast('儲存失敗：' + (e.message || e));
+            }
+        });
+    });
+}
+
 async function viewShopDetail(root, shopId) {
-    if (!isCloudReady()) {
-        root.innerHTML = renderCloudWarning();
-        return;
-    }
+    if (renderAccessGate(root)) return;
     root.innerHTML = '<div class="empty-state"><i class="bi bi-hourglass-split"></i>讀取中…</div>';
     try {
-        const [shop, allRecords] = await Promise.all([
+        const [shop, allRecords, shopNote] = await Promise.all([
             api.getShop(shopId),
             api.listRecords({ type: 'all' }),
+            api.getShopNote(shopId),
         ]);
         const records = allRecords.filter(r => r.shop_id === shopId);
         if (!shop) {
@@ -3856,11 +3981,6 @@ async function viewShopDetail(root, shopId) {
                 <i class="bi bi-geo-alt"></i>在 Google Maps 開啟
                </a>`
             : '';
-        const backfillBtn = (!shop.google_place_id && isGoogleMapsReady())
-            ? `<button class="btn btn-outline-secondary btn-sm" id="shop-backfill">
-                <i class="bi bi-search"></i>Google 補完
-               </button>`
-            : '';
 
         root.innerHTML = `
             <div class="card">
@@ -3872,9 +3992,8 @@ async function viewShopDetail(root, shopId) {
                                 <i class="bi bi-plus-lg"></i>新增記錄
                             </button>
                             ${mapsLink}
-                            ${backfillBtn}
-                            <button class="btn btn-outline-secondary btn-sm" id="shop-edit">
-                                <i class="bi bi-pencil"></i>編輯
+                            <button class="btn btn-outline-secondary btn-sm" id="shop-resync">
+                                <i class="bi bi-arrow-repeat"></i>從 Google 重新同步
                             </button>
                             <button class="btn btn-outline-danger btn-sm" id="shop-delete">
                                 <i class="bi bi-trash"></i>刪除
@@ -3882,9 +4001,10 @@ async function viewShopDetail(root, shopId) {
                         </div>
                     </div>
                     ${shop.location ? `<div class="shop-detail-loc"><i class="bi bi-geo-alt"></i>${escapeHtml(shop.location)}</div>` : ''}
-                    ${shop.intro ? `<p class="shop-detail-intro">${escapeHtml(shop.intro)}</p>` : ''}
                 </div>
             </div>
+
+            <div id="shop-note-host"></div>
 
             ${renderShopSummaryCard(summarizeRecords(records))}
 
@@ -3907,19 +4027,19 @@ async function viewShopDetail(root, shopId) {
         });
         document.getElementById('shop-summary-cta')?.addEventListener('click', () =>
             openNewRecordPicker(shop));
-        document.getElementById('shop-edit').addEventListener('click', () =>
-            openShopModal({ shop }));
-        const backfillEl = document.getElementById('shop-backfill');
-        if (backfillEl) {
-            backfillEl.addEventListener('click', () => openPlaceBackfillDialog(shop));
-        }
+        // 店家的客觀欄位一律來自 Google Places，唯一的更新路徑就是重新同步。
+        document.getElementById('shop-resync').addEventListener('click', () =>
+            openPlaceResyncDialog(shop));
+        mountShopNoteCard(document.getElementById('shop-note-host'), shopId, shopNote);
         document.getElementById('shop-delete').addEventListener('click', async () => {
-            const message = records.length > 0
-                ? `「${shop.name}」目前有 ${records.length} 筆相關記錄。\n\n刪除店家會：\n• 連帶刪除所有品鑑記錄\n• 杯測記錄保留但失去店家連結\n\n確定要刪除嗎？`
-                : `刪除店家「${shop.name}」？`;
+            // FK 已改成 RESTRICT：有記錄的店家 DB 會直接擋下，不再連坐刪除任何人的記錄。
+            if (records.length > 0) {
+                showErrorToast(`「${shop.name}」還有 ${records.length} 筆記錄，請先刪掉記錄再刪店家`);
+                return;
+            }
             const ok = await confirmDialog({
                 title: '刪除店家',
-                message,
+                message: `刪除店家「${shop.name}」？`,
                 confirmText: '刪除',
                 danger: true,
             });
@@ -3930,7 +4050,12 @@ async function viewShopDetail(root, shopId) {
                 showToast('✓ 已刪除店家');
                 navigate('/shops');
             } catch (e) {
-                showErrorToast('刪除失敗：' + (e.message || e));
+                // 23503 = FK violation：別人（RLS 讓我們看不到）的記錄還連著這家店。
+                if (e.code === '23503') {
+                    showErrorToast('這家店還有其他人的記錄連著，無法刪除');
+                } else {
+                    showErrorToast('刪除失敗：' + (e.message || e));
+                }
             }
         });
     } catch (e) {
@@ -3941,9 +4066,15 @@ async function viewShopDetail(root, shopId) {
 }
 
 // ─── Init ────────────────────────────────────────────────────────────────────
-window.addEventListener('hashchange', renderRoute);
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
     if (!location.hash) location.hash = '#/records';
-    initAuth();
+    const root = document.getElementById('app');
+    if (root) root.innerHTML = '<div class="empty-state"><i class="bi bi-hourglass-split"></i>載入中…</div>';
+    // 必須等 session 還原完才首次 render：RLS 收緊後 state.user 為 null 會被當成未登入，
+    // 提前 render 會讓已登入者開場看到「請先登入」。
+    await initAuth();
+    authBootstrapped = true;
+    // 在 auth 就緒後才掛 hashchange，避免 bootstrap 期間的 hash 設定觸發一次半成品 render。
+    window.addEventListener('hashchange', renderRoute);
     renderRoute();
 });

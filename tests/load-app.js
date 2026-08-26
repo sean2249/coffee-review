@@ -22,12 +22,26 @@ import { JSDOM } from 'jsdom';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const APP_JS = fs.readFileSync(path.join(here, '..', 'app.js'), 'utf8');
 
-export async function loadApp({ bodyHtml = '<main id="app"></main>' } = {}) {
+export async function loadApp({ bodyHtml = '<main id="app"></main>', supabaseConfig = null } = {}) {
     const dom = new JSDOM(`<!doctype html><html><body>${bodyHtml}</body></html>`, {
         url: 'http://localhost/#/none',
         runScripts: 'outside-only',
     });
     const ctx = dom.getInternalVMContext();
+    // jsdom ships no CSS.escape. app.js uses it to build attribute selectors from
+    // user-entered chip values (setChipValues / addCustomChip). Browsers all have it,
+    // so this is a harness gap, not an app gap — shim the spec algorithm's common path.
+    if (!ctx.CSS) {
+        ctx.CSS = { escape: v => String(v).replace(/[^\w-]/gu, c => `\\${c}`) };
+    }
+    // Opt-in for tests that need isCloudReady() === true (e.g. the未登入 gate).
+    // Must be assigned before app.js runs — SUPABASE_CONFIG is a const merged at load.
+    // No network still happens: ensureSupabase's dynamic CDN import fails inside the
+    // vm context and initAuth swallows it, leaving state.user null.
+    if (supabaseConfig) {
+        ctx.window.SUPABASE_CONFIG = supabaseConfig;
+        ctx.console.error = () => {};
+    }
     vm.runInContext(APP_JS, ctx, { filename: 'app.js' });
 
     // Let DOMContentLoaded fire (and the renderRoute it triggers complete)
