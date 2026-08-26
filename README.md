@@ -69,14 +69,16 @@ create extension if not exists pgcrypto;
 -- 建立獨立 schema
 create schema if not exists coffee;
 
--- 開放 PostgREST 與 anon 角色存取
-grant usage on schema coffee to anon, authenticated, service_role;
-grant all on all tables    in schema coffee to anon, authenticated, service_role;
-grant all on all sequences in schema coffee to anon, authenticated, service_role;
+-- 開放 PostgREST 存取。**刻意不含 anon** —— 本 schema 的資料一律需要登入，
+-- 連 schema usage 都不給，未登入者連表都解析不到（RLS 之外的第二道防線）。
+-- 日後新增表/序列也不會漏掉：default privileges 同樣不含 anon。
+grant usage on schema coffee to authenticated, service_role;
+grant all on all tables    in schema coffee to authenticated, service_role;
+grant all on all sequences in schema coffee to authenticated, service_role;
 alter default privileges in schema coffee
-    grant all on tables to anon, authenticated, service_role;
+    grant all on tables to authenticated, service_role;
 alter default privileges in schema coffee
-    grant all on sequences to anon, authenticated, service_role;
+    grant all on sequences to authenticated, service_role;
 
 -- shops — 店家公共 registry（所有登入者共享）
 -- 身分由 google_place_id 定義；name / location / lat / lng 全部是 Google Places 的
@@ -209,10 +211,7 @@ create trigger shop_notes_touch_updated_at
     for each row execute function coffee.touch_updated_at();
 
 -- RLS — 每列隔離。記錄與筆記只有 owner 讀得到；店家是共享 registry。
--- anon 一律無權：policy 與 grant 雙保險，未登入連表都碰不到。
-revoke all on all tables in schema coffee from anon;
-alter default privileges in schema coffee revoke all on tables from anon;
-
+-- anon 一律無權：上面的 grant 區塊本來就沒給它任何權限，policy 再擋一層。
 alter table coffee.shops           enable row level security;
 alter table coffee.shop_notes      enable row level security;
 alter table coffee.cupping_records enable row level security;
@@ -494,8 +493,14 @@ drop policy if exists "open access" on coffee.cupping_records;
 drop policy if exists "open access" on coffee.tasting_records;
 drop policy if exists "open access" on coffee.tags;
 
-revoke all on all tables in schema coffee from anon;
-alter default privileges in schema coffee revoke all on tables from anon;
+-- 舊安裝當初把 table / sequence / schema usage 都 grant 給 anon 了，這裡要全部收回。
+-- 只收 table 是不夠的：default privileges 沒收乾淨的話，日後新增的表或序列
+-- 又會自動開給 anon。
+revoke all on all tables    in schema coffee from anon;
+revoke all on all sequences in schema coffee from anon;
+revoke usage on schema coffee from anon;
+alter default privileges in schema coffee revoke all on tables    from anon;
+alter default privileges in schema coffee revoke all on sequences from anon;
 
 alter table coffee.shop_notes enable row level security;
 
@@ -557,9 +562,10 @@ Settings → Pages → Source 選 **GitHub Actions**。
 ### ⚠️ 安全提醒
 
 `anon key` 會出現在前端 JS bundle，任何能打開頁面的人都拿得到 —— 所以安全邊界不能靠它。
-本 schema 的 RLS 已收成每列隔離：`anon` 角色對 `coffee` schema 的所有表都沒有權限，
-記錄與 `shop_notes` 只有 `user_id = auth.uid()` 的人讀得到；`shops` 是共享 registry，
-只有登入者能讀，而且刪除限建立者。
+本 schema 的 RLS 已收成每列隔離，且 `anon` 角色對 `coffee` schema **連 usage 都沒有**
+（表、序列、default privileges 一併不給），未登入者連表都解析不到。
+在那之上，記錄與 `shop_notes` 只有 `user_id = auth.uid()` 的人讀得到；`shops` 是共享
+registry，只有登入者能讀，而且刪除限建立者。
 
 若你是從舊版（`open access`）升級上來的，務必確認 section H 的 H-6 已經跑過 ——
 在那之前，只要有 anon key 的人都能 CRUD 全部資料。
