@@ -101,7 +101,9 @@ create index shops_name_idx on coffee.shops(lower(name));
 
 -- 店家身分不可變：擋掉「把一家店偷換成另一個 Google 地點」。
 create or replace function coffee.shops_freeze_place_id()
-returns trigger language plpgsql as $$
+returns trigger language plpgsql
+set search_path = ''      -- 不碰任何表，固定空 search_path（Supabase linter 要求）
+as $$
 begin
     if new.google_place_id is distinct from old.google_place_id then
         raise exception 'google_place_id is immutable';
@@ -350,7 +352,7 @@ update coffee.shops s set user_id = u.id
     from auth.users u where u.email = '你的登入信箱' and s.user_id is null;
 ```
 
-> RLS 本階段**仍維持 open access**（未登入照樣可讀寫）；真正的每列存取隔離留待後續。
+> RLS 本階段**仍維持 open access**（未登入照樣可讀寫）；真正的每列存取隔離見下方 section H。
 
 H. **升級到多租戶第二階段（RLS 收緊 + 店家/品鑑拆表）**
 
@@ -462,7 +464,9 @@ alter table coffee.shops drop constraint shops_name_key;        -- 不同分店�
 
 -- 店家身分不可變
 create or replace function coffee.shops_freeze_place_id()
-returns trigger language plpgsql as $$
+returns trigger language plpgsql
+set search_path = ''      -- 不碰任何表，固定空 search_path（Supabase linter 要求）
+as $$
 begin
     if new.google_place_id is distinct from old.google_place_id then
         raise exception 'google_place_id is immutable';
@@ -518,12 +522,30 @@ create policy "own tasting" on coffee.tasting_records for all to authenticated
 
 -- tags 目前 app 沒用到，收成登入者唯讀
 create policy "tags readable" on coffee.tags for select to authenticated using (true);
+
+-- H-1 的備份表在 PostgREST 曝光的 schema 裡且沒開 RLS ——「任何登入者」都讀得到
+-- 遷移前的完整資料（含別人的列）。開 RLS 但不建 policy = 只有 service_role
+-- 進得去，rollback 安全網保留、外部一律讀不到。
+alter table coffee._backup_tasting_20260826 enable row level security;
+alter table coffee._backup_shops_20260826   enable row level security;
+revoke all on coffee._backup_tasting_20260826 from anon, authenticated;
+revoke all on coffee._backup_shops_20260826   from anon, authenticated;
 ```
 
-**驗收**：用 anon key 直打 REST 應該拿不到任何資料。
+**驗收**：用 anon key 直打 REST 應該拿不到任何資料 —— 因為連 schema usage 都收回了，
+預期是 `401` + `permission denied for schema coffee`（而不是空陣列）。
 
 ```bash
-curl -s "$SUPABASE_URL/rest/v1/cupping_records?select=*" -H "apikey: $SUPABASE_ANON_KEY"
+curl -s -o /dev/null -w "%{http_code}\n" \
+  "$SUPABASE_URL/rest/v1/cupping_records?select=*" \
+  -H "apikey: $SUPABASE_ANON_KEY" -H "Accept-Profile: coffee"
+```
+
+驗收完成後再手動清掉安全網：
+
+```sql
+drop table coffee._backup_tasting_20260826;
+drop table coffee._backup_shops_20260826;
 ```
 
 **啟用 Google 登入**：Supabase Dashboard → Authentication → Providers → Google，
