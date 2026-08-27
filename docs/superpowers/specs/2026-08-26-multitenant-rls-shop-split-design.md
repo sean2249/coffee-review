@@ -80,8 +80,10 @@ Payload 由 `buildShopNotePayload()` 組、`applyShopNoteToEditor(note)` 回填�
 `intro` 也走 apply（不由樣板插值），避免雙頭馬車。
 
 **店家 modal**：縮成純 Google Places 選取器，沒選 place 前儲存鈕 disabled；
-沒有 Maps key 時顯示提示並隱藏儲存鈕。「編輯」按鈕換成「從 Google 重新同步」，
-用既有 place id 直接 `fetchFields` 重抓（不是重新搜尋挑一家 —— 挑錯等於偷換店家）。
+沒有 Maps key 時顯示提示並隱藏儲存鈕。「編輯」按鈕換成「從 Google 重新同步」
+（`resyncShopFromGoogle`），用既有 place id 直接 `fetchFields` 重抓（不是重新搜尋挑一家
+—— 挑錯等於偷換店家）。**沒有確認 dialog、不預覽差異**：按了就同步，按鈕進 busy 態，
+成功靠重繪反映（不跳 toast），只有失敗才 toast。
 
 ## 影響檔案
 
