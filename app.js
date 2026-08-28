@@ -3547,37 +3547,61 @@ function openShopModal({ onSaved = null } = {}) {
     setTimeout(() => placeSearchEl?.focus(), 0);
 }
 
-// ─── Google Places 重新同步 ─────────────────────────────────────────────────
-// 店家客觀資訊（name / location / lat / lng）的唯一更新路徑。身分固定為既有的
-// google_place_id，所以這裡是「用 id 重抓一次」，不是重新搜尋挑一家 —— 挑錯家
-// 等於把店偷換掉，DB trigger 也會擋。
+// ─── Google Places 同步 ─────────────────────────────────────────────────────
+// coffee.shops 是 Google Places 的投影，快取的內容有保存期限：
 //
-// 沒有確認 dialog：按了就同步。成功不特別通知（新資料會直接反映在畫面上），
-// 只有失敗才跳 toast。
-async function resyncShopFromGoogle(shop, btn) {
-    if (!shop.google_place_id) {
-        showErrorToast('此店家沒有綁定 Google 地點，無法同步');
-        return;
+//   * Places 內容（name / location / lat / lng）依條款最多快取 30 天
+//   * place_id 可永久保存，但 Google 建議超過 12 個月要 refresh 一次（id 會退役）
+//
+// 這裡只有一條路徑：用既有的 place_id 重抓完整 Place Details。它同時解掉兩件事
+// —— 內容被刷新，而且每跑一次就等於驗證了一次 place_id，所以 30 天的內容刷新
+// 已經涵蓋 12 個月的 id 健檢，不需要第二條程式路徑。
+const SHOP_CONTENT_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
+function isShopDataStale(shop, now = Date.now()) {
+    if (!shop?.google_place_id) return false;   // 沒綁地點就無從刷新
+    const ts = shop.google_data_fetched_at;
+    if (!ts) return true;                       // 從沒抓過 = 一定要抓
+    const at = new Date(ts).getTime();
+    if (Number.isNaN(at)) return true;          // 壞掉的時間戳當成過期
+    return now - at > SHOP_CONTENT_TTL_MS;
+}
+
+// 純資料層：抓 Google → 寫 DB → 回傳更新後的 shop。不碰任何 UI，失敗就 throw。
+async function fetchShopFromGoogle(shop) {
+    if (!shop.google_place_id) throw new Error('此店家沒有綁定 Google 地點');
+    const g = await ensureGoogleMaps();
+    if (!g) throw new Error('Google Maps 載入失敗');
+    const { Place } = await g.maps.importLibrary('places');
+    const place = new Place({ id: shop.google_place_id });
+    await place.fetchFields({ fields: ['id', 'displayName', 'formattedAddress', 'location'] });
+
+    // place_id 退役時 Google 會回一個不同的 id。DB trigger 凍結 google_place_id，
+    // 所以這裡不能自動改寫 —— 那等於允許偷換店家。只回報，讓人決定。
+    if (place.id && place.id !== shop.google_place_id) {
+        throw new Error('這個 Google 地點已被取代，需要重新綁定');
     }
+
+    // 刻意不送 google_place_id：店家身分不可變（DB trigger 也擋）。
+    return api.updateShop(shop.id, {
+        name:     place.displayName || shop.name,
+        location: place.formattedAddress || shop.location,
+        lat: place.location?.lat?.() ?? place.location?.lat ?? null,
+        lng: place.location?.lng?.() ?? place.location?.lng ?? null,
+        google_data_fetched_at: new Date().toISOString(),
+    });
+}
+
+// 手動按鈕：按了就同步，沒有確認 dialog。成功不特別通知（新資料會直接反映在
+// 畫面上），只有失敗才跳 toast。
+async function resyncShopFromGoogle(shop, btn) {
     const restore = btn ? btn.innerHTML : null;
     if (btn) {
         btn.disabled = true;
         btn.innerHTML = '<i class="bi bi-arrow-repeat"></i>同步中…';
     }
     try {
-        const g = await ensureGoogleMaps();
-        if (!g) throw new Error('Google Maps 載入失敗');
-        const { Place } = await g.maps.importLibrary('places');
-        const place = new Place({ id: shop.google_place_id });
-        await place.fetchFields({ fields: ['id', 'displayName', 'formattedAddress', 'location'] });
-        // 刻意不送 google_place_id：店家身分不可變（DB trigger 也擋）。
-        await api.updateShop(shop.id, {
-            name:     place.displayName || shop.name,
-            location: place.formattedAddress || shop.location,
-            lat: place.location?.lat?.() ?? place.location?.lat ?? null,
-            lng: place.location?.lng?.() ?? place.location?.lng ?? null,
-            google_data_fetched_at: new Date().toISOString(),
-        });
+        await fetchShopFromGoogle(shop);
         await refreshShopsCache();
         renderRoute();   // 重繪即是回饋：有變更就會直接看到
     } catch (err) {
@@ -3586,6 +3610,22 @@ async function resyncShopFromGoogle(shop, btn) {
             btn.innerHTML = restore;
         }
         showErrorToast('同步失敗：' + (err.message || err));
+    }
+}
+
+// 自動刷新：店家頁載入時，快取過期才跑，而且在 render 之前 await 完 ——
+// 背景跑會跟「編輯店家筆記」搶 renderRoute，把使用者打到一半的內容洗掉。
+// 一家店一個月最多一次，這點延遲換掉整組競態問題是划算的。
+// 失敗一律吞掉：這是使用者沒要求的自動行為，離線時不該每次開頁都噴錯。
+async function refreshShopIfStale(shop) {
+    if (!isShopDataStale(shop) || !isGoogleMapsReady()) return shop;
+    try {
+        const updated = await fetchShopFromGoogle(shop);
+        await refreshShopsCache();
+        return updated || shop;
+    } catch (err) {
+        console.warn('店家自動同步失敗，改用快取資料：', err);
+        return shop;
     }
 }
 
@@ -3901,19 +3941,22 @@ async function viewShopDetail(root, shopId) {
     if (renderAccessGate(root)) return;
     root.innerHTML = '<div class="empty-state"><i class="bi bi-hourglass-split"></i>讀取中…</div>';
     try {
-        const [shop, allRecords, shopNote] = await Promise.all([
+        const [fetched, allRecords, shopNote] = await Promise.all([
             api.getShop(shopId),
             api.listRecords({ type: 'all' }),
             api.getShopNote(shopId),
         ]);
         const records = allRecords.filter(r => r.shop_id === shopId);
-        if (!shop) {
+        if (!fetched) {
             root.innerHTML = `<div class="card"><div class="card-body">
                 <h3 class="card-title"><i class="bi bi-exclamation-circle"></i>找不到店家</h3>
                 <a class="btn btn-primary" href="#/shops">回到店家列表</a>
             </div></div>`;
             return;
         }
+
+        // Places 內容有 30 天快取上限；過期就在這裡補抓一次再渲染。
+        const shop = await refreshShopIfStale(fetched);
 
         const mapsLink = shop.google_place_id
             ? `<a class="btn btn-outline-secondary btn-sm" target="_blank" rel="noopener noreferrer"
