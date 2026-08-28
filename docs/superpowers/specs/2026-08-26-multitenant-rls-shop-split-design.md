@@ -85,6 +85,13 @@ Payload 由 `buildShopNotePayload()` 組、`applyShopNoteToEditor(note)` 回填�
 —— 挑錯等於偷換店家）。**沒有確認 dialog、不預覽差異**：按了就同步，按鈕進 busy 態，
 成功靠重繪反映（不跳 toast），只有失敗才 toast。
 
+**快取期限**：Places 內容依條款最多快取 30 天（`place_id` 例外，可永久保存但建議
+12 個月 refresh 一次）。`viewShopDetail` 載入時用 `isShopDataStale` 檢查
+`google_data_fetched_at`，過期就 `refreshShopIfStale` 補抓一次**再**渲染 ——
+刻意不背景跑，否則會跟「編輯店家筆記」搶 `renderRoute` 把使用者打到一半的內容洗掉。
+同一條路徑順帶驗證 place_id：Google 回不同 id 代表原地點已退役，因 DB trigger 凍結
+`google_place_id` 而不自動改寫，只回報。
+
 ## 影響檔案
 
 - `app.js`：auth gate、api 兩支 shop_notes 方法 + `stampCreatedBy`、店家筆記卡、
