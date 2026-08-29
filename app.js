@@ -3413,7 +3413,7 @@ async function loadRecordIntoForm(mode, recordId) {
 // ─── Shop modal（新增店家 — 純 Google Places 選取器） ─────────────────────────
 // 店家是共享 registry，身分由 google_place_id 定義，name/location/lat/lng 全是
 // Google 的投影。所以這裡不提供任何手動輸入欄位，也沒有「編輯」路徑
-// （要更新客觀資訊請走 openPlaceResyncDialog）。
+// （要更新客觀資訊請走 resyncShopFromGoogle）。
 function openShopModal({ onSaved = null } = {}) {
     const tpl = document.getElementById('tpl-shop-modal');
     const node = tpl.content.firstElementChild.cloneNode(true);
@@ -3551,102 +3551,42 @@ function openShopModal({ onSaved = null } = {}) {
 // 店家客觀資訊（name / location / lat / lng）的唯一更新路徑。身分固定為既有的
 // google_place_id，所以這裡是「用 id 重抓一次」，不是重新搜尋挑一家 —— 挑錯家
 // 等於把店偷換掉，DB trigger 也會擋。
-async function openPlaceResyncDialog(shop) {
-    const backdrop = document.createElement('div');
-    backdrop.className = 'modal-backdrop-custom';
-    backdrop.innerHTML = `
-        <div class="modal-shell" role="dialog" aria-modal="true">
-            <header class="modal-header">
-                <h3>從 Google 重新同步</h3>
-                <button type="button" class="modal-close" aria-label="關閉">
-                    <i class="bi bi-x-lg"></i>
-                </button>
-            </header>
-            <div class="modal-body">
-                <div class="mb-2 text-muted small">店名與地址一律以 Google Places 為準，不可手動修改。</div>
-                <div id="bf-results">
-                    <div class="empty-state"><i class="bi bi-hourglass-split"></i>讀取中…</div>
-                </div>
-                <div class="modal-actions">
-                    <button type="button" class="btn btn-outline-secondary" data-action="cancel">取消</button>
-                    <button type="button" class="btn btn-primary" id="bf-confirm" disabled>套用</button>
-                </div>
-            </div>
-        </div>`;
-    document.body.appendChild(backdrop);
-    document.body.classList.add('modal-open-custom');
-
-    const close = () => {
-        backdrop.remove();
-        document.body.classList.remove('modal-open-custom');
-    };
-    backdrop.querySelector('.modal-close').addEventListener('click', close);
-    backdrop.querySelector('[data-action="cancel"]').addEventListener('click', close);
-    backdrop.addEventListener('click', e => {
-        if (e.target === backdrop) close();
-    });
-
-    const resultsEl = backdrop.querySelector('#bf-results');
-    const confirmBtn = backdrop.querySelector('#bf-confirm');
-    let fresh = null;
-
+//
+// 沒有確認 dialog：按了就同步。成功不特別通知（新資料會直接反映在畫面上），
+// 只有失敗才跳 toast。
+async function resyncShopFromGoogle(shop, btn) {
     if (!shop.google_place_id) {
-        resultsEl.innerHTML = '<div class="empty-state error"><i class="bi bi-exclamation-triangle"></i>此店家沒有綁定 Google 地點，無法同步</div>';
+        showErrorToast('此店家沒有綁定 Google 地點，無法同步');
         return;
     }
-
-    const g = await ensureGoogleMaps();
-    if (!g) {
-        resultsEl.innerHTML = '<div class="empty-state error"><i class="bi bi-exclamation-triangle"></i>Google Maps 載入失敗，請檢查網路或 console 訊息</div>';
-        return;
+    const restore = btn ? btn.innerHTML : null;
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<i class="bi bi-arrow-repeat"></i>同步中…';
     }
-
     try {
+        const g = await ensureGoogleMaps();
+        if (!g) throw new Error('Google Maps 載入失敗');
         const { Place } = await g.maps.importLibrary('places');
         const place = new Place({ id: shop.google_place_id });
         await place.fetchFields({ fields: ['id', 'displayName', 'formattedAddress', 'location'] });
-        fresh = {
-            name: place.displayName || shop.name,
+        // 刻意不送 google_place_id：店家身分不可變（DB trigger 也擋）。
+        await api.updateShop(shop.id, {
+            name:     place.displayName || shop.name,
             location: place.formattedAddress || shop.location,
             lat: place.location?.lat?.() ?? place.location?.lat ?? null,
             lng: place.location?.lng?.() ?? place.location?.lng ?? null,
-        };
-        const row = (label, before, after) => `
-            <div class="detail-eval-row">
-                <span class="detail-eval-key">${escapeHtml(label)}</span>
-                <span class="detail-eval-val">${escapeHtml(after || '—')}${
-                    (before || '') !== (after || '')
-                        ? `<span class="text-muted small">（原：${escapeHtml(before || '—')}）</span>`
-                        : ''}</span>
-            </div>`;
-        resultsEl.innerHTML = row('店名', shop.name, fresh.name)
-            + row('位置', shop.location, fresh.location);
-        confirmBtn.disabled = false;
+            google_data_fetched_at: new Date().toISOString(),
+        });
+        await refreshShopsCache();
+        renderRoute();   // 重繪即是回饋：有變更就會直接看到
     } catch (err) {
-        resultsEl.innerHTML = `<div class="empty-state error">
-            <i class="bi bi-exclamation-triangle"></i>讀取失敗：${escapeHtml(err.message || String(err))}
-        </div>`;
-        return;
-    }
-
-    confirmBtn.addEventListener('click', async () => {
-        if (!fresh) return;
-        confirmBtn.disabled = true;
-        try {
-            // 刻意不送 google_place_id：店家身分不可變（DB trigger 也擋）。
-            await api.updateShop(shop.id, {
-                ...fresh,
-                google_data_fetched_at: new Date().toISOString(),
-            });
-            showToast('✓ 已同步');
-            await refreshShopsCache();
-            close();
-            renderRoute();
-        } catch (err) {
-            confirmBtn.disabled = false;
-            showErrorToast('同步失敗：' + (err.message || err));
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = restore;
         }
-    });
+        showErrorToast('同步失敗：' + (err.message || err));
+    }
 }
 
 // ─── View: shops list ───────────────────────────────────────────────────────
@@ -4028,8 +3968,8 @@ async function viewShopDetail(root, shopId) {
         document.getElementById('shop-summary-cta')?.addEventListener('click', () =>
             openNewRecordPicker(shop));
         // 店家的客觀欄位一律來自 Google Places，唯一的更新路徑就是重新同步。
-        document.getElementById('shop-resync').addEventListener('click', () =>
-            openPlaceResyncDialog(shop));
+        document.getElementById('shop-resync').addEventListener('click', e =>
+            resyncShopFromGoogle(shop, e.currentTarget));
         mountShopNoteCard(document.getElementById('shop-note-host'), shopId, shopNote);
         document.getElementById('shop-delete').addEventListener('click', async () => {
             // FK 已改成 RESTRICT：有記錄的店家 DB 會直接擋下，不再連坐刪除任何人的記錄。
