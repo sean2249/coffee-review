@@ -60,6 +60,33 @@ describe('isShopDataStale', () => {
         expect(win.isShopDataStale({ ...SHOP, google_data_fetched_at: 'not-a-date' })).toBe(true);
     });
 
+    // 條款是「最多快取 30 天」—— 滿 30 天的當下就不該再用。
+    it('is stale exactly at the 30-day boundary', () => {
+        const now = Date.now();
+        const shop = { ...SHOP, google_data_fetched_at: new Date(now - 30 * DAY).toISOString() };
+        expect(win.isShopDataStale(shop, now)).toBe(true);
+    });
+
+    it('is still fresh one second before the boundary', () => {
+        const now = Date.now();
+        const shop = { ...SHOP, google_data_fetched_at: new Date(now - 30 * DAY + 1000).toISOString() };
+        expect(win.isShopDataStale(shop, now)).toBe(false);
+    });
+
+    // 時間戳由瀏覽器寫入，時鐘可能不準。落在未來時 now - at 恆為負 ——
+    // 若當成 fresh，這一列會永遠不再刷新（卡死）。
+    it('treats a far-future timestamp as stale instead of pinning the row fresh forever', () => {
+        const now = Date.now();
+        const shop = { ...SHOP, google_data_fetched_at: new Date(now + 365 * DAY).toISOString() };
+        expect(win.isShopDataStale(shop, now)).toBe(true);
+    });
+
+    it('tolerates small clock skew so a fresh write is not immediately refetched', () => {
+        const now = Date.now();
+        const shop = { ...SHOP, google_data_fetched_at: new Date(now + 2 * 60 * 1000).toISOString() };
+        expect(win.isShopDataStale(shop, now)).toBe(false);
+    });
+
     it('never reports a shop with no place id as stale — there is nothing to refresh', () => {
         expect(win.isShopDataStale({ ...SHOP, google_place_id: null, google_data_fetched_at: null })).toBe(false);
     });

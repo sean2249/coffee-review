@@ -3558,13 +3558,21 @@ function openShopModal({ onSaved = null } = {}) {
 // 已經涵蓋 12 個月的 id 健檢，不需要第二條程式路徑。
 const SHOP_CONTENT_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
+// google_data_fetched_at 是由瀏覽器寫的（new Date().toISOString()），所以它是
+// 「使用者的時鐘」而不是權威時間。容許小幅誤差，超過就當壞資料處理。
+const CLOCK_SKEW_TOLERANCE_MS = 5 * 60 * 1000;
+
 function isShopDataStale(shop, now = Date.now()) {
     if (!shop?.google_place_id) return false;   // 沒綁地點就無從刷新
     const ts = shop.google_data_fetched_at;
     if (!ts) return true;                       // 從沒抓過 = 一定要抓
     const at = new Date(ts).getTime();
     if (Number.isNaN(at)) return true;          // 壞掉的時間戳當成過期
-    return now - at > SHOP_CONTENT_TTL_MS;
+    // 落在未來太多 = 時鐘漂移或壞資料。不能信，否則 now - at 恆為負，
+    // 這一列會永遠被判定 fresh、再也不會刷新（卡死，不是暫時性問題）。
+    if (at - now > CLOCK_SKEW_TOLERANCE_MS) return true;
+    // >= 而非 >：條款是「最多快取 30 天」，滿 30 天當下就不該再用。
+    return now - at >= SHOP_CONTENT_TTL_MS;
 }
 
 // 純資料層：抓 Google → 寫 DB → 回傳更新後的 shop。不碰任何 UI，失敗就 throw。
