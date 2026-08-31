@@ -3,7 +3,7 @@
 //   • App shell + CDN libs: stale-while-revalidate
 //   • Supabase API: pass-through, always go to network
 
-const VERSION = 'v11';
+const VERSION = 'v12';
 const CACHE = `coffee-review-${VERSION}`;
 
 const APP_SHELL = [
