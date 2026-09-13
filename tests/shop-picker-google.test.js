@@ -19,7 +19,9 @@ let win, doc, dom;
 
 function seedShops(shops) {
     const ctx = dom.getInternalVMContext();
-    ctx.__seedShops = shops;
+    // slice()：state.shops 是會被 app 就地改動的陣列（refreshShopsCache 失敗時會
+    // push 進去），直接傳共用常數會讓一個測試污染後面所有測試。
+    ctx.__seedShops = shops.slice();
     vm.runInContext('state.shops = __seedShops; state.shopsLoaded = true; delete __seedShops;', ctx);
 }
 
@@ -81,10 +83,23 @@ const settle = async (n = 10) => {
     for (let i = 0; i < n; i += 1) await new Promise(r => setTimeout(r, 0));
 };
 
+// 固定的 sleep 不可靠：每個測試都新開一個 JSDOM 並載入整份 app.js，累積下來
+// event loop 會塞車，400ms 的 debounce 未必在 450ms 內跑完。等條件成立。
+const waitFor = async (fn, ms = 3000) => {
+    const deadline = Date.now() + ms;
+    for (;;) {
+        const value = fn();
+        if (value) return value;
+        if (Date.now() > deadline) throw new Error('waitFor timed out');
+        await new Promise(r => setTimeout(r, 10));
+    }
+};
+
 const googleSection = () => doc.querySelector('.shop-picker-google');
 const googleItems = () => [...doc.querySelectorAll('.shop-picker-google-item')];
 const googleNote = () => doc.querySelector('.shop-picker-google-note');
 const localItems = () => [...doc.querySelectorAll('.shop-picker-list-item')];
+const awaitGoogleRows = () => waitFor(() => googleItems().length > 0);
 const toastText = () => doc.getElementById('toastMsg')?.textContent || '';
 
 beforeEach(async () => {
@@ -111,6 +126,7 @@ describe('本地落空 → 自動查 Google', () => {
         stubPlaces(PLACES);
         win.openShopPicker({});
         await type('興波');
+        await awaitGoogleRows();
         expect(localItems().map(b => b.dataset.shopId)).toEqual(['']); // 只剩「不指定」
         expect(googleSection().hidden).toBe(false);
         expect(googleItems()).toHaveLength(1);
@@ -122,6 +138,7 @@ describe('本地落空 → 自動查 Google', () => {
         const calls = stubPlaces(PLACES);
         win.openShopPicker({});
         await type('DoDidDone');
+        await awaitGoogleRows();
         expect(calls).toEqual(['DoDidDone']);
     });
 
@@ -131,6 +148,7 @@ describe('本地落空 → 自動查 Google', () => {
         await type('興', 50);
         await type('興波', 50);
         await type('興波咖', 450);
+        await awaitGoogleRows();
         expect(calls).toEqual(['興波咖']);
     });
 
@@ -138,6 +156,7 @@ describe('本地落空 → 自動查 Google', () => {
         const calls = stubPlaces(PLACES);
         win.openShopPicker({});
         await type('興波');
+        await awaitGoogleRows();
         await type('興波');
         expect(calls).toHaveLength(1);
     });
@@ -146,8 +165,8 @@ describe('本地落空 → 自動查 Google', () => {
         stubPlaces([]);
         win.openShopPicker({});
         await type('zzzz');
+        await waitFor(() => googleNote()?.textContent.includes('Google 地圖也找不到'));
         expect(googleItems()).toHaveLength(0);
-        expect(googleNote().textContent).toContain('Google 地圖也找不到');
     });
 
     it('ignores a stale response when the query moved on', async () => {
@@ -157,7 +176,9 @@ describe('本地落空 → 自動查 Google', () => {
         });
         win.openShopPicker({});
         await type('aaa', 450);
+        await waitFor(() => deferred.has('aaa'));
         await type('bbb', 450);
+        await waitFor(() => deferred.has('bbb'));
         deferred.get('bbb')({ places: [{ id: 'gb', displayName: 'B 店', formattedAddress: 'b' }] });
         await settle();
         deferred.get('aaa')({ places: [{ id: 'ga', displayName: 'A 店', formattedAddress: 'a' }] });
@@ -166,11 +187,26 @@ describe('本地落空 → 自動查 Google', () => {
         expect(googleItems()[0].textContent).toContain('B 店');
     });
 
+    it('does not re-open the section when a local match arrives mid-flight', async () => {
+        const deferred = new Map();
+        stubPlaces(null, { onCall: q => new Promise(resolve => deferred.set(q, resolve)) });
+        win.openShopPicker({});
+        await type('gabbee', 450);              // 打錯字，本地 0 筆 → 問 Google
+        await waitFor(() => deferred.has('gabbee'));
+        await type('GABEE', 450);               // 改對了，本地命中 → 區塊收起來
+        expect(googleSection().hidden).toBe(true);
+        deferred.get('gabbee')({ places: PLACES });
+        await settle();
+        expect(googleSection().hidden).toBe(true);
+        expect(googleItems()).toHaveLength(0);
+    });
+
     it('does not write to the DOM after the modal closed mid-flight', async () => {
         const deferred = new Map();
         stubPlaces(null, { onCall: q => new Promise(resolve => deferred.set(q, resolve)) });
         win.openShopPicker({});
         await type('aaa', 450);
+        await waitFor(() => deferred.has('aaa'));
         doc.querySelector('.modal-close').click();
         deferred.get('aaa')({ places: PLACES });
         await settle();
@@ -188,6 +224,7 @@ describe('Google 結果已經在清單裡', () => {
         stubPlaces(KNOWN);
         win.openShopPicker({});
         await type('gabee coffee shop');
+        await awaitGoogleRows();
         expect(googleItems()[0].textContent).toContain('已在清單中');
     });
 
@@ -198,6 +235,7 @@ describe('Google 結果已經在清單裡', () => {
         let created = 'untouched';
         win.openShopPicker({ onPick: (id, shop) => { picked = id; created = shop; } });
         await type('gabee coffee shop');
+        await awaitGoogleRows();
         googleItems()[0].click();
         await settle();
         expect(picked).toBe('s1');
@@ -222,6 +260,7 @@ describe('Google 結果是新地點', () => {
         let picked, created;
         win.openShopPicker({ onPick: (id, shop) => { picked = id; created = shop; } });
         await type('興波');
+        await awaitGoogleRows();
         googleItems()[0].click();
         await settle();
 
@@ -243,19 +282,67 @@ describe('Google 結果是新地點', () => {
         expect(toastText()).toContain('已新增店家');
     });
 
-    it('accepts a LatLng-style location whose lat/lng are functions', async () => {
+    // Maps SDK 給的是 LatLng，lat()/lng() 讀 this。這裡刻意用 class 而不是
+    // arrow function —— arrow function 不看 this，會把「方法被拆下來呼叫」的 bug 蓋掉。
+    it('reads a real LatLng whose lat()/lng() depend on their receiver', async () => {
+        class LatLng {
+            constructor(lat, lng) { this._lat = lat; this._lng = lng; }
+            lat() { return this._lat; }
+            lng() { return this._lng; }
+        }
         stubPlaces([{
             id: 'g9',
             displayName: '興波咖啡',
             formattedAddress: '台北市中正區忠孝東路',
-            location: { lat: () => 25.03, lng: () => 121.56 },
+            location: new LatLng(25.03, 121.56),
         }]);
         const sb = stubSupabase({ insertResult: { data: SAVED, error: null }, listRows: () => [SAVED] });
         win.openShopPicker({});
         await type('興波');
+        await awaitGoogleRows();
         googleItems()[0].click();
         await settle();
         expect(sb.inserted).toMatchObject({ lat: 25.03, lng: 121.56 });
+        expect(toastText()).toContain('已新增店家');
+    });
+
+    it('keeps the created shop in the cache even if the refresh fails', async () => {
+        stubPlaces(NEW);
+        stubSupabase({
+            insertResult: { data: SAVED, error: null },
+            listRows: () => { throw new Error('network down'); },
+        });
+        let picked;
+        win.openShopPicker({ onPick: id => { picked = id; } });
+        await type('興波');
+        await awaitGoogleRows();
+        googleItems()[0].click();
+        await settle();
+        expect(picked).toBe('s9');
+        // 否則 renderShopPickerLabel 會把剛建好的店家標成「已刪除店家」。
+        expect(readShops()).toContainEqual(SAVED);
+    });
+
+    it('ignores a second row clicked while the first is still saving', async () => {
+        stubPlaces([
+            NEW[0],
+            { id: 'g8', displayName: '另一家', formattedAddress: 'addr', location: { lat: 1, lng: 2 } },
+        ]);
+        let release;
+        const held = new Promise(r => { release = r; });
+        const sb = stubSupabase({ insertResult: held, listRows: () => [...SHOPS, SAVED] });
+        const picks = [];
+        win.openShopPicker({ onPick: id => picks.push(id) });
+        await type('興波');
+        await awaitGoogleRows();
+        googleItems()[0].click();
+        await settle(3);
+        googleItems()[1].click();       // 第一筆還在飛
+        await settle(3);
+        release({ data: SAVED, error: null });
+        await settle();
+        expect(sb.inserted).toMatchObject({ google_place_id: 'g9' });
+        expect(picks).toEqual(['s9']);
     });
 });
 
@@ -274,6 +361,7 @@ describe('createShop 撞到 23505', () => {
         let picked, created;
         win.openShopPicker({ onPick: (id, shop) => { picked = id; created = shop; } });
         await type('興波');
+        await awaitGoogleRows();
         googleItems()[0].click();
         await settle();
         expect(picked).toBe('s7');
@@ -291,6 +379,7 @@ describe('createShop 撞到 23505', () => {
         let picked = 'untouched';
         win.openShopPicker({ onPick: id => { picked = id; } });
         await type('興波');
+        await awaitGoogleRows();
         googleItems()[0].click();
         await settle();
         expect(picked).toBe('untouched');
@@ -309,8 +398,8 @@ describe('沒有 Google Maps key', () => {
         expect(localItems().map(b => b.dataset.shopId)).toEqual(['', 's1']);
 
         await type('zzzz');
+        await waitFor(() => googleNote()?.textContent.includes('API key'));
         expect(called).toBe(false);
-        expect(googleNote().textContent).toContain('API key');
     });
 });
 

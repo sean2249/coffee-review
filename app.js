@@ -2160,6 +2160,7 @@ function openShopPicker({ currentId = '', allowEmpty = true, emptyLabel = '— �
     let googleSeq = 0;          // 只有最新一次查詢的回應可以寫進 DOM
     let lastGoogleQuery = '';   // 同一個關鍵字不重複問 Google
     let googlePlaces = [];      // 目前顯示的候選，索引對應 data-idx
+    let creating = false;       // 新增中就擋掉其他列，避免建出兩家店
 
     const onKey = e => { if (e.key === 'Escape') close(); };
     function close() {
@@ -2208,6 +2209,7 @@ function openShopPicker({ currentId = '', allowEmpty = true, emptyLabel = '— �
 
     function hideGoogle() {
         clearTimeout(googleTimer);
+        googleSeq += 1;   // 作廢還在飛的回應，否則它會把區塊重新打開
         googleEl.hidden = true;
         googleListEl.innerHTML = '';
         googlePlaces = [];
@@ -2282,14 +2284,16 @@ function openShopPicker({ currentId = '', allowEmpty = true, emptyLabel = '— �
     // 漏掉了，例如店名拼法不同）。這種情況必須連結既有店家而不是 createShop ——
     // 否則就只是撞上 google_place_id unique 然後報錯，使用者無路可走。
     async function chooseGooglePlace(place, btn) {
-        if (!place || !place.id || !place.displayName) return;
+        if (creating || !place || !place.id || !place.displayName) return;
         const known = state.shops.find(s => s.google_place_id === place.id);
         if (known) { pick(known.id); return; }
 
-        // Places 回的 location 是 LatLng，lat/lng 是方法；純數字也一併接受。
-        const coord = v => (typeof v === 'function' ? v() : v ?? null);
+        // Places 回的 location 是 LatLng，lat()/lng() 讀 this —— 所以要連著物件一起
+        // 呼叫，不能把方法拆下來傳。純數字的 location 也一併接受。
+        const coord = (loc, key) => (typeof loc?.[key] === 'function' ? loc[key]() : loc?.[key] ?? null);
         const addrEl = btn.querySelector('.bf-option-addr');
         const addrText = addrEl ? addrEl.textContent : '';
+        creating = true;
         btn.disabled = true;
         if (addrEl) addrEl.textContent = '新增中…';
         try {
@@ -2297,11 +2301,14 @@ function openShopPicker({ currentId = '', allowEmpty = true, emptyLabel = '— �
                 name: place.displayName,
                 location: place.formattedAddress || null,
                 google_place_id: place.id,
-                lat: coord(place.location?.lat),
-                lng: coord(place.location?.lng),
+                lat: coord(place.location, 'lat'),
+                lng: coord(place.location, 'lng'),
                 google_data_fetched_at: new Date().toISOString(),
             });
             await refreshShopsCache();
+            // refreshShopsCache 失敗只會 console.warn，快取會停在舊的一份 —— 那會讓
+            // 剛建好的店家被 renderShopPickerLabel 標成「已刪除店家」。補進去。
+            if (!state.shops.some(s => s.id === saved.id)) state.shops.push(saved);
             showToast('✓ 已新增店家');
             pick(saved.id, saved);
         } catch (err) {
@@ -2312,6 +2319,7 @@ function openShopPicker({ currentId = '', allowEmpty = true, emptyLabel = '— �
                 const found = state.shops.find(s => s.google_place_id === place.id);
                 if (found) { pick(found.id); return; }
             }
+            creating = false;
             btn.disabled = false;
             if (addrEl) addrEl.textContent = addrText;
             showErrorToast('新增店家失敗：' + (err.message || err));
