@@ -59,9 +59,6 @@
                                 <i class="bi bi-chevron-down shop-picker-caret"></i>
                             </button>
                             <input type="hidden" id="f-shop">
-                            <button type="button" class="btn btn-outline-secondary" id="f-shop-new" title="新增店家">
-                                <i class="bi bi-plus-lg"></i>
-                            </button>
                         </div>
                         <div class="small-hint" data-mode-text="cupping">未填表示自家或來源不明。</div>
                     </div>
@@ -290,42 +287,6 @@
                 </button>
             </div>
         </form>
-    </template>
-
-    <!-- ─── Shop modal ─────────────────────────────────────────────────────── -->
-    <template id="tpl-shop-modal">
-        <div class="modal-backdrop-custom">
-            <div class="modal-shell" role="dialog" aria-modal="true" aria-labelledby="shop-modal-title">
-                <header class="modal-header">
-                    <h3 id="shop-modal-title">新增店家</h3>
-                    <button type="button" class="modal-close" aria-label="關閉">
-                        <i class="bi bi-x-lg"></i>
-                    </button>
-                </header>
-                <form class="modal-body" id="shop-modal-form">
-                    <!-- 店家資料一律取自 Google Places：沒有任何手動輸入的店名/位置欄位。 -->
-                    <div class="mb-2 sm-place-row" hidden>
-                        <label for="sm-place-search" class="form-label">Google Places 搜尋</label>
-                        <div class="input-group">
-                            <input type="search" class="form-control" id="sm-place-search" placeholder="輸入店名或關鍵字">
-                            <button type="button" class="btn btn-outline-secondary" id="sm-place-search-btn">
-                                <i class="bi bi-search"></i>搜尋
-                            </button>
-                        </div>
-                        <div id="sm-place-results" class="sm-place-results"></div>
-                        <div class="form-text">店名與地址一律以 Google Places 為準，不可手動修改。</div>
-                    </div>
-                    <div class="empty-state sm-place-unavailable" hidden>
-                        <i class="bi bi-exclamation-triangle"></i>
-                        <p>需先設定 Google Maps API key 才能新增店家。</p>
-                    </div>
-                    <div class="modal-actions">
-                        <button type="button" class="btn btn-outline-secondary" data-action="cancel">取消</button>
-                        <button type="submit" class="btn btn-primary" id="sm-save" disabled>儲存</button>
-                    </div>
-                </form>
-            </div>
-        </div>
     </template>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"
