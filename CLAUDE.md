@@ -217,8 +217,11 @@ bump `VERSION` in `sw.js:6`.
   block in README.md, and (4) the Supabase project schema. There are no migrations.
 - Shop-level experience (氛圍 / 設施 / 風格 / 材質 / 服務 / 餐點 / 飲料) lives in
   `coffee.shop_notes` — one row per (shop, user) — **not** in `tasting_records`. Its
-  editor is `initTagSections(container)` mounted by the shop detail page; payload
-  assembly is `buildShopNotePayload` / `applyShopNoteToEditor`.
+  editor is `initTagSections(container)`, mounted by the shop detail page and by the
+  tasting form's 我的店家筆記 card (`refreshFormShopNote` → `mountFormShopNote`, which
+  expands when the shop has no note yet and collapses when it does; the form only
+  upserts it when `formShopNoteIsDirty()`); payload assembly is `buildShopNotePayload` /
+  `applyShopNoteToEditor`.
 - Adding evaluation fields? Update `referenceFields` / `observationFields` and verify the
   card list / detail card still renders sensibly with old records (treat missing keys as
   default).

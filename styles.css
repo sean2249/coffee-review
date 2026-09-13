@@ -834,6 +834,23 @@ button.card-title {
 .flavor-tag:hover { background-color: var(--bg-muted-hover); transform: translateY(-1px); }
 .flavor-tag.selected { background-color: var(--ft-color); color: #ffffff; }
 
+/* ───── 品鑑表單裡的店家筆記 ───────────────────────────────────────────── */
+/* Bootstrap 的 .card 設了 display:flex，會蓋掉瀏覽器內建的 [hidden]。 */
+#form-shop-note-card[hidden] { display: none !important; }
+
+.shop-note-status {
+    font-size: 0.75rem;
+    font-weight: 400;
+    color: var(--text-muted);
+    background: var(--bg-soft);
+    border-radius: 999px;
+    padding: 0.1rem 0.5rem;
+}
+.shop-note-status.is-empty {
+    color: var(--accent);
+    background: var(--accent-tint);
+}
+
 /* ───── Tasting tag sections (氛圍/裝潢/服務 chips) ─────────────────────── */
 .tag-section {
     padding: 0.8rem 0;
