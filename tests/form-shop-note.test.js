@@ -104,6 +104,17 @@ describe('formShopNoteIsDirty', () => {
         doc.querySelector('[data-tag-chips="facilities"] .tag-chip.selected').click();
         expect(win.formShopNoteIsDirty()).toBe(true);
     });
+
+    // 換店家會重掛編輯器。host 若沿用同一個節點，initTagSections 的 click 委派
+    // 會疊第二層，每次點擊被處理兩次而互相抵銷 —— chip 點了等於沒點。
+    it('重掛之後 chip 仍然點得動', () => {
+        win.mountFormShopNote(NOTE);
+        win.mountFormShopNote(null);
+        const chip = doc.querySelector('[data-tag-chips="facilities"] .tag-chip');
+        chip.click();
+        expect(chip.classList.contains('selected')).toBe(true);
+        expect(win.formShopNoteIsDirty()).toBe(true);
+    });
 });
 
 describe('refreshFormShopNote', () => {

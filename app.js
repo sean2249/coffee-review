@@ -2984,7 +2984,7 @@ function setScaleValue(key, val) {
 // 品鑑一定綁店家，而店家體驗（環境 / 設施 / 服務⋯）存在 coffee.shop_notes。
 // 在表單就地掛一份編輯器：沒填過就展開讓使用者當場補，填過就收合，只提示以前
 // 記過什麼。存記錄時有改才寫回 —— 沒動過就不留一筆空筆記。
-const formShopNote = { shopId: null, note: null, baseline: null };
+const formShopNote = { shopId: null, baseline: null };
 
 // 初始收合狀態靠 class 設定（.collapse.show + 按鈕的 collapsed / aria）；
 // 之後使用者自己點開點關由 Bootstrap 的 collapse 接手。
@@ -3001,12 +3001,16 @@ function setFormShopNoteExpanded(expanded) {
 function mountFormShopNote(note) {
     const host = document.getElementById('form-shop-note-sections');
     if (!host) return;
+    // initTagSections 每次都會在 host 上再掛一層 click 委派，而表單的 host 節點
+    // 是固定的（店家頁則是每次重建）。換店家重掛前先換成乾淨節點，否則第二次起
+    // 每個 chip 會被處理兩次而互相抵銷，整個編輯器等於點不動。
+    const freshHost = host.cloneNode(false);
+    host.replaceWith(freshHost);
     // 換店家時 applyShopNoteToEditor(null) 會直接 return，intro 得自己清。
     const introEl = document.getElementById('sn-intro');
     if (introEl) introEl.value = '';
-    initTagSections(host);
+    initTagSections(freshHost);
     applyShopNoteToEditor(note);
-    formShopNote.note = note;
     formShopNote.baseline = JSON.stringify(buildShopNotePayload());
 
     const status = document.getElementById('form-shop-note-status');
@@ -3024,7 +3028,6 @@ async function refreshFormShopNote(shopId) {
     const card = document.getElementById('form-shop-note-card');
     if (!card) return;
     formShopNote.shopId = shopId || null;
-    formShopNote.note = null;
     formShopNote.baseline = null;
     if (!shopId) {
         card.hidden = true;
@@ -3048,17 +3051,19 @@ function formShopNoteIsDirty() {
     return JSON.stringify(buildShopNotePayload()) !== formShopNote.baseline;
 }
 
-// 記錄與筆記分屬兩張表：記錄存完才寫筆記，而且筆記失敗不該讓已存檔的記錄看起來
-// 失敗，所以錯誤在這裡自己吞掉、另外提示。
+// 記錄與筆記分屬兩張表：記錄存完才寫筆記。筆記失敗不該讓已存檔的記錄看起來失敗，
+// 但也不能無聲無息 —— toast 只有一個節點，這裡自己跳提示會馬上被 submitForm 的
+// 成功訊息蓋掉，所以只回傳成敗，由 submitForm 決定最後顯示哪一句。
 async function saveFormShopNoteIfDirty() {
-    if (!formShopNote.shopId || !formShopNoteIsDirty()) return;
+    if (!formShopNote.shopId || !formShopNoteIsDirty()) return true;
     const payload = buildShopNotePayload();
     try {
-        formShopNote.note = await api.upsertShopNote(formShopNote.shopId, payload);
+        await api.upsertShopNote(formShopNote.shopId, payload);
         formShopNote.baseline = JSON.stringify(payload);
+        return true;
     } catch (e) {
         console.error(e);
-        showErrorToast('店家筆記儲存失敗：' + (e.message || e));
+        return false;
     }
 }
 
@@ -3322,16 +3327,19 @@ async function submitForm() {
         const payload = buildFormPayload(mode);
         if (recordId) {
             await api.updateRecord(mode, recordId, payload);
-            await saveFormShopNoteIfDirty();
+            const noteSaved = await saveFormShopNoteIfDirty();
             state.currentForm?.cancelDraftSave?.();
             if (state.currentForm?.draftKey) clearDraft(state.currentForm.draftKey);
-            showToast('✓ 已更新');
+            if (noteSaved) showToast('✓ 已更新');
+            else showErrorToast('記錄已更新，但店家筆記沒存起來，請再存一次');
         } else {
             const created = await api.createRecord(mode, payload);
-            await saveFormShopNoteIfDirty();
+            const noteSaved = await saveFormShopNoteIfDirty();
             state.currentForm?.cancelDraftSave?.();
             if (state.currentForm?.draftKey) clearDraft(state.currentForm.draftKey);
-            showToast('✓ 已儲存');
+            // 接著就離開表單：筆記沒存成功的話編輯內容也跟著消失，得說清楚。
+            if (noteSaved) showToast('✓ 已儲存');
+            else showErrorToast('記錄已儲存，但店家筆記沒存起來，請到店家頁再填一次');
             navigate(`/${mode}/${created.id}`);
             return;
         }
