@@ -1723,6 +1723,8 @@ async function viewForm(root, { mode, recordId, prefillShopId = null }) {
 
     const initialShopId = document.getElementById('f-shop')?.value || '';
     refreshImportBeanForShop(mode, initialShopId);
+    // 杯測傳空字串進去 = 重置狀態並收起卡片（避免沿用上一張品鑑表單的店家）。
+    refreshFormShopNote(mode === 'tasting' ? initialShopId : '');
 
     if (recordId) {
         document.getElementById('f-save-label').textContent = '儲存變更';
@@ -2978,6 +2980,93 @@ function setScaleValue(key, val) {
     });
 }
 
+// ─── 品鑑表單裡的店家筆記 ───────────────────────────────────────────────────
+// 品鑑一定綁店家，而店家體驗（環境 / 設施 / 服務⋯）存在 coffee.shop_notes。
+// 在表單就地掛一份編輯器：沒填過就展開讓使用者當場補，填過就收合，只提示以前
+// 記過什麼。存記錄時有改才寫回 —— 沒動過就不留一筆空筆記。
+const formShopNote = { shopId: null, baseline: null };
+
+// 初始收合狀態靠 class 設定（.collapse.show + 按鈕的 collapsed / aria）；
+// 之後使用者自己點開點關由 Bootstrap 的 collapse 接手。
+function setFormShopNoteExpanded(expanded) {
+    const body = document.getElementById('formShopNote');
+    const toggle = document.getElementById('form-shop-note-toggle');
+    if (!body || !toggle) return;
+    body.classList.toggle('show', expanded);
+    toggle.classList.toggle('collapsed', !expanded);
+    toggle.setAttribute('aria-expanded', String(expanded));
+}
+
+// note 為 null = 這家店還沒填過筆記。
+function mountFormShopNote(note) {
+    const host = document.getElementById('form-shop-note-sections');
+    if (!host) return;
+    // initTagSections 每次都會在 host 上再掛一層 click 委派，而表單的 host 節點
+    // 是固定的（店家頁則是每次重建）。換店家重掛前先換成乾淨節點，否則第二次起
+    // 每個 chip 會被處理兩次而互相抵銷，整個編輯器等於點不動。
+    const freshHost = host.cloneNode(false);
+    host.replaceWith(freshHost);
+    // 換店家時 applyShopNoteToEditor(null) 會直接 return，intro 得自己清。
+    const introEl = document.getElementById('sn-intro');
+    if (introEl) introEl.value = '';
+    initTagSections(freshHost);
+    applyShopNoteToEditor(note);
+    formShopNote.baseline = JSON.stringify(buildShopNotePayload());
+
+    const status = document.getElementById('form-shop-note-status');
+    if (status) {
+        const when = note ? fmtDate(note.updated_at || note.created_at) : '';
+        status.textContent = note ? (when ? `已填寫 · ${when}` : '已填寫') : '還沒填過';
+        status.classList.toggle('is-empty', !note);
+    }
+    setFormShopNoteExpanded(!note);
+}
+
+// 依目前選到的店家載入筆記。沒選店家、或讀取失敗就整張卡收起來 —— 空白編輯器
+// 加上存檔會把讀不到的既有筆記蓋掉。
+async function refreshFormShopNote(shopId) {
+    const card = document.getElementById('form-shop-note-card');
+    if (!card) return;
+    formShopNote.shopId = shopId || null;
+    formShopNote.baseline = null;
+    if (!shopId) {
+        card.hidden = true;
+        return;
+    }
+    let note = null;
+    try {
+        note = await api.getShopNote(shopId);
+    } catch (e) {
+        console.warn('getShopNote failed:', e);
+        card.hidden = true;
+        return;
+    }
+    if (formShopNote.shopId !== shopId) return; // 途中換了店家 → 丟掉這次結果
+    card.hidden = false;
+    mountFormShopNote(note);
+}
+
+function formShopNoteIsDirty() {
+    if (formShopNote.baseline === null) return false;
+    return JSON.stringify(buildShopNotePayload()) !== formShopNote.baseline;
+}
+
+// 記錄與筆記分屬兩張表：記錄存完才寫筆記。筆記失敗不該讓已存檔的記錄看起來失敗，
+// 但也不能無聲無息 —— toast 只有一個節點，這裡自己跳提示會馬上被 submitForm 的
+// 成功訊息蓋掉，所以只回傳成敗，由 submitForm 決定最後顯示哪一句。
+async function saveFormShopNoteIfDirty() {
+    if (!formShopNote.shopId || !formShopNoteIsDirty()) return true;
+    const payload = buildShopNotePayload();
+    try {
+        await api.upsertShopNote(formShopNote.shopId, payload);
+        formShopNote.baseline = JSON.stringify(payload);
+        return true;
+    } catch (e) {
+        console.error(e);
+        return false;
+    }
+}
+
 // ─── Form event wiring + data flow ──────────────────────────────────────────
 function bindFormHandlers() {
     const form = document.querySelector('.record-form');
@@ -3046,6 +3135,7 @@ function bindFormHandlers() {
         shopSel.addEventListener('change', () => {
             const mode = state.currentForm?.mode;
             if (mode) refreshImportBeanForShop(mode, shopSel.value);
+            if (mode === 'tasting') refreshFormShopNote(shopSel.value);
         });
     }
 
@@ -3237,14 +3327,19 @@ async function submitForm() {
         const payload = buildFormPayload(mode);
         if (recordId) {
             await api.updateRecord(mode, recordId, payload);
+            const noteSaved = await saveFormShopNoteIfDirty();
             state.currentForm?.cancelDraftSave?.();
             if (state.currentForm?.draftKey) clearDraft(state.currentForm.draftKey);
-            showToast('✓ 已更新');
+            if (noteSaved) showToast('✓ 已更新');
+            else showErrorToast('記錄已更新，但店家筆記沒存起來，請再存一次');
         } else {
             const created = await api.createRecord(mode, payload);
+            const noteSaved = await saveFormShopNoteIfDirty();
             state.currentForm?.cancelDraftSave?.();
             if (state.currentForm?.draftKey) clearDraft(state.currentForm.draftKey);
-            showToast('✓ 已儲存');
+            // 接著就離開表單：筆記沒存成功的話編輯內容也跟著消失，得說清楚。
+            if (noteSaved) showToast('✓ 已儲存');
+            else showErrorToast('記錄已儲存，但店家筆記沒存起來，請到店家頁再填一次');
             navigate(`/${mode}/${created.id}`);
             return;
         }
@@ -3323,7 +3418,9 @@ function applyRecordToForm(mode, r) {
         set('f-tasting-bean', r.bean_name || '');
         // Legacy tasting rows have no bean_type — leave empty so the user picks one on edit.
         setBeanType('tasting', r.bean_type || '');
-        // 店家體驗欄位已搬到 shop_notes，品鑑表單不再載入它們。
+        // 店家體驗欄位已搬到 shop_notes：不在記錄的 payload 裡，改由店家筆記卡
+        // 依 shop_id 自行載入（沒填過展開、填過收合）。
+        refreshFormShopNote(shopSel.value);
     }
 
     // CoE

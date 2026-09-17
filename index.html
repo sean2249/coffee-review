@@ -68,6 +68,32 @@
                 </div>
             </div>
 
+            <!-- Tasting-only: 我對這家店的筆記（依選到的店家載入；沒填過會自動展開） -->
+            <div class="card" data-mode-only="tasting" id="form-shop-note-card" hidden>
+                <div class="card-body">
+                    <button type="button"
+                            class="card-title card-title-collapsible collapsed"
+                            id="form-shop-note-toggle"
+                            data-bs-toggle="collapse" data-bs-target="#formShopNote"
+                            aria-expanded="false" aria-controls="formShopNote">
+                        <i class="bi bi-emoji-smile"></i>
+                        <span>我的店家筆記</span>
+                        <span class="shop-note-status" id="form-shop-note-status"></span>
+                        <i class="bi bi-chevron-down card-toggle-chevron"></i>
+                    </button>
+                    <div id="formShopNote" class="collapse">
+                        <div class="pt-2">
+                            <div class="small-hint mb-2">環境、設施、服務屬於這家店，不綁這次品鑑；有修改才會在存記錄時一併更新。</div>
+                            <div class="mb-3">
+                                <label class="form-label" for="sn-intro">介紹 / 備註</label>
+                                <textarea class="form-control" id="sn-intro" rows="3"></textarea>
+                            </div>
+                            <div id="form-shop-note-sections"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <!-- Cupping-only: bean info + brewing params -->
             <div class="card" data-mode-only="cupping">
                 <div class="card-body">
