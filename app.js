@@ -2120,7 +2120,12 @@ function renderShopTriggerLabel() {
 }
 
 // Searchable shop picker modal. Reuses the custom-modal idiom (see openNewRecordPicker)
-// and the same name/location/intro substring filter as the /shops list view.
+// and the same name/location substring filter as the /shops list view.
+//
+// 兩層查找：先過濾本地 registry（state.shops），本地完全找不到才問 Google Places。
+// 店家是共享 registry，身分由 google_place_id 定義，name/location/lat/lng 全是
+// Google 的投影 —— 所以這裡（以及整個 app）都沒有任何手動輸入店名/位置的欄位，
+// 新增店家的唯一途徑就是從 Google 結果挑一筆。
 function openShopPicker({ currentId = '', allowEmpty = true, emptyLabel = '— 不指定 —', onPick } = {}) {
     // Remember the control that opened the dialog so focus can return to it on
     // close — otherwise keyboard users are stranded on the removed search input.
@@ -2128,17 +2133,21 @@ function openShopPicker({ currentId = '', allowEmpty = true, emptyLabel = '— �
     const backdrop = document.createElement('div');
     backdrop.className = 'modal-backdrop-custom';
     backdrop.innerHTML = `
-        <div class="modal-shell" role="dialog" aria-modal="true" aria-label="選擇店家">
+        <div class="modal-shell" role="dialog" aria-modal="true" aria-label="選擇或新增店家">
             <header class="modal-header">
-                <h3>選擇店家</h3>
+                <h3>選擇或新增店家</h3>
                 <button type="button" class="modal-close" aria-label="關閉">
                     <i class="bi bi-x-lg"></i>
                 </button>
             </header>
             <div class="modal-body">
                 <input type="search" class="form-control shop-picker-search"
-                       placeholder="搜尋店家名稱或地址…" autocomplete="off">
+                       placeholder="搜尋店家；找不到會自動查 Google 地圖" autocomplete="off">
                 <div class="shop-picker-list"></div>
+                <div class="shop-picker-google" hidden>
+                    <div class="shop-picker-google-title">Google 地圖結果</div>
+                    <div class="shop-picker-google-list"></div>
+                </div>
             </div>
         </div>`;
     document.body.appendChild(backdrop);
@@ -2146,15 +2155,29 @@ function openShopPicker({ currentId = '', allowEmpty = true, emptyLabel = '— �
 
     const listEl = backdrop.querySelector('.shop-picker-list');
     const searchEl = backdrop.querySelector('.shop-picker-search');
+    const googleEl = backdrop.querySelector('.shop-picker-google');
+    const googleListEl = backdrop.querySelector('.shop-picker-google-list');
+
+    let googleTimer;
+    let googleSeq = 0;          // 只有最新一次查詢的回應可以寫進 DOM
+    let lastGoogleQuery = '';   // 同一個關鍵字不重複問 Google
+    let googlePlaces = [];      // 目前顯示的候選，索引對應 data-idx
+    let creating = false;       // 新增中就擋掉其他列，避免建出兩家店
 
     const onKey = e => { if (e.key === 'Escape') close(); };
     function close() {
+        clearTimeout(googleTimer);
         backdrop.remove();
         document.body.classList.remove('modal-open-custom');
         document.removeEventListener('keydown', onKey);
         if (opener && typeof opener.focus === 'function') opener.focus();
     }
-    const pick = id => { close(); if (typeof onPick === 'function') onPick(id); };
+    // 第二個引數只在「這次新建出來的店家」時才帶，呼叫端靠它區分「找到既有店家」
+    // 與「剛建立一家店」。既有（含 23505 恢復）一律只傳 id。
+    const pick = (id, created = null) => {
+        close();
+        if (typeof onPick === 'function') onPick(id, created);
+    };
 
     const renderList = q => {
         const query = q.toLowerCase();
@@ -2170,7 +2193,7 @@ function openShopPicker({ currentId = '', allowEmpty = true, emptyLabel = '— �
             html += `<button type="button" class="shop-picker-list-item${sel}" data-shop-id="">${escapeHtml(emptyLabel)}</button>`;
         }
         if (state.shops.length === 0) {
-            html += '<div class="shop-picker-empty">尚無店家，請先新增店家。</div>';
+            html += '<div class="shop-picker-empty">尚無店家，輸入店名即可從 Google 地圖新增。</div>';
         } else if (matches.length === 0) {
             html += '<div class="shop-picker-empty">找不到符合的店家。</div>';
         } else {
@@ -2182,7 +2205,128 @@ function openShopPicker({ currentId = '', allowEmpty = true, emptyLabel = '— �
             }).join('');
         }
         listEl.innerHTML = html;
+        // 注意傳原始字串而不是 lower-case 過的 query：Places 要收使用者打的原文。
+        scheduleGoogle(q, matches.length);
     };
+
+    function hideGoogle() {
+        clearTimeout(googleTimer);
+        googleSeq += 1;   // 作廢還在飛的回應，否則它會把區塊重新打開
+        googleEl.hidden = true;
+        googleListEl.innerHTML = '';
+        googlePlaces = [];
+        lastGoogleQuery = '';
+    }
+
+    function showGoogleNote(html) {
+        googleListEl.innerHTML = `<div class="shop-picker-empty shop-picker-google-note">${html}</div>`;
+        googleEl.hidden = false;
+    }
+
+    // Google 只在本地完全找不到時才問，而且 debounce 得比 app 其他地方久 ——
+    // 每個按鍵打一次 Places API 既慢又要錢。
+    function scheduleGoogle(query, localCount) {
+        clearTimeout(googleTimer);
+        if (!query || localCount > 0) { hideGoogle(); return; }
+        if (query === lastGoogleQuery) return;   // 結果還在畫面上，別重問
+        googleTimer = setTimeout(() => {
+            if (!document.body.contains(backdrop)) return;
+            runGoogleSearch(query);
+        }, 400);
+    }
+
+    async function runGoogleSearch(query) {
+        if (!isGoogleMapsReady()) {
+            showGoogleNote('需先設定 Google Maps API key 才能從地圖新增店家。');
+            return;
+        }
+        const seq = ++googleSeq;
+        lastGoogleQuery = query;
+        showGoogleNote('<i class="bi bi-hourglass-split"></i> Google 搜尋中…');
+        try {
+            const g = await ensureGoogleMaps();
+            if (!g) throw new Error('Google Maps 載入失敗');
+            const { Place } = await g.maps.importLibrary('places');
+            const { places } = await Place.searchByText({
+                textQuery: query,
+                fields: ['id', 'displayName', 'formattedAddress', 'location'],
+                maxResultCount: 5,
+            });
+            // 使用者已改字或關掉 modal → 這是過期回應，不能蓋掉現在的畫面。
+            if (seq !== googleSeq || !document.body.contains(backdrop)) return;
+            googlePlaces = places || [];
+            renderGoogleResults();
+        } catch (err) {
+            if (seq !== googleSeq || !document.body.contains(backdrop)) return;
+            lastGoogleQuery = '';   // 失敗不算查過，讓使用者能再試一次
+            showGoogleNote(`Google 搜尋失敗：${escapeHtml(err.message || String(err))}`);
+        }
+    }
+
+    function renderGoogleResults() {
+        if (googlePlaces.length === 0) {
+            showGoogleNote('<i class="bi bi-inbox"></i> Google 地圖也找不到這家店。');
+            return;
+        }
+        googleListEl.innerHTML = googlePlaces.map((p, i) => {
+            const known = p.id ? state.shops.find(s => s.google_place_id === p.id) : null;
+            const badge = known ? '<span class="shop-picker-badge">已在清單中</span>' : '';
+            return `
+                <button type="button" class="bf-option shop-picker-google-item" data-idx="${i}">
+                    <div>
+                        <div class="bf-option-name">${escapeHtml(p.displayName || '')}${badge}</div>
+                        <div class="bf-option-addr">${escapeHtml(p.formattedAddress || '')}</div>
+                    </div>
+                </button>`;
+        }).join('');
+        googleEl.hidden = false;
+    }
+
+    // 兩層查找的收口：Google 找到的地點可能其實早就在 registry 裡（本地關鍵字搜尋
+    // 漏掉了，例如店名拼法不同）。這種情況必須連結既有店家而不是 createShop ——
+    // 否則就只是撞上 google_place_id unique 然後報錯，使用者無路可走。
+    async function chooseGooglePlace(place, btn) {
+        if (creating || !place || !place.id || !place.displayName) return;
+        const known = state.shops.find(s => s.google_place_id === place.id);
+        if (known) { pick(known.id); return; }
+
+        // Places 回的 location 是 LatLng，lat()/lng() 讀 this —— 所以要連著物件一起
+        // 呼叫，不能把方法拆下來傳。純數字的 location 也一併接受。
+        const coord = (loc, key) => (typeof loc?.[key] === 'function' ? loc[key]() : loc?.[key] ?? null);
+        const addrEl = btn.querySelector('.bf-option-addr');
+        const addrText = addrEl ? addrEl.textContent : '';
+        creating = true;
+        btn.disabled = true;
+        if (addrEl) addrEl.textContent = '新增中…';
+        try {
+            const saved = await api.createShop({
+                name: place.displayName,
+                location: place.formattedAddress || null,
+                google_place_id: place.id,
+                lat: coord(place.location, 'lat'),
+                lng: coord(place.location, 'lng'),
+                google_data_fetched_at: new Date().toISOString(),
+            });
+            await refreshShopsCache();
+            // refreshShopsCache 失敗只會 console.warn，快取會停在舊的一份 —— 那會讓
+            // 剛建好的店家被 renderShopPickerLabel 標成「已刪除店家」。補進去。
+            if (!state.shops.some(s => s.id === saved.id)) state.shops.push(saved);
+            showToast('✓ 已新增店家');
+            pick(saved.id, saved);
+        } catch (err) {
+            // 23505 = google_place_id 撞 unique：這家店其實已經存在，只是本地快取
+            // 沒有（別人剛建、或連點兩下）。重抓快取後改成連結既有店家。
+            if (err.code === '23505') {
+                await refreshShopsCache();
+                const found = state.shops.find(s => s.google_place_id === place.id);
+                if (found) { pick(found.id); return; }
+            }
+            creating = false;
+            btn.disabled = false;
+            if (addrEl) addrEl.textContent = addrText;
+            showErrorToast('新增店家失敗：' + (err.message || err));
+        }
+    }
 
     renderList('');
 
@@ -2190,6 +2334,10 @@ function openShopPicker({ currentId = '', allowEmpty = true, emptyLabel = '— �
     listEl.addEventListener('click', e => {
         const item = e.target.closest('.shop-picker-list-item');
         if (item) pick(item.dataset.shopId);
+    });
+    googleListEl.addEventListener('click', e => {
+        const btn = e.target.closest('.shop-picker-google-item');
+        if (btn) chooseGooglePlace(googlePlaces[Number(btn.dataset.idx)], btn);
     });
     backdrop.querySelector('.modal-close').addEventListener('click', close);
     backdrop.addEventListener('click', e => { if (e.target === backdrop) close(); });
@@ -3165,8 +3313,6 @@ function bindFormHandlers() {
         });
     });
 
-    document.getElementById('f-shop-new').addEventListener('click', () => openShopModal());
-
     form.addEventListener('submit', e => {
         e.preventDefault();
         submitForm();
@@ -3507,143 +3653,6 @@ async function loadRecordIntoForm(mode, recordId) {
     }
 }
 
-// ─── Shop modal（新增店家 — 純 Google Places 選取器） ─────────────────────────
-// 店家是共享 registry，身分由 google_place_id 定義，name/location/lat/lng 全是
-// Google 的投影。所以這裡不提供任何手動輸入欄位，也沒有「編輯」路徑
-// （要更新客觀資訊請走 resyncShopFromGoogle）。
-function openShopModal({ onSaved = null } = {}) {
-    const tpl = document.getElementById('tpl-shop-modal');
-    const node = tpl.content.firstElementChild.cloneNode(true);
-    document.body.appendChild(node);
-    document.body.classList.add('modal-open-custom');
-
-    const placeRow = node.querySelector('.sm-place-row');
-    const unavailableEl = node.querySelector('.sm-place-unavailable');
-    const placeSearchEl = node.querySelector('#sm-place-search');
-    const placeSearchBtn = node.querySelector('#sm-place-search-btn');
-    const placeResultsEl = node.querySelector('#sm-place-results');
-    const saveBtn = node.querySelector('#sm-save');
-
-    // 選定的 Google 地點。沒選就不能存 —— 這是「店名只能來自 Google」的落點。
-    let pendingPlace = null;
-
-    if (!isGoogleMapsReady()) {
-        unavailableEl.hidden = false;
-        saveBtn.hidden = true;
-    } else {
-        placeRow.hidden = false;
-        const runPlaceSearch = async () => {
-            const query = placeSearchEl.value.trim();
-            if (!query) {
-                placeSearchEl.focus();
-                return;
-            }
-            // Clear any previously-stashed selection so a new search doesn't carry
-            // stale google_place_id/lat/lng into the save payload.
-            pendingPlace = null;
-            saveBtn.disabled = true;
-            placeResultsEl.innerHTML = '<div class="empty-state small"><i class="bi bi-hourglass-split"></i>搜尋中…</div>';
-            const g = await ensureGoogleMaps();
-            if (!g) {
-                placeResultsEl.innerHTML = '<div class="empty-state error small"><i class="bi bi-exclamation-triangle"></i>Google Maps 載入失敗</div>';
-                return;
-            }
-            try {
-                const { Place } = await g.maps.importLibrary('places');
-                const { places } = await Place.searchByText({
-                    textQuery: query,
-                    fields: ['id', 'displayName', 'formattedAddress', 'location'],
-                    maxResultCount: 5,
-                });
-                if (!places || places.length === 0) {
-                    placeResultsEl.innerHTML = '<div class="empty-state small"><i class="bi bi-inbox"></i>找不到候選</div>';
-                    return;
-                }
-                placeResultsEl.innerHTML = places.map((p, i) => `
-                    <button type="button" class="bf-option sm-place-option" data-idx="${i}">
-                        <div>
-                            <div class="bf-option-name">${escapeHtml(p.displayName || '')}</div>
-                            <div class="bf-option-addr">${escapeHtml(p.formattedAddress || '')}</div>
-                        </div>
-                    </button>
-                `).join('');
-                placeResultsEl.querySelectorAll('.sm-place-option').forEach(btn => {
-                    btn.addEventListener('click', () => {
-                        const idx = Number(btn.dataset.idx);
-                        const place = places[idx];
-                        if (!place || !place.id || !place.displayName) return;
-                        pendingPlace = {
-                            name: place.displayName,
-                            location: place.formattedAddress || null,
-                            google_place_id: place.id,
-                            lat: place.location?.lat?.() ?? place.location?.lat ?? null,
-                            lng: place.location?.lng?.() ?? place.location?.lng ?? null,
-                        };
-                        saveBtn.disabled = false;
-                        placeResultsEl.innerHTML = `<div class="empty-state small"><i class="bi bi-check-circle"></i>已選擇：${escapeHtml(place.displayName)}</div>`;
-                    });
-                });
-            } catch (err) {
-                placeResultsEl.innerHTML = `<div class="empty-state error small"><i class="bi bi-exclamation-triangle"></i>搜尋失敗：${escapeHtml(err.message || String(err))}</div>`;
-            }
-        };
-        placeSearchBtn.addEventListener('click', runPlaceSearch);
-        placeSearchEl.addEventListener('keydown', e => {
-            // Prevent Enter from submitting the parent form; trigger search instead.
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                runPlaceSearch();
-            }
-        });
-    }
-
-    const close = () => {
-        node.remove();
-        document.body.classList.remove('modal-open-custom');
-    };
-
-    node.querySelector('.modal-close').addEventListener('click', close);
-    node.querySelector('[data-action="cancel"]').addEventListener('click', close);
-    node.addEventListener('click', e => {
-        if (e.target === node) close();
-    });
-
-    node.querySelector('#shop-modal-form').addEventListener('submit', async e => {
-        e.preventDefault();
-        if (!pendingPlace) return;
-        const payload = { ...pendingPlace, google_data_fetched_at: new Date().toISOString() };
-        try {
-            const saved = await api.createShop(payload);
-            showToast('✓ 已新增店家');
-            await refreshShopsCache();
-            close();
-            if (typeof onSaved === 'function') onSaved(saved);
-            else {
-                // Default behavior depending on current view
-                const { parts } = parseHash();
-                if (parts[0] === 'shops') renderRoute();
-                else if (state.currentForm) {
-                    const shopSel = document.getElementById('f-shop');
-                    populateShopSelect(shopSel, state.currentForm.mode === 'tasting');
-                    shopSel.value = saved.id;
-                    renderShopTriggerLabel();
-                    shopSel.dispatchEvent(new Event('change', { bubbles: true }));
-                }
-            }
-        } catch (e2) {
-            // Postgres unique_violation — Supabase passes the SQLSTATE through .code。
-            // name 已不再 unique，所以唯一可能的衝突就是 google_place_id。
-            if (e2.code === '23505') {
-                showErrorToast('這家店已經在清單裡了');
-            } else {
-                showErrorToast('儲存失敗：' + (e2.message || e2));
-            }
-        }
-    });
-
-    setTimeout(() => placeSearchEl?.focus(), 0);
-}
-
 // ─── Google Places 同步 ─────────────────────────────────────────────────────
 // coffee.shops 是 Google Places 的投影，快取的內容有保存期限：
 //
@@ -3742,21 +3751,25 @@ async function viewShopsList(root) {
             <input type="search" class="form-control shops-search-input" id="shops-search"
                    placeholder="搜尋店名或位置…" autocomplete="off">
             <button class="btn btn-primary" id="shops-new">
-                <i class="bi bi-plus-lg me-1"></i>新增店家
+                <i class="bi bi-plus-lg me-1"></i>搜尋 / 新增店家
             </button>
         </div>
         <div id="shops-grid" class="shops-grid">
             <div class="empty-state"><i class="bi bi-hourglass-split"></i>讀取中…</div>
         </div>`;
 
-    // After creating a shop here, offer to add a record for it right away so
-    // the user doesn't have to re-find the shop they just created.
-    const onShopCreated = (saved) => {
-        renderRoute();
-        openNewRecordPicker(saved);
+    // 選到既有店家 = 使用者其實在「找店」，直接帶他去那家店的頁面；剛建立的才
+    // 維持原本的流程：重繪清單，順手問要不要記一筆。
+    const onShopPicked = (id, created) => {
+        if (created) {
+            renderRoute();
+            openNewRecordPicker(created);
+        } else {
+            location.hash = `#/shops/${id}`;
+        }
     };
-    document.getElementById('shops-new')
-        .addEventListener('click', () => openShopModal({ onSaved: onShopCreated }));
+    const openShopSearch = () => openShopPicker({ allowEmpty: false, onPick: onShopPicked });
+    document.getElementById('shops-new').addEventListener('click', openShopSearch);
 
     const grid = document.getElementById('shops-grid');
     const renderGrid = (shops, stats) => {
@@ -3806,7 +3819,7 @@ async function viewShopsList(root) {
                 </button>
             </div>`;
             document.getElementById('shops-new-inline')
-                .addEventListener('click', () => openShopModal({ onSaved: onShopCreated }));
+                .addEventListener('click', openShopSearch);
             return;
         }
         renderGrid(shops, stats);
