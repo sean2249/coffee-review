@@ -49,6 +49,9 @@ describe('data views are gated when logged out', () => {
         ['viewForm', [{ mode: 'cupping', recordId: null }]],
         ['viewShopsList', []],
         ['viewShopDetail', ['shop-1']],
+        ['viewSessionForm', [{ sessionId: null }]],
+        ['viewSessionForm', [{ sessionId: 's1' }]],
+        ['viewSessionDetail', ['s1']],
     ];
 
     for (const [name, args] of views) {

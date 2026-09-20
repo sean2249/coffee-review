@@ -40,7 +40,7 @@
         </a>
     </nav>
 
-    <!-- ─── Form template — used by both 杯測 and 品鑑 ─────────────────────── -->
+    <!-- ─── Form template — used by both 沖煮 and 品鑑 ─────────────────────── -->
     <template id="tpl-form">
         <form class="record-form" novalidate>
 
@@ -307,6 +307,190 @@
             <div class="action-bar">
                 <button type="button" class="btn btn-outline-danger" id="f-delete" hidden>
                     <i class="bi bi-trash me-1"></i>刪除
+                </button>
+                <button type="submit" class="btn btn-info" id="f-save">
+                    <i class="bi bi-cloud-arrow-up me-1"></i><span id="f-save-label">儲存</span>
+                </button>
+            </div>
+        </form>
+    </template>
+
+    <!-- ─── Form template — 杯測場次（一場多杯，同一時間只放一杯的評分元件） ───
+         CoE 卡與感官評估卡沿用 #tpl-form 的 id（同時只會掛一張表單）；
+         除了 #f-save 以外的 button 一律 type="button"，否則點了就會送出整場。 -->
+    <template id="tpl-session-form">
+        <form class="record-form session-form" novalidate>
+
+            <div class="card">
+                <div class="card-body">
+                    <h3 class="card-title"><i class="bi bi-grid-3x3-gap"></i>杯測場次</h3>
+                    <div class="row g-2">
+                        <div class="col-md-4 col-6">
+                            <label for="f-session-date" class="form-label">日期</label>
+                            <input type="date" class="form-control" id="f-session-date">
+                        </div>
+                        <div class="col-12">
+                            <label for="f-session-title" class="form-label">場次名稱 / 主題</label>
+                            <input type="text" class="form-control" id="f-session-title"
+                                   placeholder="例：衣索比亞日曬 5 支比較">
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">編號方式</label>
+                            <div class="code-style-row" role="group" aria-label="編號方式">
+                                <button type="button" class="bean-type-chip"
+                                        data-code-style="manual" aria-pressed="false">自訂</button>
+                                <button type="button" class="bean-type-chip"
+                                        data-code-style="number" aria-pressed="false">1、2、3</button>
+                                <button type="button" class="bean-type-chip"
+                                        data-code-style="letter" aria-pressed="false">A、B、C</button>
+                            </div>
+                            <div class="small-hint">新增一杯時自動帶入下一個編號；切換只會補上空白的編號。</div>
+                        </div>
+                        <div class="col-12">
+                            <label for="f-session-notes" class="form-label">場次筆記</label>
+                            <textarea class="form-control" id="f-session-notes" rows="2"></textarea>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-body">
+                    <h3 class="card-title"><i class="bi bi-trophy"></i>總覽與排名</h3>
+                    <div id="session-overview"></div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-body">
+                    <div class="cup-tabbar" id="cup-tabbar" role="group" aria-label="杯"></div>
+                    <div class="cup-code-row">
+                        <div class="flex-grow-1">
+                            <label for="f-cup-code" class="form-label">這一杯的編號 *</label>
+                            <input type="text" class="form-control" id="f-cup-code" maxlength="12"
+                                   autocomplete="off" placeholder="例：A、1、#317">
+                        </div>
+                        <button type="button" class="btn btn-outline-danger btn-sm" id="f-cup-remove">
+                            <i class="bi bi-x-lg me-1"></i>移除這杯
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-body">
+                    <h3 class="card-title"><i class="bi bi-info-circle"></i>咖啡資訊（這一杯）</h3>
+                    <div class="row g-2">
+                        <div class="col-12">
+                            <label for="f-shop-trigger" class="form-label">豆源（店家）</label>
+                            <div class="shop-picker">
+                                <button type="button" class="form-select shop-picker-trigger" id="f-shop-trigger" aria-haspopup="dialog">
+                                    <span class="shop-picker-label is-placeholder">— 不指定 —</span>
+                                    <i class="bi bi-chevron-down shop-picker-caret"></i>
+                                </button>
+                                <input type="hidden" id="f-shop">
+                            </div>
+                        </div>
+                        <div class="col-12">
+                            <label for="f-cup-bean" class="form-label">咖啡名稱 / 豆名</label>
+                            <input type="text" class="form-control" id="f-cup-bean"
+                                   placeholder="例：衣索比亞 耶加雪菲 G1">
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">豆子類型</label>
+                            <div class="bean-type-chip-row" data-bean-type-group="session"
+                                 role="group" aria-label="豆子類型">
+                                <button type="button" class="bean-type-chip"
+                                        data-bean-type="single" aria-pressed="false">
+                                    <i class="bi bi-droplet"></i>單品
+                                </button>
+                                <button type="button" class="bean-type-chip"
+                                        data-bean-type="blend" aria-pressed="false">
+                                    <i class="bi bi-collection"></i>配方豆
+                                </button>
+                            </div>
+                        </div>
+                        <div class="col-md-6 col-12" data-bean-type-only="session:single">
+                            <label for="f-origin" class="form-label">國家</label>
+                            <input type="text" class="form-control" id="f-origin"
+                                   list="origin-options" placeholder="選擇或輸入國家">
+                            <datalist id="origin-options"></datalist>
+                        </div>
+                        <div class="col-12" data-bean-type-only="session:single">
+                            <label class="form-label">處理法</label>
+                            <div class="process-chip-row" role="group" aria-label="處理法"></div>
+                            <input type="text" class="form-control mt-2" id="f-process"
+                                   placeholder="或自行輸入">
+                        </div>
+                        <div class="col-12" data-bean-type-only="session:blend">
+                            <label for="f-blend_composition" class="form-label">配方組成</label>
+                            <textarea class="form-control" id="f-blend_composition" rows="2"
+                                      placeholder="例：50% 巴西黃波旁 + 30% 衣索比亞耶加雪菲 + 20% 哥倫比亞蕙蘭"></textarea>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label d-block">烘焙度</label>
+                            <div class="roast-radio-row" role="radiogroup" aria-label="烘焙度">
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input" type="radio" name="roast" id="f-roast-light" value="淺焙">
+                                    <label class="form-check-label" for="f-roast-light">淺焙</label>
+                                </div>
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input" type="radio" name="roast" id="f-roast-medium-light" value="中淺焙">
+                                    <label class="form-check-label" for="f-roast-medium-light">中淺焙</label>
+                                </div>
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input" type="radio" name="roast" id="f-roast-medium" value="中焙">
+                                    <label class="form-check-label" for="f-roast-medium">中焙</label>
+                                </div>
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input" type="radio" name="roast" id="f-roast-medium-dark" value="中深焙">
+                                    <label class="form-check-label" for="f-roast-medium-dark">中深焙</label>
+                                </div>
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input" type="radio" name="roast" id="f-roast-dark" value="深焙">
+                                    <label class="form-check-label" for="f-roast-dark">深焙</label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- CoE total（這一杯）：沒點過分數 = 未評分 -->
+            <div class="card coe-card">
+                <div class="card-body">
+                    <h3 class="card-title"><i class="bi bi-award-fill"></i>CoE 總分</h3>
+                    <div id="medalRow" class="medal-row" role="group" aria-label="徽章等級"></div>
+                    <div id="scoreChipRow" class="score-chip-row" role="group" aria-label="分數選擇"></div>
+                    <div class="coe-total-block">
+                        <span class="coe-total-display" id="coeTotalDisplay">—</span>
+                        <span class="coe-total-of">/ 100</span>
+                        <span class="coe-total-tier-badge" id="coeTotalTierBadge">[ 未評分 ]</span>
+                        <span class="coe-total-desc" id="coeTotalDesc"></span>
+                        <button type="button" class="btn btn-link btn-sm coe-clear-btn" id="f-coe-clear" hidden>
+                            <i class="bi bi-x-circle me-1"></i>清除分數
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-body">
+                    <h3 class="card-title"><i class="bi bi-bookmark-star-fill"></i>感官評估</h3>
+                    <div class="evaluation-estimated-total">
+                        <span class="evaluation-estimated-label">預估總分</span>
+                        <span class="evaluation-estimated-value" id="evalEstimatedValue">76.0</span>
+                        <span class="evaluation-estimated-of">/ 100</span>
+                        <span class="evaluation-estimated-tier" id="evalEstimatedTier"></span>
+                        <span class="evaluation-estimated-hint">參考用，依下方 8 項分數估算（36 + 加總）</span>
+                    </div>
+                    <div class="accordion accordion-flush" id="evaluationAccordion"></div>
+                </div>
+            </div>
+
+            <div class="action-bar">
+                <button type="button" class="btn btn-outline-danger" id="f-delete" hidden>
+                    <i class="bi bi-trash me-1"></i>刪除整場
                 </button>
                 <button type="submit" class="btn btn-info" id="f-save">
                     <i class="bi bi-cloud-arrow-up me-1"></i><span id="f-save-label">儲存</span>
