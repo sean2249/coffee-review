@@ -574,10 +574,13 @@ const api = {
         if (error) throw error;
     },
 
-    async listRecords({ type = 'all' } = {}) {
+    // withEvaluations：多拉 evaluations / observation（jsonb，體積大）。只有店家頁的
+    // 常見風味需要；記錄列表、店家列表不必為了用不到的欄位多下載。
+    async listRecords({ type = 'all', withEvaluations = false } = {}) {
         const sb = await ensureSupabase();
         if (!sb) return [];
-        const baseCols = 'id, shop_id, coe_total, coe_tier_id, created_at';
+        const baseCols = 'id, shop_id, coe_total, coe_tier_id, created_at'
+            + (withEvaluations ? ', evaluations, observation' : '');
         const tasks = [];
         const unwrap = (r, _type) => {
             if (r.error) throw r.error;
@@ -4061,7 +4064,7 @@ async function viewShopDetail(root, shopId) {
     try {
         const [fetched, allRecords, shopNote] = await Promise.all([
             api.getShop(shopId),
-            api.listRecords({ type: 'all' }),
+            api.listRecords({ type: 'all', withEvaluations: true }),
             api.getShopNote(shopId),
         ]);
         const records = allRecords.filter(r => r.shop_id === shopId);
