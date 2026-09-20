@@ -380,15 +380,14 @@ function setupDraftAutosave(mode, recordId) {
 
     // baseline = 目前乾淨表單的序列化；草稿只在偏離 baseline 後才寫，
     // 改回原狀則清除，避免把 pristine 表單也存成草稿。
-    let baseline = JSON.stringify(buildFormPayload(mode));
+    // 還原草稿後 baseline 不重拍：還原的內容同樣是「未儲存」，若拿它當 baseline，
+    // 還原鈕的 click 冒泡到下面的 schedule（或改一下又改回來）就會把草稿清掉。
+    const baseline = JSON.stringify(buildFormPayload(mode));
 
     const existing = readDraft(key);
     if (existing && existing.payload) {
         showDraftBanner(form, existing,
-            () => {
-                applyRecordToForm(mode, existing.payload);
-                baseline = JSON.stringify(buildFormPayload(mode)); // 還原後以草稿為新 baseline
-            },
+            () => applyRecordToForm(mode, existing.payload),
             () => clearDraft(key),
         );
     }
