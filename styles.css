@@ -484,6 +484,11 @@ button.card-title {
     background: rgba(192, 140, 42, 0.15);
     color: #876615;
 }
+.record-card-type-badge.type-session,
+.record-card-type-badge.type-session_cup {
+    background: rgba(93, 75, 166, 0.12);
+    color: #4c3d8f;
+}
 .record-card-title {
     font-weight: 600;
     font-size: 0.95rem;
@@ -977,7 +982,8 @@ button.card-title {
 }
 
 /* ───── Bean type chips (單品 / 配方豆) ─────────────────────────────────── */
-.bean-type-chip-row {
+.bean-type-chip-row,
+.code-style-row {
     display: flex;
     flex-wrap: wrap;
     gap: 0.4rem;
@@ -1831,3 +1837,95 @@ hr { border-color: var(--border); opacity: 0.7; }
     display: block; margin-bottom: 0.5rem;
 }
 .account-email { word-break: break-all; }
+
+/* ───── 杯測場次 (session) ─────────────────────────────────────────────── */
+.cup-tabbar {
+    display: flex;
+    gap: 0.4rem;
+    overflow-x: auto;
+    padding-bottom: 0.5rem;
+    margin-bottom: 0.5rem;
+}
+.cup-tab {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    min-width: 3.2rem;
+    padding: 0.3rem 0.6rem;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-strong);
+    background: var(--bg-elevated);
+    color: var(--text-secondary);
+    font-family: inherit;
+    line-height: 1.2;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+.cup-tab:hover { border-color: var(--accent); color: var(--accent); }
+.cup-tab.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+}
+.cup-tab:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--accent-tint); }
+.cup-tab-code { font-weight: 700; font-size: 0.95rem; }
+.cup-tab-code.is-placeholder { font-weight: 500; opacity: 0.7; }
+.cup-tab-score { font-family: var(--font-mono); font-size: 0.72rem; }
+.cup-tab-add {
+    justify-content: center;
+    border-style: dashed;
+    color: var(--text-muted);
+    font-size: 1.1rem;
+}
+.cup-code-row {
+    display: flex;
+    align-items: flex-end;
+    gap: 0.5rem;
+}
+.coe-clear-btn { padding: 0; font-size: 0.8rem; color: var(--text-muted); }
+.cup-ranking { display: flex; flex-direction: column; gap: 0.25rem; }
+.cup-ranking-row {
+    display: grid;
+    grid-template-columns: 2.2rem 3.2rem 1fr auto;
+    align-items: center;
+    gap: 0.5rem;
+    width: 100%;
+    padding: 0.4rem 0.5rem;
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text-primary);
+    font: inherit;
+    text-align: left;
+}
+button.cup-ranking-row { cursor: pointer; }
+button.cup-ranking-row:hover { background: var(--accent-tint); }
+.cup-ranking-row.active { background: var(--accent-tint); }
+.cup-ranking-rank { color: var(--text-muted); font-family: var(--font-mono); text-align: center; }
+.cup-ranking-bean {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text-secondary);
+}
+.cup-ranking-score { font-family: var(--font-mono); font-weight: 700; }
+.cup-ranking-empty { color: var(--text-muted); font-size: 0.9rem; }
+.cup-code-badge {
+    display: inline-block;
+    min-width: 2rem;
+    padding: 0.1rem 0.45rem;
+    border-radius: var(--radius-sm);
+    background: var(--accent);
+    color: #fff;
+    font-weight: 700;
+    text-align: center;
+}
+.session-cup-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+}
+.session-cup-title { font-weight: 600; flex: 1 1 auto; }
+.session-cup-score { font-family: var(--font-mono); font-weight: 700; }
