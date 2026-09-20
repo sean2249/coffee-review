@@ -583,8 +583,8 @@ const api = {
         if (error) throw error;
     },
 
-    // withEvaluations：多拉 evaluations / observation（jsonb，體積大）。只有店家頁的
-    // 常見風味需要；記錄列表、店家列表不必為了用不到的欄位多下載。
+    // withEvaluations：多拉 evaluations / observation（jsonb，體積大），場次內嵌的杯也一起。
+    // 只有店家頁的常見風味需要；記錄列表、店家列表不必為了用不到的欄位多下載。
     async listRecords({ type = 'all', withEvaluations = false } = {}) {
         const sb = await ensureSupabase();
         if (!sb) return [];
@@ -612,8 +612,11 @@ const api = {
         }
         if (type === 'all' || type === 'session') {
             // 杯測場次沒有自己的店家 / 分數：卡片、篩選、店家頁都靠內嵌的杯摘要。
+            // 店家頁把每一杯當一筆記錄（flattenSessionCups），所以風味欄位也跟著旗標走。
+            const cupCols = 'id, code, position, shop_id, bean_name, coe_total, coe_tier_id'
+                + (withEvaluations ? ', evaluations, observation' : '');
             const q = sb.from(SUPABASE_CONFIG.sessionsTable)
-                .select(`id, title, session_date, created_at, cups:${SUPABASE_CONFIG.sessionCupsTable}(id, code, position, shop_id, bean_name, coe_total, coe_tier_id)`);
+                .select(`id, title, session_date, created_at, cups:${SUPABASE_CONFIG.sessionCupsTable}(${cupCols})`);
             tasks.push(q.order('created_at', { ascending: false })
                 .then(r => unwrap(r, 'session').map(withSortedCups)));
         }
