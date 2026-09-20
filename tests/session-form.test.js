@@ -374,6 +374,21 @@ describe('草稿', () => {
         await wait();
         expect(win.localStorage.getItem(KEY)).toBeNull();
     });
+
+    // 還原列在 <form> 裡面，那次點擊會冒泡到自動儲存；還原的內容算「未儲存」，
+    // 不能被當成新 baseline，否則按了還原沒再動就離開時草稿會被清掉。
+    it('按還原後沒再改就離開 → 草稿仍在', async () => {
+        await mount([cupA, cupB], { recordId: 's1' }); // 重新掛一張沒綁過自動儲存的表單
+        win.localStorage.clear();
+        win.writeDraft(KEY, 'session', { ...win.buildSessionDraft(), title: '沒存完的場次' });
+        win.setupDraftAutosave('session', 's1', { build: win.buildSessionDraft, apply: win.applySessionToForm });
+
+        doc.querySelector('.draft-banner [data-draft="restore"]').click();
+        expect($('#f-session-title').value).toBe('沒存完的場次');
+        await wait();
+
+        expect(win.readDraft(KEY)?.payload.title).toBe('沒存完的場次');
+    });
 });
 
 describe('viewSessionForm', () => {
