@@ -127,8 +127,9 @@ purpose.md, 口感.md design notes (Chinese)
 | Route | View |
 |---|---|
 | `#/records` (default) | List with type + shop filters |
-| `#/new[/cupping\|tasting]` | Empty form, mode selectable |
-| `#/cupping/<id>` / `#/tasting/<id>` | Edit (same template, mode locked) |
+| `#/new[/cupping\|tasting\|session]` | Empty form, mode selectable |
+| `#/cupping/<id>` / `#/tasting/<id>` | Read-only detail (no edit/delete UI) |
+| `#/session/<id>` / `#/session/<id>/edit` | 杯測場次 detail (ranking + per-cup) / edit form |
 | `#/shops` / `#/shops/<id>` | Shop registry + per-shop records + 我的店家筆記 |
 | `#/me` | Google sign-in / sign-out |
 
@@ -138,15 +139,41 @@ Every data route is gated by `renderAccessGate(root)` — it renders the cloud w
 `initAuth()` before the first `renderRoute()`, otherwise a signed-in user's first paint
 would be the sign-in prompt.
 
-**Two record types share one form template** (`#tpl-form` in index.html). The mode toggle
+**Three record types.** Keys vs. UI labels live in `TYPE_LABELS`: `cupping` = **沖煮**
+(one bean per record; key/table/route keep the old name, no migration), `tasting` = 品鑑,
+`session` = **杯測** (one session, many coded cups). On shop pages a session is flattened by
+`flattenSessionCups` into `session_cup` rows, because the bean-source shop lives on each cup.
+
+**杯測場次 form** (`#tpl-session-form`, `viewSessionForm`) is separate from `#tpl-form`. It
+reuses the same CoE card / accordion ids, but only **one cup's widgets are in the DOM at a
+time**. The other cups live in `state.currentForm.cups`; call `syncActiveCup()` before
+reading `cups` (switch / save / draft / overview). `writeCupToForm` must *reset* every
+widget (`applyEvaluationsToForm` resets missing keys to defaults). Every cup holds exactly
+`id` + `readCupFromForm()` keys: never `created_at`, `user_id`, `session_id` or `position`.
+The bulk upsert needs identical key sets. `initEvaluationAccordion` runs once per mount
+(a second call stacks listeners). In this form `coeState.coeTotal` / `selectedTierId` can
+be `null` (= 未評分; `selectTier` / `selectScore` / `refreshTotalDisplay` guard it). Every
+non-submit `<button>` must be `type="button"`, or tapping it saves the whole session.
+
+**沖煮 / 品鑑 share one form template** (`#tpl-form` in index.html). The mode toggle
 flips visibility via `data-mode-only="cupping|tasting"` and `data-mode-text="..."`.
 `setFormMode` (app.js:1290) sets display + `required` on shop select.
 
 **Supabase API layer**: `api` object wraps the schema-scoped client; tables live in the
-`coffee` schema by default (`cupping_records`, `tasting_records`, `shops`, `shop_notes`).
+`coffee` schema by default (`cupping_records`, `tasting_records`, `cupping_sessions`,
+`cupping_session_cups`, `shops`, `shop_notes`).
 Inserts are stamped by the api layer, never by `buildFormPayload` (that would pollute the
 draft snapshot): records get `stampUserId` (owner), shops get `stampCreatedBy` (a note,
 not access control). Updates never restamp.
+`api.saveSession` serves both create and edit, using client-generated UUIDs. It runs
+three steps: upsert the session, delete the session's cups whose id is not in the form
+(diffed server-side via `.not('id', 'in', …)`, not against a load-time list), then upsert
+every cup in one statement. Every step can be re-sent. `viewSessionForm` loads data before
+mounting the template, so nothing can be saved half-loaded. Restoring a *new*-session
+draft gives the cups fresh ids, because the draft has no session id. `unique(session_id, code)` is
+`deferrable initially immediate`, so code swaps inside that single statement work. Cups
+reference sessions through the composite FK `(session_id, user_id)` with cascade, so a
+user can't attach cups to another user's session.
 Use `maybeSingle()` for fetch-by-id so a missing row resolves to `{data: null}` instead
 of throwing PGRST116. The schema SQL is in README.md — when changing columns, update the
 SQL block there too.
@@ -215,6 +242,7 @@ bump `VERSION` in `sw.js:6`.
   `buildFormPayload` / `loadRecordIntoForm` branch in app.js.
 - Adding a column? Add to (1) `buildFormPayload`, (2) `loadRecordIntoForm`, (3) the SQL
   block in README.md, and (4) the Supabase project schema. There are no migrations.
+  For a 杯測 cup column: `readCupFromForm` + `writeCupToForm` + README SQL (sections A and I).
 - Shop-level experience (氛圍 / 設施 / 風格 / 材質 / 服務 / 餐點 / 飲料) lives in
   `coffee.shop_notes` — one row per (shop, user) — **not** in `tasting_records`. Its
   editor is `initTagSections(container)`, mounted by the shop detail page and by the
@@ -234,6 +262,7 @@ bump `VERSION` in `sw.js:6`.
 - RLS is **per-row isolated** (README section H), not open access. Records and
   `shop_notes` are `user_id = auth.uid()`; `shops` is a shared registry readable by any
   signed-in user. `anon` has no grants on the `coffee` schema at all. Don't loosen this.
+  `cupping_sessions` / `cupping_session_cups` follow the same owner-only policy.
 - `coffee.shops` is a **projection of Google Places**: `name` / `location` / `lat` / `lng`
   only ever come from the Places API, and the UI offers no free-text field for them
   (create = place picker, update = "從 Google 重新同步"). A DB trigger freezes

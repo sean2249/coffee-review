@@ -57,6 +57,24 @@ describe('aggregateShopStats', () => {
         expect(m.get('a').avgScore).toBeNull();
     });
 
+    it('counts 杯測 cups flattened from sessions, each linked to its own shop', () => {
+        const session = {
+            _type: 'session', id: 's1', title: '日曬比較', session_date: '2026-09-01',
+            cups: [
+                { id: 'k1', code: 'A', shop_id: 'a', coe_total: 88 },
+                { id: 'k2', code: 'B', shop_id: 'b', coe_total: null },  // 未評分
+                { id: 'k3', code: 'C', shop_id: null, coe_total: 90 },    // 沒連店家
+            ],
+        };
+        const m = win.aggregateShopStats(win.flattenSessionCups([
+            rec('a', 'cupping', 84),
+            session,
+        ]));
+        expect(m.get('a')).toMatchObject({ cupping: 1, sessionCup: 1, total: 2, avgScore: 86 });
+        expect(m.get('b')).toMatchObject({ sessionCup: 1, total: 1, avgScore: null });
+        expect(m.size).toBe(2);
+    });
+
     it('ignores records with no shop_id', () => {
         const m = win.aggregateShopStats([rec(null, 'cupping', 90), rec('a', 'cupping', 80)]);
         expect(m.size).toBe(1);
