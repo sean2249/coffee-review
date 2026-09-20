@@ -14,12 +14,14 @@
 
 | 路由 | 頁面 | 說明 |
 |------|------|------|
-| `#/records` | 記錄列表 | 卡片清單 · 可依 杯測/品鑑 · 店家 篩選 |
-| `#/new` | 新增記錄 | 切換 杯測 / 品鑑 兩種模式 |
+| `#/records` | 記錄列表 | 卡片清單 · 可依 沖煮/品鑑/杯測 · 店家 篩選 |
+| `#/new` | 新增記錄 | 選擇 沖煮 / 品鑑 / 杯測 |
 | `#/shops` | 店家管理 | CRUD 店家，點進去看相關記錄 |
-| `#/cupping/<id>` | 杯測詳情 | 同時也是編輯介面 |
-| `#/tasting/<id>` | 品鑑詳情 | 同時也是編輯介面 |
-| `#/shops/<id>` | 店家詳情 | 顯示該店家的所有相關記錄 |
+| `#/cupping/<id>` | 沖煮詳情 | 唯讀（網址沿用舊名 cupping） |
+| `#/tasting/<id>` | 品鑑詳情 | 唯讀 |
+| `#/session/<id>` | 杯測詳情 | 一場多杯的排名與每杯評分 |
+| `#/session/<id>/edit` | 杯測編輯 | 補分數、補豆子資訊、刪除整場 |
+| `#/shops/<id>` | 店家詳情 | 顯示該店家的所有相關記錄（含杯測裡連到這家店的杯） |
 
 ## 評分流程
 
@@ -30,15 +32,18 @@
 3. **香氣 Aroma** — **觀察項，不計分**。可記錄乾香 / 濕香文字，並從風味輪勾選關鍵詞。
 4. **瑕疵記錄 / 最終備註** — 自由文字。
 
-## 杯測 vs 品鑑
+## 沖煮 vs 品鑑 vs 杯測
 
-| | 杯測 (cupping) | 品鑑 (tasting) |
-|---|---|---|
-| 用途 | 自家沖煮的詳細評估 | 在咖啡店喝到的飲品記錄 |
-| 店家 | 選填（豆源） | 必填 |
-| 沖煮參數 | 有（研磨 / 水溫 / 粉水比 ...） | 無 |
-| 店家筆記 | 無 | 表單內載入該店 `shop_notes`（沒填過自動展開、填過收合） |
-| 評分系統 | CoE 8 項 + 風味輪 | 同左 |
+| | 沖煮 (cupping) | 品鑑 (tasting) | 杯測 (session) |
+|---|---|---|---|
+| 用途 | 自家沖煮一支豆的詳細評估 | 在咖啡店喝到的飲品記錄 | 一場同時評很多支豆，每杯以編號（手動 / 1, 2, 3 / A, B, C）識別 |
+| 店家 | 選填（豆源） | 必填 | 每杯各自選填（豆源） |
+| 沖煮參數 | 有（研磨 / 水溫 / 粉水比 ...） | 無 | 無 |
+| 店家筆記 | 無 | 表單內載入該店 `shop_notes`（沒填過自動展開、填過收合） | 無 |
+| 評分系統 | CoE 8 項 + 風味輪 | 同左 | 每杯同左；沒點過分數 = 未評分，不列入排名 |
+| 存檔後 | 唯讀 | 唯讀 | 可編輯、可刪除整場 |
+
+內部 key `cupping` / 表名 `cupping_records` 沿用舊名（畫面上叫「沖煮」），不需遷移資料。
 
 ## 徽章 / 分數區間表
 
@@ -123,7 +128,7 @@ create trigger shops_touch_updated_at
     before update on coffee.shops
     for each row execute function coffee.touch_updated_at();
 
--- cupping_records — 杯測 (自家沖煮 / 豆評估)。shop_id 選填。私有：只有 owner 讀得到。
+-- cupping_records — 沖煮 (自家沖煮 / 豆評估；表名沿用舊稱)。shop_id 選填。私有：只有 owner 讀得到。
 -- bean_type: 'single' (單品) | 'blend' (配方豆)
 --   配方豆時 origin / process 留空，改用 blend_composition 描述組成。
 create table coffee.cupping_records (
@@ -181,6 +186,58 @@ create table coffee.tasting_records (
 create index tasting_shop_id_idx    on coffee.tasting_records(shop_id);
 create index tasting_created_at_idx on coffee.tasting_records(created_at desc);
 
+-- cupping_sessions — 杯測場次（一場多杯，每杯以編號識別）。沒有場地店家、沒有共用沖煮參數。私有。
+-- code_style: 'manual'（自訂）| 'number'（1、2、3…）| 'letter'（A、B、C…）—— 只決定「新增一杯」帶入的編號。
+-- id 由前端產生（crypto.randomUUID），存檔可整批重送；default 只是保底。
+create table coffee.cupping_sessions (
+    id              uuid primary key default gen_random_uuid(),
+    session_date    date,                -- 表單預設今天；null 時顯示 fallback created_at
+    title           text,
+    notes           text,
+    code_style      text not null default 'manual' check (code_style in ('manual', 'number', 'letter')),
+    schema_version  int  not null default 1,
+    user_id         uuid not null references auth.users(id),
+    created_at      timestamptz not null default now(),
+    unique (id, user_id)                 -- 杯的複合 FK 目標
+);
+create index cupping_sessions_created_at_idx on coffee.cupping_sessions(created_at desc);
+
+-- cupping_session_cups — 場次裡的每一杯（一個編號 = 一支豆）。coe_total null = 未評分。
+create table coffee.cupping_session_cups (
+    id                 uuid primary key default gen_random_uuid(),
+    session_id         uuid not null,
+    -- not null：composite FK 是 MATCH SIMPLE，任一欄 null 就不檢查
+    user_id            uuid not null references auth.users(id),
+    position           int  not null,
+    code               text not null check (btrim(code) <> ''),
+    -- restrict：店家與記錄是兩張獨立的表，刪店家不得改動或摧毀任何人的記錄
+    shop_id            uuid references coffee.shops(id) on delete restrict,
+    bean_name          text,
+    bean_type          text check (bean_type in ('single', 'blend')),
+    origin             text,
+    process            text,
+    blend_composition  text,
+    roast              text,
+    defects            text,
+    defects_tags       text[] not null default '{}',
+    notes              text,
+    coe_total          numeric,
+    coe_tier_id        text,
+    evaluations        jsonb not null default '{}'::jsonb,
+    observation        jsonb not null default '{}'::jsonb,
+    schema_version     int  not null default 1,
+    created_at         timestamptz not null default now(),
+    -- FK 檢查不受 RLS 約束：只 FK session_id 的話，知道 uuid 就能把杯掛到別人的場次，
+    -- 刪場次時 cascade 還會刪到別人的列。複合 FK 讓杯只能掛在同一個 owner 的場次下。
+    foreign key (session_id, user_id)
+        references coffee.cupping_sessions(id, user_id) on delete cascade,
+    -- deferrable：同一個 upsert 裡互換 A↔B、把舊編號給新杯時，要等 statement 結束才檢查
+    -- （非 deferrable 的 unique 是逐列檢查）。區分大小寫；前端驗證不分大小寫。
+    unique (session_id, code) deferrable initially immediate
+);
+-- (session_id, code) 的 unique index 已涵蓋以 session_id 查詢與 cascade
+create index cupping_session_cups_shop_id_idx on coffee.cupping_session_cups(shop_id);
+
 -- shop_notes — 我對這家店的個人筆記（介紹 + 店家體驗）。每人每店一筆，完全私有。
 -- 店家本身是共享的，「對店家的評價」不是 —— 所以這些欄位不放在 shops 上。
 create table coffee.shop_notes (
@@ -218,6 +275,8 @@ alter table coffee.shops           enable row level security;
 alter table coffee.shop_notes      enable row level security;
 alter table coffee.cupping_records enable row level security;
 alter table coffee.tasting_records enable row level security;
+alter table coffee.cupping_sessions     enable row level security;
+alter table coffee.cupping_session_cups enable row level security;
 
 -- 店家：所有登入者可讀、可新增、可更新（更新的唯一路徑是「從 Google 重新同步」，
 -- 寫進去的值來自 Places API 而非使用者輸入）。只有建立者可刪，且上面的 FK
@@ -233,6 +292,10 @@ create policy "own notes"   on coffee.shop_notes      for all to authenticated
 create policy "own cupping" on coffee.cupping_records for all to authenticated
     using (user_id = auth.uid()) with check (user_id = auth.uid());
 create policy "own tasting" on coffee.tasting_records for all to authenticated
+    using (user_id = auth.uid()) with check (user_id = auth.uid());
+create policy "own sessions"     on coffee.cupping_sessions     for all to authenticated
+    using (user_id = auth.uid()) with check (user_id = auth.uid());
+create policy "own session cups" on coffee.cupping_session_cups for all to authenticated
     using (user_id = auth.uid()) with check (user_id = auth.uid());
 ```
 
@@ -554,6 +617,77 @@ drop table coffee._backup_shops_20260826;
 GitHub Pages 網址（如 `https://<user>.github.io/coffee-review/`）。
 Google Cloud Console 的 OAuth *Authorized redirect URI* 需填
 `https://<project-ref>.supabase.co/auth/v1/callback`。
+
+I. **升級：杯測場次（一場多杯）**
+
+新增兩張表，舊資料不動。⚠️ 要在**部署新前端之前**執行：新的記錄列表會查這兩張表。
+
+```sql
+-- cupping_sessions — 杯測場次（一場多杯，每杯以編號識別）。沒有場地店家、沒有共用沖煮參數。私有。
+-- code_style: 'manual'（自訂）| 'number'（1、2、3…）| 'letter'（A、B、C…）—— 只決定「新增一杯」帶入的編號。
+-- id 由前端產生（crypto.randomUUID），存檔可整批重送；default 只是保底。
+create table if not exists coffee.cupping_sessions (
+    id              uuid primary key default gen_random_uuid(),
+    session_date    date,                -- 表單預設今天；null 時顯示 fallback created_at
+    title           text,
+    notes           text,
+    code_style      text not null default 'manual' check (code_style in ('manual', 'number', 'letter')),
+    schema_version  int  not null default 1,
+    user_id         uuid not null references auth.users(id),
+    created_at      timestamptz not null default now(),
+    unique (id, user_id)                 -- 杯的複合 FK 目標
+);
+create index if not exists cupping_sessions_created_at_idx on coffee.cupping_sessions(created_at desc);
+
+-- cupping_session_cups — 場次裡的每一杯（一個編號 = 一支豆）。coe_total null = 未評分。
+create table if not exists coffee.cupping_session_cups (
+    id                 uuid primary key default gen_random_uuid(),
+    session_id         uuid not null,
+    -- not null：composite FK 是 MATCH SIMPLE，任一欄 null 就不檢查
+    user_id            uuid not null references auth.users(id),
+    position           int  not null,
+    code               text not null check (btrim(code) <> ''),
+    -- restrict：店家與記錄是兩張獨立的表，刪店家不得改動或摧毀任何人的記錄
+    shop_id            uuid references coffee.shops(id) on delete restrict,
+    bean_name          text,
+    bean_type          text check (bean_type in ('single', 'blend')),
+    origin             text,
+    process            text,
+    blend_composition  text,
+    roast              text,
+    defects            text,
+    defects_tags       text[] not null default '{}',
+    notes              text,
+    coe_total          numeric,
+    coe_tier_id        text,
+    evaluations        jsonb not null default '{}'::jsonb,
+    observation        jsonb not null default '{}'::jsonb,
+    schema_version     int  not null default 1,
+    created_at         timestamptz not null default now(),
+    -- FK 檢查不受 RLS 約束：只 FK session_id 的話，知道 uuid 就能把杯掛到別人的場次，
+    -- 刪場次時 cascade 還會刪到別人的列。複合 FK 讓杯只能掛在同一個 owner 的場次下。
+    foreign key (session_id, user_id)
+        references coffee.cupping_sessions(id, user_id) on delete cascade,
+    -- deferrable：同一個 upsert 裡互換 A↔B、把舊編號給新杯時，要等 statement 結束才檢查
+    -- （非 deferrable 的 unique 是逐列檢查）。區分大小寫；前端驗證不分大小寫。
+    unique (session_id, code) deferrable initially immediate
+);
+-- (session_id, code) 的 unique index 已涵蓋以 session_id 查詢與 cascade
+create index if not exists cupping_session_cups_shop_id_idx on coffee.cupping_session_cups(shop_id);
+
+alter table coffee.cupping_sessions     enable row level security;
+alter table coffee.cupping_session_cups enable row level security;
+create policy "own sessions"     on coffee.cupping_sessions     for all to authenticated
+    using (user_id = auth.uid()) with check (user_id = auth.uid());
+create policy "own session cups" on coffee.cupping_session_cups for all to authenticated
+    using (user_id = auth.uid()) with check (user_id = auth.uid());
+
+-- 與 H-6 一致：只給登入者，anon 一律無權
+grant all on coffee.cupping_sessions, coffee.cupping_session_cups to authenticated, service_role;
+revoke all on coffee.cupping_sessions, coffee.cupping_session_cups from anon;
+```
+
+**驗收**：同 H-6，用 anon key 打 `cupping_sessions` 應該回 `401`。
 
 ### 2. 前端配置
 

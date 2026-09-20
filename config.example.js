@@ -16,6 +16,8 @@ window.SUPABASE_CONFIG = {
     // cuppingTable: 'cupping_records',
     // tastingTable: 'tasting_records',
     // shopsTable:   'shops',
+    // sessionsTable:    'cupping_sessions',
+    // sessionCupsTable: 'cupping_session_cups',
 };
 
 // 必要：店家資料一律取自 Google Places（店名 / 地址 / 座標皆不可手動輸入）。
