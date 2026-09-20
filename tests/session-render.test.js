@@ -112,6 +112,29 @@ describe('renderSessionDetail', () => {
         expect(el.querySelector('a[href="#/shops/gone"]')).toBeNull();
     });
 
+    it('未評分的杯：預估總分只給數字，不掛等級徽章', () => {
+        const el = toDom(win.renderSessionDetail({
+            ...session,
+            cups: [
+                // 8 項都沒動過（預設 5）→ 估算 76；有評分的杯才掛徽章
+                { id: 'k1', code: 'A', coe_total: null, coe_tier_id: null, evaluations: { flavor: { score: 5 } } },
+                { id: 'k2', code: 'B', coe_total: 82, coe_tier_id: 'common', evaluations: { flavor: { score: 5 } } },
+            ],
+        }));
+        const blocks = [...el.querySelectorAll('.evaluation-estimated-total')];
+        expect(blocks).toHaveLength(2);
+        expect(blocks[0].textContent).toContain('76.0');
+        expect(blocks[0].querySelector('.evaluation-estimated-tier')).toBeNull();
+        // 有評分的杯照舊掛徽章（徽章來自估算值 76，不是 coe_total）
+        expect(blocks[1].querySelector('.evaluation-estimated-tier').textContent)
+            .toContain(win.tierFromScore(76).badgeName);
+    });
+
+    it('沖煮 / 品鑑（分數一定有）的預估總分仍然掛徽章', () => {
+        const el = toDom(win.renderEstimatedTotalBlock({ coe_total: 82, evaluations: { flavor: { score: 8 } } }));
+        expect(el.querySelector('.evaluation-estimated-tier')).not.toBeNull();
+    });
+
     it('場次名稱、筆記與杯編號都會被 escape', () => {
         const html = win.renderSessionDetail({
             ...session,
@@ -122,5 +145,38 @@ describe('renderSessionDetail', () => {
         expect(html).not.toContain('<b>x</b>');
         expect(html).not.toContain('<script>');
         expect(html).not.toContain('<i>A</i>');
+    });
+});
+
+describe('viewSessionDetail', () => {
+    const CLOUD = { url: 'https://example.supabase.co', anonKey: 'anon-key' };
+
+    it('讀取期間換頁：晚回來的結果不會蓋掉新畫面', async () => {
+        const { window: w, document: d } = await loadApp({ supabaseConfig: CLOUD });
+        w.setSessionUser({ id: 'u1' });
+        // 店家清單馬上回，場次卡住不回，模擬「讀取中使用者換頁」。
+        let release;
+        const make = stall => {
+            const b = {
+                select: () => b, eq: () => b, order: () => b, maybeSingle: () => b,
+                then: r => stall
+                    ? new Promise(res => { release = () => res(r({ data: { id: 's1', cups: [] }, error: null })); })
+                    : Promise.resolve(r({ data: [], error: null })),
+            };
+            return b;
+        };
+        w.ensureSupabase = () => Promise.resolve({ from: t => make(t === 'cupping_sessions') });
+        const root = d.getElementById('app');
+
+        w.location.hash = '#/session/s1';
+        const pending = w.viewSessionDetail(root, 's1');
+        w.location.hash = '#/nope'; // 使用者換頁 → renderRoute 畫出「找不到頁面」
+        await new Promise(r => setTimeout(r, 0));
+        expect(root.textContent).toContain('找不到頁面');
+
+        release();
+        await pending;
+        expect(root.textContent).toContain('找不到頁面');
+        expect(root.textContent).not.toContain('排名');
     });
 });

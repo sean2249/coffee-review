@@ -1504,10 +1504,12 @@ function renderRecordDetail(mode, r) {
 }
 
 // 預估總分（36 + 8 項）— 沖煮 / 品鑑詳細頁與杯測場次的每一杯共用。
+// 未評分（coe_total null，只有杯測場次會這樣）只給數字不給徽章：8 項沒動過時
+// 預設都是 5，掛上 [ 瑕疵 ] 會和標頭的「未評分」互相矛盾。
 function renderEstimatedTotalBlock(r) {
     const estTotal = computeEstimatedTotalFromRecord(r);
     if (estTotal == null) return '';
-    const estTier = tierFromScore(estTotal);
+    const estTier = typeof r.coe_total === 'number' ? tierFromScore(estTotal) : null;
     return `
         <div class="evaluation-estimated-total">
             <span class="evaluation-estimated-label">預估總分</span>
@@ -4309,12 +4311,16 @@ async function deleteCurrentSession() {
 async function viewSessionDetail(root, sessionId) {
     if (renderAccessGate(root)) return;
     root.innerHTML = '<div class="empty-state"><i class="bi bi-hourglass-split"></i>讀取中…</div>';
+    // 讀取期間使用者可能已經換頁；#app 是共用的，晚回來的結果不能蓋掉新畫面。
+    const route = location.hash;
     try {
         await refreshShopsCache();
         const s = await api.getSession(sessionId);
+        if (location.hash !== route) return;
         root.innerHTML = s ? renderSessionDetail(s) : renderSessionNotFound();
     } catch (e) {
         console.error(e);
+        if (location.hash !== route) return;
         root.innerHTML = `<div class="empty-state error">
             <i class="bi bi-exclamation-triangle"></i>讀取失敗：${escapeHtml(e.message || String(e))}
         </div>`;
