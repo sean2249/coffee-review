@@ -142,18 +142,21 @@ create table coffee.cupping_records (
     ratio              text,
     method             text,
     extraction_time    text,
-    defects            text,
+    defects            text,                                -- 瑕疵自由備註
+    defects_tags       text[] not null default '{}',        -- 常見瑕疵 chip 多選
     notes              text,
     coe_total          numeric,
     coe_tier_id        text,
     evaluations        jsonb not null default '{}'::jsonb,
     observation        jsonb not null default '{}'::jsonb,
+    tag_ids            uuid[] not null default '{}',        -- coffee.tags.id（無 FK）
     schema_version     int   not null default 3,
     user_id            uuid references auth.users(id),
     created_at         timestamptz not null default now()
 );
 create index cupping_shop_id_idx    on coffee.cupping_records(shop_id);
 create index cupping_created_at_idx on coffee.cupping_records(created_at desc);
+create index cupping_tag_ids_idx    on coffee.cupping_records using gin(tag_ids);
 
 -- tasting_records — 品鑑「這次喝的那一杯」。shop_id 必填。私有：只有 owner 讀得到。
 -- 店家體驗（氛圍 / 設施 / 風格 / 材質 / 服務 / 餐點 / 飲料）不在這裡，見 shop_notes。
@@ -168,18 +171,21 @@ create table coffee.tasting_records (
     bean_name         text,
     bean_type         text check (bean_type in ('single', 'blend')),
     brewing_method    text,
-    defects           text,
+    defects           text,                                -- 瑕疵自由備註
+    defects_tags      text[] not null default '{}',        -- 常見瑕疵 chip 多選
     notes             text,
     coe_total         numeric,
     coe_tier_id       text,
     evaluations       jsonb not null default '{}'::jsonb,
     observation       jsonb not null default '{}'::jsonb,
+    tag_ids           uuid[] not null default '{}',        -- coffee.tags.id（無 FK）
     schema_version    int   not null default 5,
     user_id           uuid references auth.users(id),
     created_at        timestamptz not null default now()
 );
 create index tasting_shop_id_idx    on coffee.tasting_records(shop_id);
 create index tasting_created_at_idx on coffee.tasting_records(created_at desc);
+create index tasting_tag_ids_idx    on coffee.tasting_records using gin(tag_ids);
 
 -- shop_notes — 我對這家店的個人筆記（介紹 + 店家體驗）。每人每店一筆，完全私有。
 -- 店家本身是共享的，「對店家的評價」不是 —— 所以這些欄位不放在 shops 上。
@@ -212,12 +218,32 @@ create trigger shop_notes_touch_updated_at
     before update on coffee.shop_notes
     for each row execute function coffee.touch_updated_at();
 
--- RLS — 每列隔離。記錄與筆記只有 owner 讀得到；店家是共享 registry。
+-- tags — 記錄標籤（記錄以 tag_ids 參照）。目前 app 沒用到，保留與既有資料庫一致。
+create table coffee.tags (
+    id          uuid primary key default gen_random_uuid(),
+    name        text not null unique,
+    color       text not null default '#6c757d',
+    icon        text,
+    is_builtin  boolean not null default false,
+    sort_order  int not null default 0,
+    created_at  timestamptz not null default now()
+);
+
+-- 內建標籤 seed（與 E 升級相同；is_builtin 僅為標記）
+insert into coffee.tags (id, name, color, icon, is_builtin, sort_order) values
+    ('11111111-1111-1111-1111-000000000001', '最愛',   '#e0245e', 'bi-star-fill',        true, 1),
+    ('11111111-1111-1111-1111-000000000002', '想再試', '#1d9bf0', 'bi-arrow-repeat',     true, 2),
+    ('11111111-1111-1111-1111-000000000003', '不推薦', '#71767b', 'bi-hand-thumbs-down', true, 3),
+    ('11111111-1111-1111-1111-000000000004', '已下單', '#00ba7c', 'bi-bag-check-fill',   true, 4)
+on conflict (id) do nothing;
+
+-- RLS — 每列隔離。記錄與筆記只有 owner 讀得到；店家是共享 registry；標籤登入者唯讀。
 -- anon 一律無權：上面的 grant 區塊本來就沒給它任何權限，policy 再擋一層。
 alter table coffee.shops           enable row level security;
 alter table coffee.shop_notes      enable row level security;
 alter table coffee.cupping_records enable row level security;
 alter table coffee.tasting_records enable row level security;
+alter table coffee.tags            enable row level security;
 
 -- 店家：所有登入者可讀、可新增、可更新（更新的唯一路徑是「從 Google 重新同步」，
 -- 寫進去的值來自 Places API 而非使用者輸入）。只有建立者可刪，且上面的 FK
@@ -234,6 +260,9 @@ create policy "own cupping" on coffee.cupping_records for all to authenticated
     using (user_id = auth.uid()) with check (user_id = auth.uid());
 create policy "own tasting" on coffee.tasting_records for all to authenticated
     using (user_id = auth.uid()) with check (user_id = auth.uid());
+
+-- 標籤：目前 app 沒用到，收成登入者唯讀
+create policy "tags readable" on coffee.tags for select to authenticated using (true);
 ```
 
 B. **曝光 schema 給 API**：Dashboard → Settings → API → 找 *Exposed schemas* → 加入 `coffee`。
@@ -396,8 +425,8 @@ create trigger shop_notes_touch_updated_at
     for each row execute function coffee.touch_updated_at();
 
 -- drop column 前的安全網，驗收完再手動清掉
-create table coffee._backup_tasting as select * from coffee.tasting_records;
-create table coffee._backup_shops   as select * from coffee.shops;
+create table coffee._backup_tasting_20260826 as select * from coffee.tasting_records;
+create table coffee._backup_shops_20260826   as select * from coffee.shops;
 ```
 
 **H-2 回填遺漏的 owner**（未登入時新增的列 `user_id` 是 null，收緊後會對所有人隱形）
