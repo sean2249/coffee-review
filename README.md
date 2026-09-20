@@ -209,6 +209,9 @@ create table coffee.cupping_sessions (
 create index cupping_sessions_created_at_idx on coffee.cupping_sessions(created_at desc);
 
 -- cupping_session_cups — 場次裡的每一杯（一個編號 = 一支豆）。coe_total null = 未評分。
+-- 刻意沒有 tag_ids：這張表是跟著 I 段一起建的，線上也沒有這一欄。記錄標籤只掛在
+-- 沖煮 / 品鑑兩張表上（見上面的 tag_ids，app 目前同樣沒用到）。要讓杯也能上標籤，
+-- 得先對線上 alter 再改這裡，不要只補這份 SQL —— 全新安裝必須跟線上長得一樣。
 create table coffee.cupping_session_cups (
     id                 uuid primary key default gen_random_uuid(),
     session_id         uuid not null,
