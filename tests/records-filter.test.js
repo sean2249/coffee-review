@@ -100,3 +100,46 @@ describe('applyAdvancedFilters — date range', () => {
         expect(win.applyAdvancedFilters(rows).map(r => r.id)).toEqual(['tasting-fallback']);
     });
 });
+
+describe('杯測場次（session）', () => {
+    const session = {
+        id: 's1', _type: 'session', session_date: '2026-06-15', created_at: '2026-06-20T00:00:00Z',
+        cups: [
+            { id: 'k1', code: 'A', shop_id: 'shop-a', coe_tier_id: 'common', coe_total: 82 },
+            { id: 'k2', code: 'B', shop_id: 'shop-b', coe_tier_id: 'godly', coe_total: 92 },
+            { id: 'k3', code: 'C', shop_id: null, coe_tier_id: null, coe_total: null },
+        ],
+    };
+    const cupping = { id: 'c1', _type: 'cupping', shop_id: 'shop-a', coe_tier_id: 'recommend', created_at: '2026-06-02T00:00:00Z' };
+
+    it('round-trips type=session through the hash', () => {
+        win.hydrateFilterFromQuery({ type: 'session' });
+        win.syncFilterToHash();
+        expect(win.location.hash).toBe('#/records?type=session');
+    });
+
+    it('matches a tier when any cup has it', () => {
+        win.hydrateFilterFromQuery({ tier: 'godly' });
+        expect(win.applyAdvancedFilters([session, cupping]).map(r => r.id)).toEqual(['s1']);
+        win.hydrateFilterFromQuery({ tier: 'amazing' });
+        expect(win.applyAdvancedFilters([session, cupping])).toEqual([]);
+    });
+
+    it('matches the shop keyword when any cup links to a matching shop', () => {
+        win.eval(`state.shops = [
+            { id: 'shop-a', name: '甲咖啡' },
+            { id: 'shop-b', name: '乙烘豆' },
+        ]; state.shopsLoaded = true;`);
+        win.hydrateFilterFromQuery({ shop: '乙' });
+        expect(win.applyAdvancedFilters([session, cupping]).map(r => r.id)).toEqual(['s1']);
+        win.hydrateFilterFromQuery({ shop: '甲' });
+        expect(win.applyAdvancedFilters([session, cupping]).map(r => r.id)).toEqual(['s1', 'c1']);
+    });
+
+    it('dates a session by session_date, falling back to created_at', () => {
+        expect(win.recordDateStr(session)).toBe('2026-06-15');
+        expect(win.recordDateStr({ ...session, session_date: null })).toBe('2026-06-20');
+        win.hydrateFilterFromQuery({ from: '2026-06-10', to: '2026-06-16' });
+        expect(win.applyAdvancedFilters([session, cupping]).map(r => r.id)).toEqual(['s1']);
+    });
+});

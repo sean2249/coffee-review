@@ -18,11 +18,14 @@ function cupping(o) {
 function tasting(o) {
     return Object.assign({ _type: 'tasting', created_at: '2026-01-01' }, o);
 }
+function sessionCup(o) {
+    return Object.assign({ _type: 'session_cup', created_at: '2026-01-01' }, o);
+}
 
 describe('summarizeRecords', () => {
     it('returns a zeroed summary for no records', () => {
         const s = win.summarizeRecords([]);
-        expect(s.counts).toEqual({ total: 0, cupping: 0, tasting: 0 });
+        expect(s.counts).toEqual({ total: 0, cupping: 0, tasting: 0, sessionCup: 0 });
         expect(s.avgScore).toBeNull();
         expect(s.highest).toBeNull();
         expect(s.lowest).toBeNull();
@@ -34,7 +37,32 @@ describe('summarizeRecords', () => {
         const s = win.summarizeRecords([
             cupping({ id: 'c1' }), cupping({ id: 'c2' }), tasting({ id: 't1' }),
         ]);
-        expect(s.counts).toEqual({ total: 3, cupping: 2, tasting: 1 });
+        expect(s.counts).toEqual({ total: 3, cupping: 2, tasting: 1, sessionCup: 0 });
+    });
+
+    it('counts 杯測 cups (session_cup) on their own', () => {
+        const s = win.summarizeRecords([
+            cupping({ id: 'c1' }), sessionCup({ id: 'k1' }), sessionCup({ id: 'k2' }),
+        ]);
+        expect(s.counts).toEqual({ total: 3, cupping: 1, tasting: 0, sessionCup: 2 });
+    });
+
+    it('leaves unscored 杯測 cups out of the average', () => {
+        const s = win.summarizeRecords([
+            cupping({ id: 'c1', coe_total: 80 }),
+            sessionCup({ id: 'k1', coe_total: 90 }),
+            sessionCup({ id: 'k2', coe_total: null }),  // 未評分
+        ]);
+        expect(s.avgScore).toBe(85);
+        expect(s.highest.record.id).toBe('k1');
+    });
+
+    it('uses session_date for 杯測 cups when finding the latest date', () => {
+        const s = win.summarizeRecords([
+            cupping({ id: 'c1', created_at: '2026-05-10' }),
+            sessionCup({ id: 'k1', session_date: '2026-08-01', created_at: '2026-01-01' }),
+        ]);
+        expect(s.lastDate).toBe('2026-08-01');
     });
 
     it('averages only numeric coe_total and excludes null/non-number', () => {
