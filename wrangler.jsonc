@@ -21,12 +21,11 @@
         "run_worker_first": ["/api/*"]
     },
 
-    // database_id 由 `wrangler d1 create coffee-review` 產生後填入（見 README）。
     "d1_databases": [
         {
             "binding": "DB",
             "database_name": "coffee-review",
-            "database_id": "REPLACE_WITH_D1_DATABASE_ID",
+            "database_id": "a6ad4454-18f3-4c64-a3bd-a6c50b89c053",
             "migrations_dir": "migrations"
         }
     ],
