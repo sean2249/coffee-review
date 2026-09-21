@@ -94,6 +94,13 @@ PWA-installable. All UI text is Traditional Chinese — keep it that way when ed
 - **D1**: schema in `migrations/`, applied by `wrangler d1 migrations apply`. The
   Postgres → SQLite translation rules are documented at the top of
   `migrations/0001_init.sql`.
+  **Triggers cannot go in `migrations/`**: D1's `/query` endpoint — the one
+  `migrations apply` uses — cannot parse `create trigger … begin … end;` and returns
+  `incomplete input`. They live in `schema/triggers.sql`, applied through
+  `d1 execute --file` (the `/import` endpoint) from three places that must stay in
+  sync: the `db:migrate:*` npm scripts, `test/worker/setup.ts`, and `deploy.yml`.
+  That file uses `create trigger if not exists` so re-running is safe, and holds
+  **one statement per trigger** — nothing splits statements in it.
 - **Auth**: Cloudflare Access (Google IdP) in front of `coffee.kiwi-walk.com`; the Worker
   re-verifies the forwarded JWT (`src/worker/lib/access.ts`, a dependency-free JWKS
   verifier) so a misconfigured Access application fails closed.
@@ -128,6 +135,7 @@ public/            everything the browser loads (this is the assets directory)
 src/worker/        index.ts (Hono) + routes/ + lib/{access,auth,columns,errors,json,sql,users}.ts
 src/shared/        json-columns.js — array/jsonb/timestamp manifest, shared with scripts/
 migrations/        D1 schema (0001_init.sql). Add new files; never edit applied ones.
+schema/triggers.sql triggers — cannot live in migrations/, see Tech stack
 scripts/           one-off Supabase → D1 export / import / verify
 tests/             jsdom unit tests + load-app.js harness
 test/worker/       workerd tests (separate directory so the include globs cannot overlap)
@@ -280,6 +288,8 @@ cache, bump `VERSION` at the top of `public/sw.js`.
 
 - Touching the form? Update both modes in `index.html` (#tpl-form) and the corresponding
   `buildFormPayload` / `loadRecordIntoForm` branch in app.js.
+- Adding a trigger? It goes in `schema/triggers.sql`, not `migrations/` (see Tech stack),
+  as a single `create trigger if not exists` statement.
 - Adding a column? Add to (1) `buildFormPayload`, (2) `loadRecordIntoForm`, (3) a **new**
   file in `migrations/` (never edit an applied one), and (4) the write whitelist in
   `src/worker/lib/columns.ts` — a column missing from the whitelist is silently dropped.

@@ -35,15 +35,9 @@ create table shops (
 );
 create index shops_name_idx on shops(lower(name));
 
--- 店家身分不可變：擋掉「把一家店偷換成另一個 Google 地點」。
--- Worker 的欄位白名單是第一道，這個 trigger 是第二道。
--- `is not` 是 SQLite 的 is distinct from。
-create trigger shops_freeze_place_id
-before update on shops for each row
-when new.google_place_id is not old.google_place_id
-begin
-    select raise(abort, 'google_place_id is immutable');
-end;
+-- 店家身分不可變的 trigger（shops_freeze_place_id）在 schema/triggers.sql，
+-- 不在這裡：D1 的 /query 端點無法解析 create trigger，而 migrations apply 只走
+-- 那個端點。那份檔案由 db:migrate:* 與 deploy.yml 以 d1 execute --file 一併套用。
 
 -- updated_at 沒有 trigger：Worker 的兩個 update 語句（updateShop / upsertShopNote）
 -- 自己寫入。after-update trigger 改同一張表會引出遞迴問題，換不到任何好處。

@@ -106,12 +106,23 @@ Supabase 的 RLS 換成 **Worker 端強制**：`requireAccess` 驗完 Access JWT
 改欄位時：`migrations/` 加一個新的 `NNNN_*.sql`（不要改既有的），並同步
 `src/worker/lib/columns.ts` 的白名單與 `src/shared/json-columns.js` 的清單。
 
+### Trigger 為什麼不在 migrations/
+
+D1 的 `/query` API 端點解析不了 `create trigger … begin … end;`（`begin…end` 裡的
+分號會讓它回 `incomplete input`），而 `wrangler d1 migrations apply` 只走那個端點。
+`d1 execute --file` 走的是 `/import`，可以。
+
+所以 trigger 放在 **`schema/triggers.sql`**，用 `d1 execute --file` 套用，
+本機的 `db:migrate:*`、vitest 的 worker setup、`deploy.yml` 三處都跑同一份檔案，
+不會 drift。檔案裡一律用 `create trigger if not exists`，重跑安全；
+**一個 trigger 一條語句，不要在那個檔案裡做語句切割**。
+
 ## 本機開發
 
 ```bash
 npm install
 cp .dev.vars.example .dev.vars     # 填 DEV_USER_EMAIL（+ 選填 GOOGLE_MAPS_API_KEY）
-npm run db:migrate:local           # 建好本地 D1
+npm run db:migrate:local           # 建好本地 D1（migrations + schema/triggers.sql）
 npm run dev                        # wrangler dev → http://localhost:8787
 ```
 
@@ -135,10 +146,11 @@ npm test             # vitest：app（jsdom）+ worker（workerd + 本地 D1）�
 **0. D1**
 
 ```bash
-npx wrangler d1 create coffee-review
+npx wrangler d1 create coffee-review   # 已建好；database_id 已在 wrangler.jsonc
+npm run db:migrate:remote              # migrations + schema/triggers.sql
 ```
 
-把回傳的 `database_id` 填進 `wrangler.jsonc`。
+Windows 的 PowerShell 若因執行原則擋下 `npx.ps1`，改用 `npx.cmd` / `npm.cmd`。
 
 **1. Cloudflare Access（必須在第一次部署之前做完）**
 

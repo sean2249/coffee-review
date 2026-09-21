@@ -32,6 +32,16 @@ jobs:
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: d1 migrations apply coffee-review --remote
 
+      # trigger 不能放在 migrations/：D1 的 /query 端點（migrations apply 走的那條）
+      # 解析不了 create trigger。這條走 /import，而且檔案是 create ... if not exists，
+      # 所以每次部署重跑都安全。
+      - name: Apply triggers
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: d1 execute coffee-review --remote --file=schema/triggers.sql --yes
+
       # 兩個值都空時 requireAccess 會走 open 分支 = 全站無防護。它們是 repo
       # variables（不敏感，所以刻意不是 secret），在這裡硬性檢查非空，fail closed。
       - name: Check Access variables
