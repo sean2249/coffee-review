@@ -6,10 +6,11 @@
         "moduleResolution": "bundler",
         "types": ["@cloudflare/workers-types", "@cloudflare/vitest-pool-workers/types"],
         "strict": true,
+        "allowJs": true,
         "noEmit": true,
         "skipLibCheck": true,
         "verbatimModuleSyntax": true,
         "isolatedModules": true
     },
-    "include": ["src/worker/**/*.ts", "test/worker/**/*.ts"]
+    "include": ["src/worker/**/*.ts", "src/shared/**/*.js", "test/worker/**/*.ts"]
 }

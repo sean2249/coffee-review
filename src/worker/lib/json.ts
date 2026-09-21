@@ -1,8 +1,8 @@
-// D1 沒有陣列與 jsonb，那些欄位在 SQLite 裡是存 JSON 文字的 text。編解碼只發生
-// 在這裡：Worker 回給前端的形狀與 PostgREST 完全相同（陣列就是陣列、物件就是
-// 物件），所以 app.js 讀 record.defects_tags / note.facilities 完全不用改。
-//
-// 遷移腳本 import 同一份清單，不要另外複製一份。
+// 陣列與 jsonb 欄位的編解碼。欄位清單在 src/shared/json-columns.js，與一次性
+// 遷移腳本共用。編解碼只發生在這裡：Worker 回給前端的形狀與 PostgREST 完全相同
+//（陣列就是陣列、物件就是物件），所以 app.js 讀 record.defects_tags /
+// note.facilities 完全不用改。
+import { JSON_ARRAY_COLS as ARRAYS, JSON_OBJECT_COLS as OBJECTS } from '../../shared/json-columns.js';
 
 export type Table =
     | 'shops'
@@ -14,33 +14,11 @@ export type Table =
     | 'tags'
     | 'users';
 
-const RECORD_ARRAYS = ['defects_tags', 'tag_ids'];
-const RECORD_OBJECTS = ['evaluations', 'observation'];
-
-export const JSON_ARRAY_COLS: Partial<Record<Table, readonly string[]>> = {
-    cupping_records: RECORD_ARRAYS,
-    tasting_records: RECORD_ARRAYS,
-    // 杯刻意沒有 tag_ids（與線上 schema 一致）。
-    cupping_session_cups: ['defects_tags'],
-    shop_notes: [
-        'facilities',
-        'space_materials',
-        'menu_food',
-        'drink_types',
-        'legacy_atmosphere_tags',
-        'legacy_decor_tags',
-        'legacy_service_tags',
-    ],
-};
-
-export const JSON_OBJECT_COLS: Partial<Record<Table, readonly string[]>> = {
-    cupping_records: RECORD_OBJECTS,
-    tasting_records: RECORD_OBJECTS,
-    cupping_session_cups: RECORD_OBJECTS,
-    shop_notes: ['ambience_axes', 'service_ratings'],
-};
-
 export type Row = Record<string, unknown>;
+
+type ColMap = Partial<Record<Table, readonly string[]>>;
+export const JSON_ARRAY_COLS: ColMap = ARRAYS;
+export const JSON_OBJECT_COLS: ColMap = OBJECTS;
 
 /** D1 的一列 -> 給前端的物件。讀取端永不 throw：壞掉的值退回空陣列 / 空物件。 */
 export function rowToDto<T extends Row>(table: Table, row: T | null): T | null {
