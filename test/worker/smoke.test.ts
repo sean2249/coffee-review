@@ -1,7 +1,10 @@
 import { env, SELF } from 'cloudflare:test';
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import worker from '../../src/worker/index';
 import type { Env } from '../../src/worker/env';
+import { OWNER_ID, resetDb } from './helpers';
+
+beforeEach(resetDb);
 
 describe('worker 骨架', () => {
     it('/api/me 在 open 模式回傳 DEV_USER_EMAIL 的身分', async () => {
@@ -9,7 +12,9 @@ describe('worker 骨架', () => {
         expect(res.status).toBe(200);
         expect(await res.json()).toEqual({
             auth: 'open',
+            user_id: OWNER_ID,
             email: 'owner@example.com',
+            placesEnabled: true,
             app: 'coffee-review',
         });
     });

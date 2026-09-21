@@ -3,7 +3,7 @@ import { HTTPException } from "hono/http-exception";
 import type { Env } from "../env";
 import { verifyAccessJwt, accessEmail } from "./access";
 
-type Vars = { auth: "access" | "open"; email: string };
+type Vars = { auth: "access" | "open"; email: string; userId: string };
 export type AppEnv = { Bindings: Env; Variables: Vars };
 
 /** Access forwards the JWT as a header; browsers also carry it as a cookie. */
