@@ -2,7 +2,7 @@
     "$schema": "node_modules/wrangler/config-schema.json",
     "name": "coffee-review",
     "main": "src/worker/index.ts",
-    "compatibility_date": "2026-09-01",
+    "compatibility_date": "2026-08-22",
     "compatibility_flags": ["nodejs_compat"],
     "tsconfig": "tsconfig.worker.json",
     "observability": { "enabled": true },
