@@ -3,8 +3,8 @@
 // the global object, so the returned `window` exposes tierFromScore,
 // decodeFlavorMeta, renderFlavorWheel, toggleFlavor, etc. directly.
 //
-// We deliberately do NOT set window.SUPABASE_CONFIG, so isCloudReady()
-// returns false and any render bails out without touching the network.
+// 沒有任何網路：app.js 只會透過 apiFetch 打同源的 /api/*，而 jsdom 沒有實作
+// fetch，所以未 stub 的呼叫會 reject 而不是外連。需要後端的測試自己 stub apiFetch。
 //
 // Note: app.js registers a DOMContentLoaded handler that ends up calling
 // renderRoute, which calls wheelState.clear(). JSDOM fires DOMContentLoaded
@@ -22,7 +22,7 @@ import { JSDOM } from 'jsdom';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const APP_JS = fs.readFileSync(path.join(here, '..', 'public', 'app.js'), 'utf8');
 
-export async function loadApp({ bodyHtml = '<main id="app"></main>', supabaseConfig = null } = {}) {
+export async function loadApp({ bodyHtml = '<main id="app"></main>' } = {}) {
     const dom = new JSDOM(`<!doctype html><html><body>${bodyHtml}</body></html>`, {
         url: 'http://localhost/#/none',
         runScripts: 'outside-only',
@@ -34,14 +34,9 @@ export async function loadApp({ bodyHtml = '<main id="app"></main>', supabaseCon
     if (!ctx.CSS) {
         ctx.CSS = { escape: v => String(v).replace(/[^\w-]/gu, c => `\\${c}`) };
     }
-    // Opt-in for tests that need isCloudReady() === true (e.g. the未登入 gate).
-    // Must be assigned before app.js runs — SUPABASE_CONFIG is a const merged at load.
-    // No network still happens: ensureSupabase's dynamic CDN import fails inside the
-    // vm context and initAuth swallows it, leaving state.user null.
-    if (supabaseConfig) {
-        ctx.window.SUPABASE_CONFIG = supabaseConfig;
-        ctx.console.error = () => {};
-    }
+    // initAuth 會打 /api/me；jsdom 沒有 fetch，它會 reject 並被 initAuth 吞掉，
+    // 留下 state.user = null（未登入）。把那則 console.error 靜音，測試輸出才乾淨。
+    ctx.console.error = () => {};
     vm.runInContext(APP_JS, ctx, { filename: 'app.js' });
 
     // Let DOMContentLoaded fire (and the renderRoute it triggers complete)

@@ -14,19 +14,6 @@
      #/shops/<id>          shop detail + linked records
    ========================================================================== */
 
-// ─── Config ──────────────────────────────────────────────────────────────────
-const SUPABASE_CONFIG = Object.assign({
-    url: '',
-    anonKey: '',
-    schema: 'coffee',
-    cuppingTable: 'cupping_records',
-    tastingTable: 'tasting_records',
-    shopsTable:   'shops',
-    shopNotesTable: 'shop_notes',
-    sessionsTable: 'cupping_sessions',
-    sessionCupsTable: 'cupping_session_cups',
-}, (typeof window !== 'undefined' && window.SUPABASE_CONFIG) || {});
-
 // ─── Tier definitions ────────────────────────────────────────────────────────
 const totalScoreTiers = [
     { id: 'trash',      medal: '劣', label: '≤76',   min: 74, max: 76.5,
@@ -266,14 +253,9 @@ const ITEM_GROUPS = [
 const COMMON_ITEMS = ITEM_GROUPS.flatMap(g => g.items);
 
 const coeState = { coeTotal: 82, selectedTierId: 'common' };
-let supabaseClient = null;
 const wheelState = new Map();
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
-function isCloudReady() {
-    return !!(SUPABASE_CONFIG.url && SUPABASE_CONFIG.anonKey);
-}
-
 function escapeHtml(s) {
     return String(s ?? '').replace(/[&<>"']/g, c => ({
         '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
@@ -488,254 +470,137 @@ function confirmDialog({ title = '確認', message = '', confirmText = '確認',
     });
 }
 
-const NO_CLOUD_MSG = '尚未設定雲端。\n\n' +
-    '本地開發：複製 config.example.js → config.js，填入 Supabase URL 與 publishable key。\n' +
-    'GitHub Pages 部署：在 repo Settings → Secrets and variables → Actions 加入 ' +
-    'SUPABASE_URL 與 SUPABASE_ANON_KEY，重新觸發部署。';
-
-// ─── Supabase client + API layer ─────────────────────────────────────────────
-async function ensureSupabase() {
-    if (!isCloudReady()) return null;
-    if (supabaseClient) return supabaseClient;
-    // 鎖定確切版本（供應鏈風險控管）：升版時改這裡，勿改回浮動的 @2
-    const mod = await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.110.0/+esm');
-    supabaseClient = mod.createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.anonKey, {
-        db: { schema: SUPABASE_CONFIG.schema || 'public' },
-        // supabase-js 預設是 implicit flow（token 落在 URL hash，會撞到本 app 的 hash router，
-        // 登入回跳後停在「找不到頁面」）。強制 PKCE：回跳改帶 ?code= 在 query，不干擾 hash router。
-        auth: { flowType: 'pkce' },
+// ─── API client ──────────────────────────────────────────────────────────────
+// 前端與 API 同源（同一支 Worker 同時服務 public/ 與 /api/*），所以沒有 base URL、
+// 沒有 CORS，也沒有任何憑證留在瀏覽器裡。
+async function apiFetch(path, { method = 'GET', body } = {}) {
+    const hasBody = body !== undefined;
+    const res = await fetch(path, {
+        method,
+        headers: hasBody
+            ? { accept: 'application/json', 'content-type': 'application/json' }
+            : { accept: 'application/json' },
+        body: hasBody ? JSON.stringify(body) : undefined,
+        credentials: 'same-origin',   // 帶上 Cloudflare Access 的 CF_Authorization cookie
     });
-    return supabaseClient;
+    // Access 的 session 過期時 /api/* 會被導去登入頁（HTML）。重新載入整頁讓瀏覽器
+    // 自己走完登入流程，而不是把登入頁當成資料解析 —— 這取代了原本的 token refresh。
+    const isHtml = (res.headers.get('content-type') || '').includes('text/html');
+    if (res.status === 401 || res.status === 403 || (isHtml && res.redirected)) {
+        window.location.reload();
+        throw new Error('session_expired');
+    }
+    if (res.status === 204) return null;
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok) {
+        // code 是 Worker 把 D1 的 constraint 錯誤轉譯回來的 Postgres SQLSTATE
+        // （23505 / 23503），所以呼叫端既有的判斷完全不用改。
+        throw Object.assign(new Error(payload.error || res.statusText), {
+            code: payload.code,
+            status: res.status,
+        });
+    }
+    return payload;
 }
 
-// ─── Google Maps Places loader (lazy) ────────────────────────────────────────
-let googleMapsPromise = null;
+const enc = encodeURIComponent;
+
+// ─── Google Places（經 Worker 代理） ─────────────────────────────────────────
+// API key 留在 Worker，不再送進瀏覽器。Worker 會把 REST 的 displayName 與
+// location 攤平成舊 JS SDK 的形狀，所以呼叫端的取值路徑一行都不用改。
+let placesEnabled = false;
 function isGoogleMapsReady() {
-    return !!(window.GOOGLE_CONFIG && window.GOOGLE_CONFIG.mapsApiKey);
-}
-async function ensureGoogleMaps() {
-    if (!isGoogleMapsReady()) return null;
-    if (googleMapsPromise) return googleMapsPromise;
-    googleMapsPromise = (async () => {
-        try {
-            // 鎖定確切版本（供應鏈風險控管）：升版時改這裡，勿改回浮動的 @1
-            const mod = await import('https://cdn.jsdelivr.net/npm/@googlemaps/js-api-loader@1.16.10/+esm');
-            const loader = new mod.Loader({
-                apiKey: window.GOOGLE_CONFIG.mapsApiKey,
-                version: 'weekly',
-                libraries: ['places'],
-            });
-            await loader.importLibrary('places');
-            return window.google;
-        } catch (e) {
-            console.warn('Google Maps load failed:', e);
-            googleMapsPromise = null;
-            return null;
-        }
-    })();
-    return googleMapsPromise;
+    return placesEnabled;
 }
 
+async function placesSearchText(query) {
+    const res = await apiFetch('/api/places/search', { method: 'POST', body: { query } });
+    return res?.places || [];
+}
+
+function placesDetails(placeId) {
+    return apiFetch(`/api/places/${enc(placeId)}`);
+}
+
+// ─── API layer ───────────────────────────────────────────────────────────────
+// 擁有者（user_id / created_by）一律由 Worker 從 Access 的身分蓋上，前端不再送，
+// 送了也會被白名單濾掉 —— RLS 消失之後，這就是「不信任 client」的落實方式。
 const api = {
-    async listShops() {
-        const sb = await ensureSupabase();
-        if (!sb) return [];
-        const { data, error } = await sb.from(SUPABASE_CONFIG.shopsTable)
-            .select('*').order('name', { ascending: true });
-        if (error) throw error;
-        return data || [];
+    listShops() {
+        return apiFetch('/api/shops');
     },
 
-    async getShop(id) {
-        const sb = await ensureSupabase();
-        if (!sb) return null;
-        // maybeSingle: missing row returns { data: null, error: null }
-        // (vs .single(), which throws PGRST116 and prevents the not-found UI from rendering)
-        const { data, error } = await sb.from(SUPABASE_CONFIG.shopsTable)
-            .select('*').eq('id', id).maybeSingle();
-        if (error) throw error;
-        return data;
+    // 找不到時回 null（Worker 回 200 null，對應原本的 .maybeSingle()）。
+    getShop(id) {
+        return apiFetch(`/api/shops/${enc(id)}`);
     },
 
-    async createShop(payload) {
-        const sb = await ensureSupabase();
-        if (!sb) throw new Error('cloud_not_ready');
-        const { data, error } = await sb.from(SUPABASE_CONFIG.shopsTable)
-            .insert(stampCreatedBy(payload)).select().single();
-        if (error) throw error;
-        return data;
+    createShop(payload) {
+        return apiFetch('/api/shops', { method: 'POST', body: payload });
     },
 
-    async updateShop(id, payload) {
-        const sb = await ensureSupabase();
-        if (!sb) throw new Error('cloud_not_ready');
-        const { data, error } = await sb.from(SUPABASE_CONFIG.shopsTable)
-            .update(payload).eq('id', id).select().single();
-        if (error) throw error;
-        return data;
+    updateShop(id, payload) {
+        return apiFetch(`/api/shops/${enc(id)}`, { method: 'PATCH', body: payload });
     },
 
-    async deleteShop(id) {
-        const sb = await ensureSupabase();
-        if (!sb) throw new Error('cloud_not_ready');
-        const { error } = await sb.from(SUPABASE_CONFIG.shopsTable).delete().eq('id', id);
-        if (error) throw error;
+    deleteShop(id) {
+        return apiFetch(`/api/shops/${enc(id)}`, { method: 'DELETE' });
     },
 
-    // withEvaluations：多拉 evaluations / observation（jsonb，體積大），場次內嵌的杯也一起。
+    // withEvaluations：多拉 evaluations / observation（體積大），場次內嵌的杯也一起。
     // 只有店家頁的常見風味需要；記錄列表、店家列表不必為了用不到的欄位多下載。
-    async listRecords({ type = 'all', withEvaluations = false } = {}) {
-        const sb = await ensureSupabase();
-        if (!sb) return [];
-        const baseCols = 'id, shop_id, coe_total, coe_tier_id, created_at'
-            + (withEvaluations ? ', evaluations, observation' : '');
-        const tasks = [];
-        const unwrap = (r, _type) => {
-            if (r.error) throw r.error;
-            return (r.data || []).map(x => ({ ...x, _type }));
-        };
-
-        // 進階篩選（店家關鍵字 / 徽章 / 日期）一律在前端套用，故這裡只依
-        // 類型決定查哪張表，其餘維度交給 applyAdvancedFilters。
-        if (type === 'all' || type === 'cupping') {
-            const q = sb.from(SUPABASE_CONFIG.cuppingTable)
-                .select(`${baseCols}, bean_name, origin`);
-            tasks.push(q.order('created_at', { ascending: false })
-                .then(r => unwrap(r, 'cupping')));
-        }
-        if (type === 'all' || type === 'tasting') {
-            const q = sb.from(SUPABASE_CONFIG.tastingTable)
-                .select(`${baseCols}, visit_date, item_ordered, bean_name`);
-            tasks.push(q.order('created_at', { ascending: false })
-                .then(r => unwrap(r, 'tasting')));
-        }
-        if (type === 'all' || type === 'session') {
-            // 杯測場次沒有自己的店家 / 分數：卡片、篩選、店家頁都靠內嵌的杯摘要。
-            // 店家頁把每一杯當一筆記錄（flattenSessionCups），所以風味欄位也跟著旗標走。
-            const cupCols = 'id, code, position, shop_id, bean_name, coe_total, coe_tier_id'
-                + (withEvaluations ? ', evaluations, observation' : '');
-            const q = sb.from(SUPABASE_CONFIG.sessionsTable)
-                .select(`id, title, session_date, created_at, cups:${SUPABASE_CONFIG.sessionCupsTable}(${cupCols})`);
-            tasks.push(q.order('created_at', { ascending: false })
-                .then(r => unwrap(r, 'session').map(withSortedCups)));
-        }
-        const results = await Promise.all(tasks);
-        const merged = [].concat(...results);
-        merged.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
-        return merged;
+    // 三種類型的合併與排序都在 Worker 做。
+    listRecords({ type = 'all', withEvaluations = false } = {}) {
+        const qs = new URLSearchParams({ type });
+        if (withEvaluations) qs.set('withEvaluations', '1');
+        return apiFetch(`/api/records?${qs}`);
     },
 
-    async getRecord(type, id) {
-        const sb = await ensureSupabase();
-        if (!sb) return null;
-        const table = type === 'tasting' ? SUPABASE_CONFIG.tastingTable : SUPABASE_CONFIG.cuppingTable;
-        const { data, error } = await sb.from(table).select('*').eq('id', id).maybeSingle();
-        if (error) throw error;
-        return data;
+    getRecord(type, id) {
+        return apiFetch(`/api/records/${enc(type)}/${enc(id)}`);
     },
 
-    async createRecord(type, payload) {
-        const sb = await ensureSupabase();
-        if (!sb) throw new Error('cloud_not_ready');
-        const table = type === 'tasting' ? SUPABASE_CONFIG.tastingTable : SUPABASE_CONFIG.cuppingTable;
-        const { data, error } = await sb.from(table).insert(stampUserId(payload)).select().single();
-        if (error) throw error;
-        return data;
+    createRecord(type, payload) {
+        return apiFetch(`/api/records/${enc(type)}`, { method: 'POST', body: payload });
     },
 
-    async updateRecord(type, id, payload) {
-        const sb = await ensureSupabase();
-        if (!sb) throw new Error('cloud_not_ready');
-        const table = type === 'tasting' ? SUPABASE_CONFIG.tastingTable : SUPABASE_CONFIG.cuppingTable;
-        const { data, error } = await sb.from(table).update(payload).eq('id', id).select().single();
-        if (error) throw error;
-        return data;
+    updateRecord(type, id, payload) {
+        return apiFetch(`/api/records/${enc(type)}/${enc(id)}`, { method: 'PATCH', body: payload });
     },
 
-    async deleteRecord(type, id) {
-        const sb = await ensureSupabase();
-        if (!sb) throw new Error('cloud_not_ready');
-        const table = type === 'tasting' ? SUPABASE_CONFIG.tastingTable : SUPABASE_CONFIG.cuppingTable;
-        const { error } = await sb.from(table).delete().eq('id', id);
-        if (error) throw error;
+    deleteRecord(type, id) {
+        return apiFetch(`/api/records/${enc(type)}/${enc(id)}`, { method: 'DELETE' });
     },
 
-    // 杯測場次：場次 + 內嵌的杯（依 position 排好）。
-    async getSession(id) {
-        const sb = await ensureSupabase();
-        if (!sb) return null;
-        const { data, error } = await sb.from(SUPABASE_CONFIG.sessionsTable)
-            .select(`*, cups:${SUPABASE_CONFIG.sessionCupsTable}(*)`)
-            .eq('id', id).maybeSingle();
-        if (error) throw error;
-        return data && withSortedCups(data);
+    // 杯測場次：場次 + 內嵌的杯（Worker 已依 position 排好）。
+    getSession(id) {
+        return apiFetch(`/api/sessions/${enc(id)}`);
     },
 
-    // 新增與編輯共用。場次與杯的 id 都由前端產生（crypto.randomUUID），每一步都是可重送的
-    // upsert / delete：任何一步失敗（含「寫入成功但回應遺失」），按儲存重試即可收斂。
-    // cups 至少一杯（表單不允許移除最後一杯）。
-    async saveSession(id, session, cups, { isNew = false } = {}) {
-        const sb = await ensureSupabase();
-        if (!sb) throw new Error('cloud_not_ready');
-        // upsert 走 INSERT 路徑，not-null 的 user_id 必須帶；編輯時是同值（同 upsertShopNote）。
-        // 不送 created_at：新列吃 default，既有列不動。
-        const s = await sb.from(SUPABASE_CONFIG.sessionsTable)
-            .upsert(stampUserId({ ...session, id }), { onConflict: 'id' });
-        if (s.error) throw s.error;
-        // 先刪「表單裡已經沒有」的杯（以伺服器現況比對，不靠載入時的清單：上次存到一半
-        // 已寫入、之後又被移除的杯也會清掉），釋出編號，下一步才不會撞 unique(session_id, code)。
-        const d = await sb.from(SUPABASE_CONFIG.sessionCupsTable)
-            .delete().eq('session_id', id).not('id', 'in', `(${cups.map(c => c.id).join(',')})`);
-        if (d.error) throw d.error;
-        // 新舊杯同一個 statement：互換編號、把舊編號給新杯都靠 deferrable unique。
-        // 每杯 key 集合一致（見 syncActiveCup），不會被 defaultToNull 補成 null。
-        const rows = cups.map((c, i) => stampUserId({ ...c, session_id: id, position: i }));
-        const c = await sb.from(SUPABASE_CONFIG.sessionCupsTable).upsert(rows, { onConflict: 'id' });
-        if (c.error) {
-            // 新場次：盡量別留下空場次（cascade 帶走已寫入的杯）；重試會用同一個 id 重建。
-            if (isNew) await sb.from(SUPABASE_CONFIG.sessionsTable).delete().eq('id', id);
-            throw c.error;
-        }
+    // 新增與編輯共用。場次與杯的 id 都由前端產生，整個請求是可重送的：任何一步
+    // 失敗（含「寫入成功但回應遺失」），按儲存重試即可收斂。cups 至少一杯。
+    // Worker 端是一個交易，所以失敗不會留下半截場次（舊版的 isNew 補償因此消失）。
+    saveSession(id, session, cups) {
+        return apiFetch(`/api/sessions/${enc(id)}`, { method: 'PUT', body: { session, cups } });
     },
 
-    async deleteSession(id) {
-        const sb = await ensureSupabase();
-        if (!sb) throw new Error('cloud_not_ready');
-        // 杯的複合 FK 是 on delete cascade，場次刪了杯一起走。
-        const { error } = await sb.from(SUPABASE_CONFIG.sessionsTable).delete().eq('id', id);
-        if (error) throw error;
+    deleteSession(id) {
+        return apiFetch(`/api/sessions/${enc(id)}`, { method: 'DELETE' });
     },
 
-    // 店家筆記：每人每店最多一筆。RLS 已限定 user_id = auth.uid()，這裡仍明寫
-    // .eq('user_id') 讓查詢在 policy 之外也語意清楚。
-    async getShopNote(shopId) {
-        const sb = await ensureSupabase();
-        if (!sb) return null;
-        const uid = currentUserId();
-        if (!uid) return null;
-        const { data, error } = await sb.from(SUPABASE_CONFIG.shopNotesTable)
-            .select('*').eq('shop_id', shopId).eq('user_id', uid).maybeSingle();
-        if (error) throw error;
-        return data;
+    // 店家筆記：每人每店最多一筆，擁有者由 Worker 決定。
+    getShopNote(shopId) {
+        return apiFetch(`/api/shops/${enc(shopId)}/note`);
     },
 
-    async upsertShopNote(shopId, payload) {
-        const sb = await ensureSupabase();
-        if (!sb) throw new Error('cloud_not_ready');
-        const uid = currentUserId();
-        if (!uid) throw new Error('not_signed_in');
-        const { data, error } = await sb.from(SUPABASE_CONFIG.shopNotesTable)
-            .upsert({ ...payload, shop_id: shopId, user_id: uid },
-                { onConflict: 'shop_id,user_id' })
-            .select().single();
-        if (error) throw error;
-        return data;
+    upsertShopNote(shopId, payload) {
+        return apiFetch(`/api/shops/${enc(shopId)}/note`, { method: 'PUT', body: payload });
     },
 };
 
-// ─── Auth (Google OAuth session) ─────────────────────────────────────────────
-// RLS 已收緊成每列隔離：未登入時 anon 讀不到任何資料，所以除了個人頁以外的頁面
-// 一律 gate 到登入提示（見 renderSignInRequired）。
+// ─── Auth (Cloudflare Access) ────────────────────────────────────────────────
+// 登入完全由 Cloudflare Access 處理：未認證的請求在邊緣就被導去 Google，app.js
+// 根本不會執行到。這裡只負責把「我是誰」讀回來給 UI 與擋板用。
 function currentUserId() {
     return state.user?.id ?? null;
 }
@@ -744,107 +609,55 @@ function isSignedIn() {
     return !!state.user;
 }
 
-// bootstrap 期間（initAuth 尚未回來）先不重繪：首次 render 由 bootstrap 自己發，
-// 否則 getSession / INITIAL_SESSION 會各觸發一次，開場重複拉資料。
+// bootstrap 期間（initAuth 尚未回來）先不重繪：首次 render 由 bootstrap 自己發。
 let authBootstrapped = false;
 
 function setSessionUser(user) {
     const nextId = user?.id ?? null;
     const changed = currentUserId() !== nextId;
     state.user = user || null;
-    // 登入/登出會改變每一頁能看到什麼（RLS 依 auth.uid() 過濾），所以一律重繪，
-    // 不再只重繪個人頁。比對 uid 是為了濾掉 TOKEN_REFRESHED 這類同人事件。
+    // 身分改變會改變每一頁能看到什麼，所以一律重繪。
     if (authBootstrapped && changed) renderRoute();
 }
 
-// 新增時蓋上擁有者。刻意不放進 buildFormPayload，避免污染草稿快照。
-function stampUserId(payload) {
-    return { ...payload, user_id: currentUserId() };
+// 登入頁不在這支 app 裡。重新載入會讓邊緣的 Access 接手，把使用者送去 Google。
+function retrySignIn() {
+    window.location.reload();
 }
 
-// 店家是共享 registry，user_id 對它沒有存取控制意義，只記錄「誰第一次把這家店加進來」。
-function stampCreatedBy(payload) {
-    return { ...payload, created_by: currentUserId() };
-}
-
-async function signInWithGoogle() {
-    // 這是 click handler，且 ensureSupabase 會動態 import（CDN 失敗會 reject）。
-    // 包 try/catch 才不會冒出 unhandled rejection，錯誤一律走 toast。
-    try {
-        const sb = await ensureSupabase();
-        if (!sb) return;
-        // 回跳到 app 根（origin+pathname）；PKCE 的 ?code= 落在 query，不干擾 hash router。
-        const redirectTo = window.location.origin + window.location.pathname;
-        const { error } = await sb.auth.signInWithOAuth({
-            provider: 'google',
-            options: { redirectTo },
-        });
-        if (error) showErrorToast('登入失敗：' + (error.message || error));
-    } catch (e) {
-        showErrorToast('登入失敗：' + (e.message || e));
-    }
-}
-
-async function signOutUser() {
-    try {
-        const sb = await ensureSupabase();
-        if (!sb) return;
-        const { error } = await sb.auth.signOut();
-        if (error) showErrorToast('登出失敗：' + (error.message || error));
-    } catch (e) {
-        showErrorToast('登出失敗：' + (e.message || e));
-    }
+function signOutUser() {
+    window.location.assign('/cdn-cgi/access/logout');
 }
 
 async function initAuth() {
-    if (!isCloudReady()) return;
-    // 開場 fire-and-forget；失敗就維持登出狀態，不打斷首屏，也不冒 unhandled rejection。
+    // 開場 fire-and-forget；失敗就維持未登入狀態、由擋板顯示訊息，不打斷首屏，
+    // 也不冒 unhandled rejection。
     try {
-        const sb = await ensureSupabase();
-        if (!sb) return;
-        const { data } = await sb.auth.getSession();
-        setSessionUser(data?.session?.user ?? null);
-        sb.auth.onAuthStateChange((_event, session) => {
-            setSessionUser(session?.user ?? null);
-        });
+        const me = await apiFetch('/api/me');
+        placesEnabled = !!me?.placesEnabled;
+        setSessionUser(me?.user_id ? { id: me.user_id, email: me.email } : null);
     } catch (e) {
         console.error('initAuth 失敗：', e);
     }
 }
 
 // ─── View: 個人 ──────────────────────────────────────────────────────────────
-// 頭像來自 OAuth provider profile；只允許 http/https，擋掉 data:/file: 等非預期 scheme
-// （escapeHtml 已防屬性逃逸，這層是避免載入非預期資源，兼顧未來多 provider）。
-function safeHttpUrl(url) {
-    try {
-        const u = new URL(url);
-        return (u.protocol === 'http:' || u.protocol === 'https:') ? url : '';
-    } catch {
-        return '';
-    }
-}
-
-function accountMarkup({ cloudReady, user }) {
-    if (!cloudReady) return renderCloudWarning();
+// Cloudflare Access 的 application token 只帶 email，沒有姓名與頭像
+// （那些要另外打 get-identity，為了一張頭像不值得多一次 subrequest）。
+function accountMarkup({ user }) {
     if (!user) {
         return `<div class="card account-card"><div class="card-body text-center">
             <i class="bi bi-person-circle account-avatar-placeholder"></i>
             <h3 class="card-title">個人</h3>
-            <p class="text-muted">登入以綁定你的記錄與店家。</p>
+            <p class="text-muted">尚未取得登入身分，重新載入即可。</p>
             <button class="btn btn-primary" id="account-signin">
-                <i class="bi bi-google me-2"></i>使用 Google 登入
+                <i class="bi bi-arrow-clockwise me-2"></i>重新載入
             </button>
         </div></div>`;
     }
-    const meta = user.user_metadata || {};
-    const name = meta.full_name || meta.name || '';
-    const avatar = safeHttpUrl(meta.avatar_url || '');
     const email = user.email || '';
     return `<div class="card account-card"><div class="card-body text-center">
-        ${avatar
-            ? `<img class="account-avatar" src="${escapeHtml(avatar)}" alt="" referrerpolicy="no-referrer">`
-            : '<i class="bi bi-person-circle account-avatar-placeholder"></i>'}
-        ${name ? `<h3 class="card-title">${escapeHtml(name)}</h3>` : ''}
+        <i class="bi bi-person-circle account-avatar-placeholder"></i>
         ${email ? `<p class="text-muted account-email">${escapeHtml(email)}</p>` : ''}
         <button class="btn btn-outline-secondary" id="account-signout">
             <i class="bi bi-box-arrow-right me-2"></i>登出
@@ -853,13 +666,12 @@ function accountMarkup({ cloudReady, user }) {
 }
 
 function viewAccount(root) {
-    root.innerHTML = accountMarkup({ cloudReady: isCloudReady(), user: state.user });
-    document.getElementById('account-signin')?.addEventListener('click', signInWithGoogle);
+    root.innerHTML = accountMarkup({ user: state.user });
+    document.getElementById('account-signin')?.addEventListener('click', retrySignIn);
     document.getElementById('account-signout')?.addEventListener('click', signOutUser);
 }
 
 async function refreshShopsCache() {
-    if (!isCloudReady()) return;
     try {
         state.shops = await api.listShops();
         state.shopsLoaded = true;
@@ -961,10 +773,6 @@ function viewNotFound(root) {
 // 'session' 是一場多杯的杯測，'session_cup' 是店家頁攤平後的單杯。
 const TYPE_LABELS = { cupping: '沖煮', tasting: '品鑑', session: '杯測', session_cup: '杯測' };
 
-// 杯的順序一律照 position（embed 不保證順序）；api 層排好，下游都當已排序。
-function withSortedCups(s) {
-    return { ...s, cups: [...(s.cups || [])].sort((a, b) => a.position - b.position) };
-}
 
 // 字母編號：A…Z、AA、AB…（雙射 26 進位）
 function letterCodeToNumber(code) {
@@ -1351,36 +1159,26 @@ function renderRecordCard(r) {
         </a>`;
 }
 
-function renderCloudWarning() {
-    return `<div class="card"><div class="card-body">
-        <h3 class="card-title"><i class="bi bi-cloud-slash"></i>尚未設定雲端</h3>
-        <p class="text-muted">本應用透過 Supabase 雲端儲存記錄。</p>
-        <pre class="cloud-warning-msg">${escapeHtml(NO_CLOUD_MSG)}</pre>
-    </div></div>`;
-}
-
-// 未登入時的統一擋板。資料頁一律走這裡，不發任何查詢 —— RLS 也會擋，但前端先擋
+// 未登入時的統一擋板。資料頁一律走這裡，不發任何查詢 —— Worker 也會擋，但前端先擋
 // 才不會讓使用者看到一片空清單、以為資料不見了。
+// Access 已經在邊緣擋掉未認證的請求，所以走到這裡只有兩種情況：/api/me 還沒回來，
+// 或它失敗了。兩種都是「重新載入」能解的。
 function renderSignInRequired() {
     return `<div class="card account-card"><div class="card-body text-center">
         <i class="bi bi-lock account-avatar-placeholder"></i>
         <h3 class="card-title">請先登入</h3>
         <p class="text-muted">你的記錄與店家筆記只有登入後才看得到。</p>
         <button class="btn btn-primary" id="gate-signin">
-            <i class="bi bi-google me-2"></i>使用 Google 登入
+            <i class="bi bi-arrow-clockwise me-2"></i>重新載入
         </button>
     </div></div>`;
 }
 
 // 所有資料頁共用的前置檢查。回傳 true 代表已經接手渲染，呼叫端應直接 return。
 function renderAccessGate(root) {
-    if (!isCloudReady()) {
-        root.innerHTML = renderCloudWarning();
-        return true;
-    }
     if (!isSignedIn()) {
         root.innerHTML = renderSignInRequired();
-        document.getElementById('gate-signin')?.addEventListener('click', signInWithGoogle);
+        document.getElementById('gate-signin')?.addEventListener('click', retrySignIn);
         return true;
     }
     return false;
@@ -2011,23 +1809,14 @@ function applyBeanTypeVisibility(mode) {
 // ─── Origin datalist (country dropdown) ──────────────────────────────────────
 async function loadKnownOrigins() {
     if (state.knownOriginsLoaded) return;
-    const sb = await ensureSupabase();
-    if (!sb) return;
-    // Defensive cap — distinct happens client-side. If the table grows past
-    // a few thousand rows, switch to a Postgres view/RPC returning DISTINCT.
-    const { data, error } = await sb.from(SUPABASE_CONFIG.cuppingTable)
-        .select('origin').not('origin', 'is', null).limit(2000);
-    if (error) {
-        console.warn('loadKnownOrigins failed:', error);
-        return;
+    // 去重與去空白都在 Worker 的 SQL 裡做（原本是前端拉 2000 列自己去重）。
+    try {
+        const res = await apiFetch('/api/suggest/origins');
+        state.knownOrigins = res?.items || [];
+        state.knownOriginsLoaded = true;
+    } catch (e) {
+        console.warn('loadKnownOrigins failed:', e);
     }
-    const seen = new Set();
-    (data || []).forEach(row => {
-        const v = (row.origin || '').trim();
-        if (v) seen.add(v);
-    });
-    state.knownOrigins = Array.from(seen);
-    state.knownOriginsLoaded = true;
 }
 
 function populateOriginDatalist() {
@@ -2044,23 +1833,13 @@ function populateOriginDatalist() {
 
 async function loadKnownItems() {
     if (state.knownItemsLoaded) return;
-    const sb = await ensureSupabase();
-    if (!sb) return;
-    // Defensive cap — distinct happens client-side. If the table grows past
-    // a few thousand rows, switch to a Postgres view/RPC returning DISTINCT.
-    const { data, error } = await sb.from(SUPABASE_CONFIG.tastingTable)
-        .select('item_ordered').not('item_ordered', 'is', null).limit(2000);
-    if (error) {
-        console.warn('loadKnownItems failed:', error);
-        return;
+    try {
+        const res = await apiFetch('/api/suggest/items');
+        state.knownItems = res?.items || [];
+        state.knownItemsLoaded = true;
+    } catch (e) {
+        console.warn('loadKnownItems failed:', e);
     }
-    const seen = new Set();
-    (data || []).forEach(row => {
-        const v = (row.item_ordered || '').trim();
-        if (v) seen.add(v);
-    });
-    state.knownItems = Array.from(seen);
-    state.knownItemsLoaded = true;
 }
 
 function populateItemDatalist() {
@@ -2218,18 +1997,14 @@ async function refreshImportBeanForShop(mode, shopId) {
     }
 
     // Always pull from cupping_records (richer fields incl. origin/process/roast).
-    const sb = await ensureSupabase();
-    if (!sb) { block.hidden = true; return; }
-    const { data, error } = await sb.from(SUPABASE_CONFIG.cuppingTable)
-        .select('id, bean_name, bean_type, origin, blend_composition, created_at')
-        .eq('shop_id', shopId)
-        .order('created_at', { ascending: false });
-    if (error) {
-        console.warn('refreshImportBeanForShop failed:', error);
+    let beans;
+    try {
+        beans = await apiFetch(`/api/shops/${enc(shopId)}/beans`);
+    } catch (e) {
+        console.warn('refreshImportBeanForShop failed:', e);
         block.hidden = true;
         return;
     }
-    const beans = data || [];
 
     // Exclude the record being edited first — otherwise it could "claim" its
     // bean's signature in the dedupe pass below, hiding older duplicates and
@@ -2460,14 +2235,7 @@ function openShopPicker({ currentId = '', allowEmpty = true, emptyLabel = '— �
         lastGoogleQuery = query;
         showGoogleNote('<i class="bi bi-hourglass-split"></i> Google 搜尋中…');
         try {
-            const g = await ensureGoogleMaps();
-            if (!g) throw new Error('Google Maps 載入失敗');
-            const { Place } = await g.maps.importLibrary('places');
-            const { places } = await Place.searchByText({
-                textQuery: query,
-                fields: ['id', 'displayName', 'formattedAddress', 'location'],
-                maxResultCount: 5,
-            });
+            const places = await placesSearchText(query);
             // 使用者已改字或關掉 modal → 這是過期回應，不能蓋掉現在的畫面。
             if (seq !== googleSeq || !document.body.contains(backdrop)) return;
             googlePlaces = places || [];
@@ -2506,9 +2274,8 @@ function openShopPicker({ currentId = '', allowEmpty = true, emptyLabel = '— �
         const known = state.shops.find(s => s.google_place_id === place.id);
         if (known) { pick(known.id); return; }
 
-        // Places 回的 location 是 LatLng，lat()/lng() 讀 this —— 所以要連著物件一起
-        // 呼叫，不能把方法拆下來傳。純數字的 location 也一併接受。
-        const coord = (loc, key) => (typeof loc?.[key] === 'function' ? loc[key]() : loc?.[key] ?? null);
+        // location 是 Worker 攤平過的 { lat, lng } 純數字（Places REST 原本是
+        // { latitude, longitude }），所以這裡直接取值。
         const addrEl = btn.querySelector('.bf-option-addr');
         const addrText = addrEl ? addrEl.textContent : '';
         creating = true;
@@ -2519,8 +2286,8 @@ function openShopPicker({ currentId = '', allowEmpty = true, emptyLabel = '— �
                 name: place.displayName,
                 location: place.formattedAddress || null,
                 google_place_id: place.id,
-                lat: coord(place.location, 'lat'),
-                lng: coord(place.location, 'lng'),
+                lat: place.location?.lat ?? null,
+                lng: place.location?.lng ?? null,
                 google_data_fetched_at: new Date().toISOString(),
             });
             await refreshShopsCache();
@@ -4273,7 +4040,7 @@ async function submitSessionForm() {
     const saveBtn = document.getElementById('f-save');
     saveBtn.disabled = true;
     try {
-        await api.saveSession(form.id, buildSessionPayload(), form.cups, { isNew: !form.recordId });
+        await api.saveSession(form.id, buildSessionPayload(), form.cups);
         // 用拿在手上的 form：存檔期間就算已離開頁面，草稿也要清掉。
         form.cancelDraftSave?.();
         if (form.draftKey) clearDraft(form.draftKey);
@@ -4428,11 +4195,8 @@ function isShopDataStale(shop, now = Date.now()) {
 // 純資料層：抓 Google → 寫 DB → 回傳更新後的 shop。不碰任何 UI，失敗就 throw。
 async function fetchShopFromGoogle(shop) {
     if (!shop.google_place_id) throw new Error('此店家沒有綁定 Google 地點');
-    const g = await ensureGoogleMaps();
-    if (!g) throw new Error('Google Maps 載入失敗');
-    const { Place } = await g.maps.importLibrary('places');
-    const place = new Place({ id: shop.google_place_id });
-    await place.fetchFields({ fields: ['id', 'displayName', 'formattedAddress', 'location'] });
+    const place = await placesDetails(shop.google_place_id);
+    if (!place) throw new Error('Google 查無此地點');
 
     // place_id 退役時 Google 會回一個不同的 id。DB trigger 凍結 google_place_id，
     // 所以這裡不能自動改寫 —— 那等於允許偷換店家。只回報，讓人決定。
@@ -4444,8 +4208,8 @@ async function fetchShopFromGoogle(shop) {
     return api.updateShop(shop.id, {
         name:     place.displayName || shop.name,
         location: place.formattedAddress || shop.location,
-        lat: place.location?.lat?.() ?? place.location?.lat ?? null,
-        lng: place.location?.lng?.() ?? place.location?.lng ?? null,
+        lat: place.location?.lat ?? null,
+        lng: place.location?.lng ?? null,
         google_data_fetched_at: new Date().toISOString(),
     });
 }

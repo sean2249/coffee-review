@@ -149,23 +149,14 @@ describe('renderSessionDetail', () => {
 });
 
 describe('viewSessionDetail', () => {
-    const CLOUD = { url: 'https://example.supabase.co', anonKey: 'anon-key' };
-
     it('讀取期間換頁：晚回來的結果不會蓋掉新畫面', async () => {
-        const { window: w, document: d } = await loadApp({ supabaseConfig: CLOUD });
+        const { window: w, document: d } = await loadApp();
         w.setSessionUser({ id: 'u1' });
         // 店家清單馬上回，場次卡住不回，模擬「讀取中使用者換頁」。
         let release;
-        const make = stall => {
-            const b = {
-                select: () => b, eq: () => b, order: () => b, maybeSingle: () => b,
-                then: r => stall
-                    ? new Promise(res => { release = () => res(r({ data: { id: 's1', cups: [] }, error: null })); })
-                    : Promise.resolve(r({ data: [], error: null })),
-            };
-            return b;
-        };
-        w.ensureSupabase = () => Promise.resolve({ from: t => make(t === 'cupping_sessions') });
+        w.apiFetch = path => (path.startsWith('/api/sessions')
+            ? new Promise(res => { release = () => res({ id: 's1', cups: [] }); })
+            : Promise.resolve([]));
         const root = d.getElementById('app');
 
         w.location.hash = '#/session/s1';

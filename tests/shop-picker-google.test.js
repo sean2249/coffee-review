@@ -9,7 +9,6 @@ import { loadApp } from './load-app.js';
 // 沒有 vitest 的 fake timers：每個測試自建 JSDOM，app 的 setTimeout 活在 VM
 // context 裡，攔不到。debounce 是 400ms，所以等真實時間。
 
-const CLOUD = { url: 'https://example.supabase.co', anonKey: 'anon-key' };
 const SHOPS = [
     { id: 's1', name: 'GABEE. 咖啡店', location: '台北市松山區民生東路', google_place_id: 'g1' },
     { id: 's2', name: 'NODE COFFEE', location: '台北市松山區南京東路', google_place_id: 'g2' },
@@ -30,44 +29,39 @@ function readShops() {
     return vm.runInContext('state.shops', dom.getInternalVMContext());
 }
 
-// 記下 Places 被呼叫幾次 / 拿到什麼 textQuery，並回傳指定的候選。
+// 記下 Places 被呼叫幾次 / 拿到什麼 query，並回傳指定的候選。
+// Worker 已經把 displayName 攤平成字串、location 攤平成 { lat, lng } 純數字。
 function stubPlaces(places, { onCall } = {}) {
     const calls = [];
-    win.GOOGLE_CONFIG = { mapsApiKey: 'test-key' };
-    win.ensureGoogleMaps = async () => ({
-        maps: {
-            importLibrary: async () => ({
-                Place: {
-                    searchByText: async ({ textQuery }) => {
-                        calls.push(textQuery);
-                        if (onCall) return onCall(textQuery);
-                        return { places };
-                    },
-                },
-            }),
-        },
-    });
+    win.isGoogleMapsReady = () => true;
+    win.placesSearchText = async (query) => {
+        calls.push(query);
+        if (onCall) return (await onCall(query)).places;
+        return places;
+    };
     return calls;
 }
 
-// api.* 全部經過 ensureSupabase，所以 stub 這個工廠就夠了。
-// listShops → from().select().order()；createShop → from().insert().select().single()
-function stubSupabase({ insertResult, listRows }) {
+// api.* 全部經過 apiFetch，所以 stub 這一個就夠了。
+// insertResult 沿用 { data, error } 的形狀：error 會被翻成 apiFetch 丟出的 Error。
+function stubApi({ insertResult, listRows }) {
     const state = { inserted: null, listCalls: 0 };
-    win.ensureSupabase = async () => ({
-        from: () => ({
-            select: () => ({
-                order: async () => {
-                    state.listCalls += 1;
-                    return { data: listRows ? listRows(state.listCalls) : [], error: null };
-                },
-            }),
-            insert: payload => {
-                state.inserted = payload;
-                return { select: () => ({ single: async () => insertResult }) };
-            },
-        }),
-    });
+    const unwrap = async (r) => {
+        const { data, error } = await r;
+        if (error) throw Object.assign(new Error(error.message || 'failed'), { code: error.code });
+        return data;
+    };
+    win.apiFetch = (path, init = {}) => {
+        if (path === '/api/shops' && (init.method || 'GET') === 'GET') {
+            state.listCalls += 1;
+            return Promise.resolve(listRows ? listRows(state.listCalls) : []);
+        }
+        if (path === '/api/shops' && init.method === 'POST') {
+            state.inserted = init.body;
+            return unwrap(insertResult);
+        }
+        return Promise.reject(new Error(`unexpected apiFetch: ${init.method || 'GET'} ${path}`));
+    };
     return state;
 }
 
@@ -103,7 +97,7 @@ const awaitGoogleRows = () => waitFor(() => googleItems().length > 0);
 const toastText = () => doc.getElementById('toastMsg')?.textContent || '';
 
 beforeEach(async () => {
-    ({ window: win, document: doc, dom } = await loadApp({ supabaseConfig: CLOUD }));
+    ({ window: win, document: doc, dom } = await loadApp());
     seedShops(SHOPS);
 });
 
@@ -230,7 +224,7 @@ describe('Google 結果已經在清單裡', () => {
 
     it('links the existing shop instead of creating one', async () => {
         stubPlaces(KNOWN);
-        const sb = stubSupabase({ insertResult: { data: null, error: { code: '23505' } } });
+        const sb = stubApi({ insertResult: { data: null, error: { code: '23505' } } });
         let picked;
         let created = 'untouched';
         win.openShopPicker({ onPick: (id, shop) => { picked = id; created = shop; } });
@@ -253,7 +247,7 @@ describe('Google 結果是新地點', () => {
 
     it('creates the shop and reports it as newly created', async () => {
         stubPlaces(NEW);
-        const sb = stubSupabase({
+        const sb = stubApi({
             insertResult: { data: SAVED, error: null },
             listRows: () => [...SHOPS, SAVED],
         });
@@ -271,10 +265,11 @@ describe('Google 結果是新地點', () => {
             lat: 25.03,
             lng: 121.56,
         });
-        // google_data_fetched_at 是條款要求的快取時間戳，created_by 由 api 層蓋。
+        // google_data_fetched_at 是條款要求的快取時間戳。
+        // created_by / user_id 都不在：擁有者由 Worker 從 Access 身分蓋上。
         expect(typeof sb.inserted.google_data_fetched_at).toBe('string');
         expect(Object.keys(sb.inserted).sort()).toEqual([
-            'created_by', 'google_data_fetched_at', 'google_place_id', 'lat', 'lng', 'location', 'name',
+            'google_data_fetched_at', 'google_place_id', 'lat', 'lng', 'location', 'name',
         ]);
         expect(picked).toBe('s9');
         expect(created).toEqual(SAVED);
@@ -282,33 +277,9 @@ describe('Google 結果是新地點', () => {
         expect(toastText()).toContain('已新增店家');
     });
 
-    // Maps SDK 給的是 LatLng，lat()/lng() 讀 this。這裡刻意用 class 而不是
-    // arrow function —— arrow function 不看 this，會把「方法被拆下來呼叫」的 bug 蓋掉。
-    it('reads a real LatLng whose lat()/lng() depend on their receiver', async () => {
-        class LatLng {
-            constructor(lat, lng) { this._lat = lat; this._lng = lng; }
-            lat() { return this._lat; }
-            lng() { return this._lng; }
-        }
-        stubPlaces([{
-            id: 'g9',
-            displayName: '興波咖啡',
-            formattedAddress: '台北市中正區忠孝東路',
-            location: new LatLng(25.03, 121.56),
-        }]);
-        const sb = stubSupabase({ insertResult: { data: SAVED, error: null }, listRows: () => [SAVED] });
-        win.openShopPicker({});
-        await type('興波');
-        await awaitGoogleRows();
-        googleItems()[0].click();
-        await settle();
-        expect(sb.inserted).toMatchObject({ lat: 25.03, lng: 121.56 });
-        expect(toastText()).toContain('已新增店家');
-    });
-
     it('keeps the created shop in the cache even if the refresh fails', async () => {
         stubPlaces(NEW);
-        stubSupabase({
+        stubApi({
             insertResult: { data: SAVED, error: null },
             listRows: () => { throw new Error('network down'); },
         });
@@ -330,7 +301,7 @@ describe('Google 結果是新地點', () => {
         ]);
         let release;
         const held = new Promise(r => { release = r; });
-        const sb = stubSupabase({ insertResult: held, listRows: () => [...SHOPS, SAVED] });
+        const sb = stubApi({ insertResult: held, listRows: () => [...SHOPS, SAVED] });
         const picks = [];
         win.openShopPicker({ onPick: id => picks.push(id) });
         await type('興波');
@@ -354,7 +325,7 @@ describe('createShop 撞到 23505', () => {
 
     it('re-reads the cache and links the conflicting shop', async () => {
         stubPlaces(NEW);
-        stubSupabase({
+        stubApi({
             insertResult: { data: null, error: { code: '23505' } },
             listRows: () => [...SHOPS, CONFLICT],
         });
@@ -372,7 +343,7 @@ describe('createShop 撞到 23505', () => {
 
     it('falls back to an error toast when the conflicting row is unreachable', async () => {
         stubPlaces(NEW);
-        stubSupabase({
+        stubApi({
             insertResult: { data: null, error: { code: '23505' } },
             listRows: () => [...SHOPS],
         });
@@ -392,7 +363,8 @@ describe('createShop 撞到 23505', () => {
 describe('沒有 Google Maps key', () => {
     it('keeps local search working and explains the missing key', async () => {
         let called = false;
-        win.ensureGoogleMaps = async () => { called = true; return null; };
+        win.isGoogleMapsReady = () => false;
+        win.placesSearchText = async () => { called = true; return []; };
         win.openShopPicker({});
         await type('GABEE');
         expect(localItems().map(b => b.dataset.shopId)).toEqual(['', 's1']);

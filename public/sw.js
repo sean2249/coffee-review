@@ -1,9 +1,9 @@
 // Coffee Review — Service Worker
 // Cache strategy:
 //   • App shell + CDN libs: stale-while-revalidate
-//   • Supabase API: pass-through, always go to network
+//   • /api/* 與 /cdn-cgi/*: pass-through, always go to network
 
-const VERSION = 'v14';
+const VERSION = 'v15';
 const CACHE = `coffee-review-${VERSION}`;
 
 const APP_SHELL = [
@@ -39,12 +39,13 @@ self.addEventListener('activate', event => {
     );
 });
 
+// API 與 Cloudflare Access 的端點一律不進快取。這比舊的 Supabase 規則更要緊：
+// Access 的 session 過期時 /api/* 會被 302 導去登入頁，下面的 handler 會把跟隨
+// 重導後那個 200 的 HTML 登入頁存到 /api/records 底下，之後永遠回錯的東西。
 function shouldBypass(url) {
-    const host = url.hostname;
-    // Supabase REST / Realtime / Storage — always go to network
-    if (host.endsWith('.supabase.co') || host.endsWith('.supabase.in')) return true;
-    // Google Maps / Places — always go to network (避免快取 API 回應與動態 JS)
-    if (host === 'maps.googleapis.com' || host === 'places.googleapis.com') return true;
+    if (url.origin !== self.location.origin) return false;
+    if (url.pathname.startsWith('/api/')) return true;
+    if (url.pathname.startsWith('/cdn-cgi/')) return true;
     return false;
 }
 

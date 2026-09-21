@@ -4,7 +4,7 @@ import tseslint from 'typescript-eslint';
 
 export default [
     {
-        ignores: ['node_modules/**', 'public/config.js', '.wrangler/**', 'src/worker/worker-configuration.d.ts'],
+        ignores: ['node_modules/**', '.wrangler/**', 'src/worker/worker-configuration.d.ts'],
     },
     js.configs.recommended,
     ...tseslint.configs.recommended.map(c => ({ ...c, files: ['src/worker/**/*.ts', 'test/worker/**/*.ts'] })),
@@ -39,14 +39,6 @@ export default [
             globals: {
                 ...globals.serviceworker,
             },
-        },
-    },
-    {
-        files: ['config.example.js'],
-        languageOptions: {
-            ecmaVersion: 'latest',
-            sourceType: 'script',
-            globals: { ...globals.browser },
         },
     },
     {
