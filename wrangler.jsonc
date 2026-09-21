@@ -31,6 +31,12 @@
         }
     ],
 
+    // /api/places/* 是唯一會產生 Google 帳單的路徑，依 user_id 限流。
+    // 帳單的硬底線在 Google Cloud Console 的每日配額上限，不在這裡。
+    "ratelimits": [
+        { "name": "PLACES_LIMITER", "namespace_id": "1001", "simple": { "limit": 60, "period": 60 } }
+    ],
+
     // 失控用量的保險。
     "limits": { "cpu_ms": 10000, "subrequests": 50 },
 
