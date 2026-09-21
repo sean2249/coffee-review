@@ -20,7 +20,7 @@ import vm from 'node:vm';
 import { JSDOM } from 'jsdom';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const APP_JS = fs.readFileSync(path.join(here, '..', 'app.js'), 'utf8');
+const APP_JS = fs.readFileSync(path.join(here, '..', 'public', 'app.js'), 'utf8');
 
 export async function loadApp({ bodyHtml = '<main id="app"></main>', supabaseConfig = null } = {}) {
     const dom = new JSDOM(`<!doctype html><html><body>${bodyHtml}</body></html>`, {

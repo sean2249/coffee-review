@@ -12,7 +12,7 @@ import { loadApp } from './load-app.js';
 // 表單本體直接取自 index.html 的 #tpl-session-form，避免測試複製一份走鐘的 markup。
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const INDEX = fs.readFileSync(path.join(here, '..', 'index.html'), 'utf8');
+const INDEX = fs.readFileSync(path.join(here, '..', 'public', 'index.html'), 'utf8');
 const TEMPLATE = '<template id="tpl-session-form">'
     + INDEX.split('<template id="tpl-session-form">')[1].split('</template>')[0]
     + '</template>';

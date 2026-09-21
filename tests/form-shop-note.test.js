@@ -9,7 +9,7 @@ import { loadApp } from './load-app.js';
 // 會跟真實樣板走鐘的 markup。
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const INDEX = fs.readFileSync(path.join(here, '..', 'index.html'), 'utf8');
+const INDEX = fs.readFileSync(path.join(here, '..', 'public', 'index.html'), 'utf8');
 const FORM_MARKUP = INDEX.split('<template id="tpl-form">')[1].split('</template>')[0];
 
 const NOTE = {

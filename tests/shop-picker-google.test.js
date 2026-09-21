@@ -417,7 +417,7 @@ describe('店名只能來自 Google', () => {
 describe('舊的 openShopModal 已完全退場', () => {
     it('leaves no orphaned markup or entry point behind', async () => {
         const fs = await import('node:fs');
-        const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+        const html = fs.readFileSync(new URL('../public/index.html', import.meta.url), 'utf8');
         expect(html).not.toContain('tpl-shop-modal');
         expect(html).not.toContain('id="f-shop-new"');
         expect(win.openShopModal).toBeUndefined();
