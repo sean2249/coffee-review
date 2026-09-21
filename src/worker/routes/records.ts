@@ -5,8 +5,13 @@ import { withUser } from '../lib/users';
 import { badRequest } from '../lib/errors';
 import type { Row, Table } from '../lib/json';
 import { rowToDto, rowsToDto } from '../lib/json';
+import { recordCols } from '../lib/columns';
+import { insertStatement, pick, updateStatement } from '../lib/sql';
+import { notFound } from '../lib/errors';
 
-export const recordTable = (type: string): Table => {
+export type RecordTable = Extract<Table, 'cupping_records' | 'tasting_records'>;
+
+export const recordTable = (type: string): RecordTable => {
     if (type === 'tasting') return 'tasting_records';
     if (type === 'cupping') return 'cupping_records';
     throw badRequest(`unknown record type: ${type}`);
@@ -108,6 +113,37 @@ async function listSessionsWithCups(db: D1Database, userId: string, flavour: str
         _type: 'session',
     }));
 }
+
+// id / user_id / created_at 由 Worker 蓋上。前端不再送 user_id（stampUserId 已刪），
+// 但就算送了也會被白名單濾掉。
+routes.post('/api/records/:type', async (c) => {
+    const table = recordTable(c.req.param('type'));
+    const values = pick(table, await c.req.json(), recordCols(table));
+    values.id = crypto.randomUUID();
+    values.user_id = c.get('userId');
+    const row = await insertStatement(c.env.DB, table, values).first<Row>();
+    return c.json(rowToDto(table, row), 201);
+});
+
+routes.patch('/api/records/:type/:id', async (c) => {
+    const table = recordTable(c.req.param('type'));
+    const values = pick(table, await c.req.json(), recordCols(table));
+    const row = await updateStatement(c.env.DB, table, values, {
+        id: c.req.param('id'),
+        user_id: c.get('userId'),
+    }).first<Row>();
+    if (!row) throw notFound('record');
+    return c.json(rowToDto(table, row));
+});
+
+routes.delete('/api/records/:type/:id', async (c) => {
+    const table = recordTable(c.req.param('type'));
+    const res = await c.env.DB.prepare(`delete from ${table} where id = ?1 and user_id = ?2`)
+        .bind(c.req.param('id'), c.get('userId'))
+        .run();
+    if (res.meta.changes === 0) throw notFound('record');
+    return c.body(null, 204);
+});
 
 function tag(rows: Row[], type: string): Row[] {
     return rows.map((r) => ({ ...r, _type: type }));
