@@ -7,7 +7,7 @@ import type { Row, Table } from '../lib/json';
 import { rowToDto, rowsToDto } from '../lib/json';
 import { recordCols } from '../lib/columns';
 import { insertStatement, pick, updateStatement } from '../lib/sql';
-import { notFound } from '../lib/errors';
+import { notFound, readJson } from '../lib/errors';
 
 export type RecordTable = Extract<Table, 'cupping_records' | 'tasting_records'>;
 
@@ -118,7 +118,7 @@ async function listSessionsWithCups(db: D1Database, userId: string, flavour: str
 // 但就算送了也會被白名單濾掉。
 routes.post('/api/records/:type', async (c) => {
     const table = recordTable(c.req.param('type'));
-    const values = pick(table, await c.req.json(), recordCols(table));
+    const values = pick(table, await readJson(c), recordCols(table));
     values.id = crypto.randomUUID();
     values.user_id = c.get('userId');
     const row = await insertStatement(c.env.DB, table, values).first<Row>();
@@ -127,7 +127,7 @@ routes.post('/api/records/:type', async (c) => {
 
 routes.patch('/api/records/:type/:id', async (c) => {
     const table = recordTable(c.req.param('type'));
-    const values = pick(table, await c.req.json(), recordCols(table));
+    const values = pick(table, await readJson(c), recordCols(table));
     const row = await updateStatement(c.env.DB, table, values, {
         id: c.req.param('id'),
         user_id: c.get('userId'),

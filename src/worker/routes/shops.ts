@@ -6,7 +6,7 @@ import type { Row } from '../lib/json';
 import { rowToDto } from '../lib/json';
 import { SHOP_CREATE_COLS, SHOP_NOTE_COLS, SHOP_UPDATE_COLS } from '../lib/columns';
 import { insertStatement, nowIso, pick, updateStatement } from '../lib/sql';
-import { notFound } from '../lib/errors';
+import { notFound, readJson } from '../lib/errors';
 
 const routes = new Hono<AppEnv>();
 routes.use('/api/shops', requireAccess, withUser);
@@ -46,7 +46,7 @@ routes.get('/api/shops/:id/beans', async (c) => {
 // 所以這裡沒有「手動輸入」的路徑，白名單也不含任何自由欄位以外的東西。
 // created_by 由 Worker 蓋上，前端送的一律忽略（它只是建立者註記，不參與存取控制）。
 routes.post('/api/shops', async (c) => {
-    const values = pick('shops', await c.req.json(), SHOP_CREATE_COLS);
+    const values = pick('shops', await readJson(c), SHOP_CREATE_COLS);
     values.id = crypto.randomUUID();
     values.created_by = c.get('userId');
     const row = await insertStatement(c.env.DB, 'shops', values).first<Row>();
@@ -56,7 +56,7 @@ routes.post('/api/shops', async (c) => {
 // 沒有擁有者條件是刻意的：店家共享，任何登入者都能更新——而更新的唯一路徑是
 // 「從 Google 重新同步」，寫進去的值來自 Places API 而非使用者輸入（同舊的 RLS policy）。
 routes.patch('/api/shops/:id', async (c) => {
-    const values = pick('shops', await c.req.json(), SHOP_UPDATE_COLS);
+    const values = pick('shops', await readJson(c), SHOP_UPDATE_COLS);
     values.updated_at = nowIso();
     const row = await updateStatement(c.env.DB, 'shops', values, { id: c.req.param('id') }).first<Row>();
     if (!row) throw notFound('shop');
@@ -77,7 +77,7 @@ routes.delete('/api/shops/:id', async (c) => {
 routes.put('/api/shops/:id/note', async (c) => {
     const shopId = c.req.param('id');
     const userId = c.get('userId');
-    const values = pick('shop_notes', await c.req.json(), SHOP_NOTE_COLS);
+    const values = pick('shop_notes', await readJson(c), SHOP_NOTE_COLS);
     const cols = Object.keys(values);
     const all = ['id', 'shop_id', 'user_id', 'updated_at', ...cols];
     const binds = [crypto.randomUUID(), shopId, userId, nowIso(), ...Object.values(values)];

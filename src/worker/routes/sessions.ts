@@ -7,7 +7,7 @@ import { rowsToDto } from '../lib/json';
 import { CUP_COLS, SESSION_COLS } from '../lib/columns';
 import { nowIso, pick } from '../lib/sql';
 import type { Bind } from '../lib/sql';
-import { badRequest, notFound } from '../lib/errors';
+import { badRequest, notFound, readJson } from '../lib/errors';
 
 const routes = new Hono<AppEnv>();
 routes.use('/api/sessions/*', requireAccess, withUser);
@@ -41,7 +41,7 @@ routes.get('/api/sessions/:id', async (c) => {
 routes.put('/api/sessions/:id', async (c) => {
     const id = c.req.param('id');
     const userId = c.get('userId');
-    const body = (await c.req.json()) as { session?: unknown; cups?: unknown };
+    const body = (await readJson(c)) as { session?: unknown; cups?: unknown };
     if (!Array.isArray(body.cups) || body.cups.length === 0) throw badRequest('cups must be a non-empty array');
 
     // 先驗編號再碰 DB：唯一使用者碰得到的碰撞在這裡就擋掉，錯誤碼沿用 23505，

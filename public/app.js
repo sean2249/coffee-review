@@ -473,6 +473,33 @@ function confirmDialog({ title = '確認', message = '', confirmText = '確認',
 // ─── API client ──────────────────────────────────────────────────────────────
 // 前端與 API 同源（同一支 Worker 同時服務 public/ 與 /api/*），所以沒有 base URL、
 // 沒有 CORS，也沒有任何憑證留在瀏覽器裡。
+// 認證失敗時的重載只做一次。Access 的 session 正常過期會收斂（頂層導航去 Google
+// 再回來），但「Access 放行、Worker 拒絕」不會 —— ACCESS_AUD 設錯或 JWKS 抓不到時
+// Worker 一直回 401，無條件重載就變成打不完的迴圈，而且使用者看不到任何訊息。
+// 第二次起讓錯誤浮上來，由 renderAccessGate 顯示，console 也留得下線索。
+const AUTH_RELOAD_KEY = 'coffee-review:auth-reloaded';
+
+function shouldReloadForAuth() {
+    try {
+        if (sessionStorage.getItem(AUTH_RELOAD_KEY) === '1') return false;
+        sessionStorage.setItem(AUTH_RELOAD_KEY, '1');
+        return true;
+    } catch {
+        // 無痕模式等情況下 sessionStorage 可能不可用。寧可不自動重載（使用者還有
+        // 擋板上的「重新載入」按鈕），也不要冒迴圈的風險。
+        return false;
+    }
+}
+
+// 成功拿到身分就把記號清掉，下一次真的過期時才還能自動重載。
+function clearAuthReloadMark() {
+    try {
+        sessionStorage.removeItem(AUTH_RELOAD_KEY);
+    } catch {
+        // 讀不到就算了，這只是最佳化。
+    }
+}
+
 async function apiFetch(path, { method = 'GET', body } = {}) {
     const hasBody = body !== undefined;
     const res = await fetch(path, {
@@ -482,12 +509,16 @@ async function apiFetch(path, { method = 'GET', body } = {}) {
             : { accept: 'application/json' },
         body: hasBody ? JSON.stringify(body) : undefined,
         credentials: 'same-origin',   // 帶上 Cloudflare Access 的 CF_Authorization cookie
+        // Access 的 session 過期時 /api/* 會 302 到 team domain。預設的 follow 會讓
+        // fetch 跟過去，然後因為跨來源沒有 CORS 標頭而 reject 成 TypeError —— 那樣
+        // 就偵測不到「該重新登入了」。manual 讓它回一個 type 'opaqueredirect' 的空
+        // 回應，判斷得出來。/api/* 自己從不重導，所以不會誤擋正常回應。
+        redirect: 'manual',
     });
-    // Access 的 session 過期時 /api/* 會被導去登入頁（HTML）。重新載入整頁讓瀏覽器
-    // 自己走完登入流程，而不是把登入頁當成資料解析 —— 這取代了原本的 token refresh。
-    const isHtml = (res.headers.get('content-type') || '').includes('text/html');
-    if (res.status === 401 || res.status === 403 || (isHtml && res.redirected)) {
-        window.location.reload();
+    // 需要重新登入：重新載入整頁，讓瀏覽器走完 Access 的流程 —— 這取代了原本的
+    // token refresh。403 是 Access 的「你不在 allow-list」頁，同樣只能重走一次。
+    if (res.type === 'opaqueredirect' || res.status === 401 || res.status === 403) {
+        if (shouldReloadForAuth()) window.location.reload();
         throw new Error('session_expired');
     }
     if (res.status === 204) return null;
@@ -634,6 +665,7 @@ async function initAuth() {
     // 也不冒 unhandled rejection。
     try {
         const me = await apiFetch('/api/me');
+        clearAuthReloadMark();
         placesEnabled = !!me?.placesEnabled;
         setSessionUser(me?.user_id ? { id: me.user_id, email: me.email } : null);
     } catch (e) {

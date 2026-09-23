@@ -13,6 +13,28 @@ const send = (method: string, body: unknown): RequestInit => ({ ...json(body), m
 
 beforeEach(resetDb);
 
+// SyntaxError 冒到 onError 會變成 500 + 一則 unhandled 的 stack，讓單純的
+// 輸入錯誤和真的伺服器故障在 log 裡分不出來。
+describe('body 不是合法 JSON', () => {
+    const broken = (path: string, method = 'POST') =>
+        api(path, { method, headers: { 'content-type': 'application/json' }, body: '{"a":' });
+
+    it('每個吃 body 的端點都回 400', async () => {
+        await seedShop('s1');
+        for (const [path, method] of [
+            ['/api/shops', 'POST'],
+            ['/api/shops/s1', 'PATCH'],
+            ['/api/shops/s1/note', 'PUT'],
+            ['/api/records/cupping', 'POST'],
+            ['/api/sessions/g1', 'PUT'],
+            ['/api/places/search', 'POST'],
+        ] as const) {
+            const res = await broken(path, method);
+            expect(`${method} ${path} -> ${res.status}`).toBe(`${method} ${path} -> 400`);
+        }
+    });
+});
+
 describe('店家寫入', () => {
     it('新增：Worker 蓋上 id 與 created_by，忽略前端送的值', async () => {
         const res = await api(

@@ -3,7 +3,7 @@ import { HTTPException } from 'hono/http-exception';
 import type { AppEnv } from '../lib/auth';
 import { requireAccess } from '../lib/auth';
 import { withUser } from '../lib/users';
-import { badRequest } from '../lib/errors';
+import { badRequest, readJson } from '../lib/errors';
 
 // Google Places 的代理。key 從此不再進瀏覽器——遷移前它是靠 HTTP referrer 限制
 // 保護的，而 referrer 是瀏覽器自願送出的標頭、可任意偽造，不是安全邊界。
@@ -30,7 +30,7 @@ routes.use('/api/places/*', requireAccess, withUser, async (c, next) => {
 });
 
 routes.post('/api/places/search', async (c) => {
-    const body = (await c.req.json()) as { query?: unknown };
+    const body = (await readJson(c)) as { query?: unknown };
     const query = typeof body.query === 'string' ? body.query.trim() : '';
     if (!query) throw badRequest('query is required');
     if (query.length > MAX_QUERY_LENGTH) throw badRequest('query too long');

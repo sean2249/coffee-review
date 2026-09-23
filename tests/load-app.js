@@ -35,8 +35,13 @@ export async function loadApp({ bodyHtml = '<main id="app"></main>' } = {}) {
         ctx.CSS = { escape: v => String(v).replace(/[^\w-]/gu, c => `\\${c}`) };
     }
     // initAuth 會打 /api/me；jsdom 沒有 fetch，它會 reject 並被 initAuth 吞掉，
-    // 留下 state.user = null（未登入）。把那則 console.error 靜音，測試輸出才乾淨。
-    ctx.console.error = () => {};
+    // 留下 state.user = null（未登入）。只靜音那一則，其餘 console.error 照樣浮出來
+    // —— 全部靜音會讓測試裡真正的例外變成看不見。
+    const realError = ctx.console.error.bind(ctx.console);
+    ctx.console.error = (...args) => {
+        if (typeof args[0] === 'string' && args[0].startsWith('initAuth 失敗')) return;
+        realError(...args);
+    };
     vm.runInContext(APP_JS, ctx, { filename: 'app.js' });
 
     // Let DOMContentLoaded fire (and the renderRoute it triggers complete)

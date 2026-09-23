@@ -1,6 +1,18 @@
 import type { Context } from "hono";
 import { HTTPException } from "hono/http-exception";
 
+/**
+ * c.req.json()，但 body 不是合法 JSON 時是 400 而不是 500。
+ * 其餘的輸入錯誤（非物件、陣列/物件型別不對、重複編號）已經由 pick() 與各路由擋掉。
+ */
+export async function readJson(c: Context): Promise<unknown> {
+    try {
+        return await c.req.json();
+    } catch {
+        throw badRequest("body must be JSON");
+    }
+}
+
 export function notFound(what = "resource"): HTTPException {
     return new HTTPException(404, { message: `${what} not found` });
 }
