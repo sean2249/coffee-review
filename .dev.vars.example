@@ -1,0 +1,5 @@
+# 複製成 .dev.vars（已在 .gitignore）。兩個值都只在本機 wrangler dev 生效。
+# DEV_USER_EMAIL：open 模式下的身分來源。ACCESS_AUD 一旦有值就會被硬性忽略。
+DEV_USER_EMAIL=you@example.com
+# GOOGLE_MAPS_API_KEY：Places API (New)。正式環境用 `wrangler secret put` 設定。
+GOOGLE_MAPS_API_KEY=

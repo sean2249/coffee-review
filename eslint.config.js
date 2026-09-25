@@ -1,13 +1,22 @@
 import js from '@eslint/js';
 import globals from 'globals';
+import tseslint from 'typescript-eslint';
 
 export default [
     {
-        ignores: ['node_modules/**', 'config.js'],
+        ignores: ['node_modules/**', '.wrangler/**', 'src/worker/worker-configuration.d.ts'],
     },
     js.configs.recommended,
+    ...tseslint.configs.recommended.map(c => ({ ...c, files: ['src/worker/**/*.ts', 'test/worker/**/*.ts'] })),
     {
-        files: ['app.js'],
+        files: ['src/worker/**/*.ts', 'test/worker/**/*.ts'],
+        languageOptions: {
+            ecmaVersion: 'latest',
+            sourceType: 'module',
+        },
+    },
+    {
+        files: ['public/app.js'],
         languageOptions: {
             ecmaVersion: 'latest',
             sourceType: 'script',
@@ -23,7 +32,7 @@ export default [
         },
     },
     {
-        files: ['sw.js'],
+        files: ['public/sw.js'],
         languageOptions: {
             ecmaVersion: 'latest',
             sourceType: 'script',
@@ -33,15 +42,7 @@ export default [
         },
     },
     {
-        files: ['config.example.js'],
-        languageOptions: {
-            ecmaVersion: 'latest',
-            sourceType: 'script',
-            globals: { ...globals.browser },
-        },
-    },
-    {
-        files: ['eslint.config.js'],
+        files: ['eslint.config.js', 'scripts/**/*.mjs', 'vitest.config.ts'],
         languageOptions: {
             ecmaVersion: 'latest',
             sourceType: 'module',

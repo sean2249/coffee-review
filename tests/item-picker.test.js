@@ -7,7 +7,7 @@ import { loadApp } from './load-app.js';
 // jsdom DOM and assert the rendered selection state.
 //
 // We mount only the picker's DOM (category row, item row, free-text input).
-// isCloudReady() is false (no SUPABASE_CONFIG) so nothing touches the network.
+// jsdom 沒有 fetch，apiFetch 未 stub 時會 reject，所以什麼都不會外連。
 
 let win, doc;
 

@@ -4,7 +4,6 @@ import { loadApp } from './load-app.js';
 // coffee.shops 是 Google Places 的投影，內容依條款最多快取 30 天。
 // 店家頁載入時若過期就補抓一次；這條路徑同時驗證 place_id 是否仍有效。
 
-const CLOUD = { url: 'https://example.supabase.co', anonKey: 'anon-key' };
 const DAY = 24 * 60 * 60 * 1000;
 const SHOP = { id: 'shop-1', name: '舊店名', location: '舊地址', google_place_id: 'place_A' };
 
@@ -12,35 +11,33 @@ const ago = ms => new Date(Date.now() - ms).toISOString();
 
 let win, updates, toasts, warns;
 
-function fakeClient(onUpdate) {
-    return { from: () => ({ update(payload) {
-        onUpdate(payload);
-        return { eq: () => ({ select: () => ({ single: () => Promise.resolve({ data: { ...SHOP, ...payload }, error: null }) }) }) };
-    } }) };
+function stubApi(onUpdate) {
+    return (path, init = {}) => {
+        if (init.method === 'PATCH') {
+            onUpdate(init.body);
+            return Promise.resolve({ ...SHOP, ...init.body });
+        }
+        return Promise.reject(new Error(`unexpected apiFetch: ${path}`));
+    };
 }
 
-function fakeGoogle(place) {
-    return { maps: { importLibrary: () => Promise.resolve({
-        Place: class { constructor() { Object.assign(this, place); } fetchFields() { return Promise.resolve(); } },
-    }) } };
-}
-
+// Worker 回的形狀：displayName 是字串、location 是 { lat, lng } 純數字。
 const FRESH_PLACE = {
     id: 'place_A', displayName: '新店名', formattedAddress: '新地址',
-    location: { lat: () => 25.05, lng: () => 121.56 },
+    location: { lat: 25.05, lng: 121.56 },
 };
 
 beforeEach(async () => {
-    ({ window: win } = await loadApp({ supabaseConfig: CLOUD }));
+    ({ window: win } = await loadApp());
     updates = []; toasts = []; warns = [];
     win.setSessionUser({ id: 'user-1' });
-    win.GOOGLE_CONFIG = { mapsApiKey: 'k' };
-    win.ensureSupabase = () => Promise.resolve(fakeClient(p => updates.push(p)));
+    win.isGoogleMapsReady = () => true;
+    win.apiFetch = stubApi(p => updates.push(p));
     win.showErrorToast = msg => toasts.push(msg);
     win.refreshShopsCache = () => Promise.resolve();
     win.renderRoute = () => {};
     win.console.warn = (...a) => warns.push(a.join(' '));
-    win.ensureGoogleMaps = () => Promise.resolve(fakeGoogle(FRESH_PLACE));
+    win.placesDetails = () => Promise.resolve(FRESH_PLACE);
 });
 
 describe('isShopDataStale', () => {
@@ -107,14 +104,14 @@ describe('refreshShopIfStale', () => {
         expect(out.location).toBe('新地址');
     });
 
-    it('skips when Google Maps is not configured', async () => {
-        delete win.GOOGLE_CONFIG;
+    it('skips when Google Places is not configured', async () => {
+        win.isGoogleMapsReady = () => false;
         await win.refreshShopIfStale({ ...SHOP, google_data_fetched_at: ago(60 * DAY) });
         expect(updates).toHaveLength(0);
     });
 
     it('stays silent and falls back to cached data on failure', async () => {
-        win.ensureGoogleMaps = () => Promise.resolve(null);
+        win.placesDetails = () => Promise.reject(new Error('Google Places 回應 502'));
         const shop = { ...SHOP, google_data_fetched_at: ago(60 * DAY) };
         const out = await win.refreshShopIfStale(shop);
         expect(out).toBe(shop);        // 畫面照樣渲染，不因 Google 掛掉而擋住
@@ -126,7 +123,7 @@ describe('refreshShopIfStale', () => {
 describe('place_id 退役', () => {
     // DB trigger 凍結 google_place_id，所以偵測到換 id 只能回報，不能自動改寫。
     beforeEach(() => {
-        win.ensureGoogleMaps = () => Promise.resolve(fakeGoogle({ ...FRESH_PLACE, id: 'place_B' }));
+        win.placesDetails = () => Promise.resolve({ ...FRESH_PLACE, id: 'place_B' });
     });
 
     it('never writes when Google returns a different place id', async () => {

@@ -99,19 +99,6 @@ describe('rankCups / bestSessionCup', () => {
     });
 });
 
-describe('withSortedCups', () => {
-    it('依 position 排序且不改動原物件', () => {
-        const s = { id: 's1', cups: [{ code: 'B', position: 1 }, { code: 'A', position: 0 }] };
-        const sorted = win.withSortedCups(s);
-        expect(sorted.cups.map(c => c.code)).toEqual(['A', 'B']);
-        expect(s.cups.map(c => c.code)).toEqual(['B', 'A']);
-    });
-
-    it('沒有 cups 時給空陣列', () => {
-        expect(win.withSortedCups({ id: 's1' }).cups).toEqual([]);
-    });
-});
-
 describe('flattenSessionCups', () => {
     it('場次攤成單杯列，其他類型原樣保留', () => {
         const cupping = { _type: 'cupping', id: 'c1', shop_id: 'x' };

@@ -12,12 +12,11 @@ import { loadApp } from './load-app.js';
 // 表單本體直接取自 index.html 的 #tpl-session-form，避免測試複製一份走鐘的 markup。
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const INDEX = fs.readFileSync(path.join(here, '..', 'index.html'), 'utf8');
+const INDEX = fs.readFileSync(path.join(here, '..', 'public', 'index.html'), 'utf8');
 const TEMPLATE = '<template id="tpl-session-form">'
     + INDEX.split('<template id="tpl-session-form">')[1].split('</template>')[0]
     + '</template>';
 const FORM_MARKUP = INDEX.split('<template id="tpl-session-form">')[1].split('</template>')[0];
-const CLOUD = { url: 'https://example.supabase.co', anonKey: 'anon-key' };
 
 const FLAVOR_LEMON = [
     'flavor_flavorList__l1-fruit',
@@ -394,12 +393,11 @@ describe('草稿', () => {
 describe('viewSessionForm', () => {
     it('讀取中不掛表單（按不到儲存），離開頁面也不丟錯', async () => {
         ({ window: win, document: doc } = await loadApp({
-            supabaseConfig: CLOUD,
             bodyHtml: `<main id="app"></main>${TEMPLATE}`,
         }));
         win.setSessionUser({ id: 'u1' });
         let release;
-        win.ensureSupabase = () => new Promise(r => { release = r; });
+        win.apiFetch = () => new Promise(r => { release = r; });
         const root = doc.getElementById('app');
         const pending = win.viewSessionForm(root, { sessionId: 's1' });
         expect(doc.getElementById('f-save')).toBeNull();
@@ -412,11 +410,10 @@ describe('viewSessionForm', () => {
 
     it('新場次還原草稿時換新的杯 id（不會把上次已存的杯搬進新場次）', async () => {
         ({ window: win, document: doc } = await loadApp({
-            supabaseConfig: CLOUD,
             bodyHtml: `<main id="app"></main>${TEMPLATE}`,
         }));
         win.setSessionUser({ id: 'u1' });
-        win.ensureSupabase = () => Promise.resolve(null);
+        win.apiFetch = () => Promise.resolve(null);
         win.localStorage.setItem('coffee-review:draft:new/session', JSON.stringify({
             schema: 1, savedAt: Date.now(), mode: 'session',
             payload: { title: '上次沒存完', code_style: 'letter', cups: [{ id: 'old-1', code: 'A' }, { id: 'old-2', code: 'B' }] },
@@ -432,11 +429,10 @@ describe('viewSessionForm', () => {
 
     it('新場次：日期預設今天、一杯空白、手動編號', async () => {
         ({ window: win, document: doc } = await loadApp({
-            supabaseConfig: CLOUD,
             bodyHtml: `<main id="app"></main>${TEMPLATE}`,
         }));
         win.setSessionUser({ id: 'u1' });
-        win.ensureSupabase = () => Promise.resolve(null);
+        win.apiFetch = () => Promise.resolve(null);
         const root = doc.getElementById('app');
         await win.viewSessionForm(root, {});
         expect(doc.getElementById('f-session-date').value).toMatch(/^\d{4}-\d{2}-\d{2}$/);
@@ -447,17 +443,11 @@ describe('viewSessionForm', () => {
 
     it('編輯時讀不到場次：顯示找不到，不留空白表單', async () => {
         ({ window: win, document: doc } = await loadApp({
-            supabaseConfig: CLOUD,
             bodyHtml: `<main id="app"></main>${TEMPLATE}`,
         }));
         win.setSessionUser({ id: 'u1' });
         // 所有查詢都回空結果（店家清單、國家清單、場次）
-        const builder = {
-            select: () => builder, eq: () => builder, order: () => builder, not: () => builder,
-            limit: () => builder, maybeSingle: () => builder,
-            then: r => r({ data: null, error: null }),
-        };
-        win.ensureSupabase = () => Promise.resolve({ from: () => builder });
+        win.apiFetch = path => Promise.resolve(path.startsWith('/api/shops') ? [] : null);
         const root = doc.getElementById('app');
         await win.viewSessionForm(root, { sessionId: 'missing' });
         expect(root.textContent).toContain('找不到記錄');

@@ -9,7 +9,7 @@ import { loadApp } from './load-app.js';
 // 自動儲存。鎖住「按了還原、沒再改就離開」草稿仍留著，改一下又改回來也不會被清掉。
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const INDEX = fs.readFileSync(path.join(here, '..', 'index.html'), 'utf8');
+const INDEX = fs.readFileSync(path.join(here, '..', 'public', 'index.html'), 'utf8');
 const FORM_MARKUP = INDEX.split('<template id="tpl-form">')[1].split('</template>')[0];
 
 const DRAFT_NOTES = '草稿裡的筆記';

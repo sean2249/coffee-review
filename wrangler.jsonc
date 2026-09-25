@@ -1,0 +1,48 @@
+{
+    "$schema": "node_modules/wrangler/config-schema.json",
+    "name": "coffee-review",
+    "main": "src/worker/index.ts",
+    "compatibility_date": "2026-08-22",
+    "compatibility_flags": ["nodejs_compat"],
+    "tsconfig": "tsconfig.worker.json",
+    "observability": { "enabled": true },
+
+    // 自訂域名是唯一入口。workers.dev 必須關閉：留著就等於留了一個繞過
+    // Cloudflare Access 的第二入口，整個資料庫在那個網址底下是公開的。
+    "routes": [{ "pattern": "coffee.kiwi-walk.com", "custom_domain": true }],
+    "workers_dev": false,
+
+    // 前端沒有 build step，public/ 就是原始檔。run_worker_first 讓 Worker 只看見
+    // /api/*，其餘直接由資產儲存服務，找不到時回 index.html（hash router）。
+    "assets": {
+        "directory": "./public",
+        "binding": "ASSETS",
+        "not_found_handling": "single-page-application",
+        "run_worker_first": ["/api/*"]
+    },
+
+    "d1_databases": [
+        {
+            "binding": "DB",
+            "database_name": "coffee-review",
+            "database_id": "a6ad4454-18f3-4c64-a3bd-a6c50b89c053",
+            "migrations_dir": "migrations"
+        }
+    ],
+
+    // /api/places/* 是唯一會產生 Google 帳單的路徑，依 user_id 限流。
+    // 帳單的硬底線在 Google Cloud Console 的每日配額上限，不在這裡。
+    "ratelimits": [
+        { "name": "PLACES_LIMITER", "namespace_id": "1001", "simple": { "limit": 60, "period": 60 } }
+    ],
+
+    // 失控用量的保險。
+    "limits": { "cpu_ms": 10000, "subrequests": 50 },
+
+    // ACCESS_* 兩個值由 deploy workflow 以 --var 注入；本機留空 = open 模式。
+    "vars": {
+        "APP_NAME": "coffee-review",
+        "ACCESS_TEAM_DOMAIN": "",
+        "ACCESS_AUD": ""
+    }
+}
