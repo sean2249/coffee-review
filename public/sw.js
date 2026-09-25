@@ -1,9 +1,10 @@
 // Coffee Review — Service Worker
 // Cache strategy:
+//   • 整頁導航: network-first，離線才用快取（讓 Access 的重新登入能發生）
 //   • App shell + CDN libs: stale-while-revalidate
 //   • /api/* 與 /cdn-cgi/*: pass-through, always go to network
 
-const VERSION = 'v15';
+const VERSION = 'v16';
 const CACHE = `coffee-review-${VERSION}`;
 
 const APP_SHELL = [
@@ -49,10 +50,34 @@ function shouldBypass(url) {
     return false;
 }
 
+// 整頁導航走 network-first，離線才退回快取。Cloudflare Access 的 session 過期時，
+// 只有導航請求真的到達邊緣，才會被 302 去 Google 重新登入 —— 若從快取回 index.html，
+// app.js 的「重新載入」永遠碰不到 Access，/api/* 一直 302，使用者卡在擋板上。
+// 導航請求的 redirect mode 是 manual，所以拿到的是 opaqueredirect，原樣交回給
+// 瀏覽器，由它去跟隨。
+async function handleNavigate(request) {
+    const cache = await caches.open(CACHE);
+    try {
+        const res = await fetch(request);
+        if (res.ok && res.type === 'basic') cache.put(request, res.clone()).catch(() => {});
+        return res;
+    } catch {
+        const cached = await cache.match(request) || await cache.match('./index.html');
+        return cached || new Response(
+            '離線且無快取',
+            { status: 504, statusText: 'Gateway Timeout', headers: { 'Content-Type': 'text/plain; charset=utf-8' } }
+        );
+    }
+}
+
 self.addEventListener('fetch', event => {
     if (event.request.method !== 'GET') return;
     const url = new URL(event.request.url);
     if (shouldBypass(url)) return;
+    if (event.request.mode === 'navigate') {
+        event.respondWith(handleNavigate(event.request));
+        return;
+    }
 
     event.respondWith((async () => {
         const cache = await caches.open(CACHE);
