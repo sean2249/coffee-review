@@ -23,18 +23,23 @@ if (remote === local) {
 const flag = remote ? '--remote' : '--local';
 const dump = JSON.parse(fs.readFileSync(path.join('migration', 'dump.json'), 'utf8'));
 
-// 一個查詢一次 wrangler 呼叫。走暫存檔而不是 --command：Windows 上
-// execFileSync 需要 shell:true 才找得到 npx，而 shell 會把帶空白的 SQL 拆散。
-const TMP = path.join('migration', '.verify.sql');
+// 一個查詢一次 wrangler 呼叫。
+//
+// 必須走 --command 而不是 --file：--file 對 --remote 會走 /import 端點，回的是
+// 「執行了幾條、讀了幾列」的摘要而不是查詢結果，每個欄位都會變成 undefined。
+// 而 --command 帶空白的 SQL 在 Windows 上又不能用 shell:true（shell 會把它拆散），
+// 所以直接用 node 執行 wrangler 的入口，完全不經過 shell。
+const WRANGLER = path.join('node_modules', 'wrangler', 'bin', 'wrangler.js');
 function query(sql) {
-    fs.writeFileSync(TMP, sql);
     const out = execFileSync(
-        'npx',
-        ['wrangler', 'd1', 'execute', 'coffee-review', flag, '--json', `--file=${TMP}`],
-        { encoding: 'utf8', shell: process.platform === 'win32' },
+        process.execPath,
+        [WRANGLER, 'd1', 'execute', 'coffee-review', flag, '--json', `--command=${sql}`],
+        { encoding: 'utf8' },
     );
     // wrangler 會在 JSON 前面印橫幅，從第一個 [ 開始解析。
-    return JSON.parse(out.slice(out.indexOf('[')))[0].results;
+    const results = JSON.parse(out.slice(out.indexOf('[')))[0].results;
+    if (!Array.isArray(results)) throw new Error(`預期查詢結果，但拿到：${out.slice(0, 200)}`);
+    return results;
 }
 
 let failures = 0;
@@ -113,6 +118,5 @@ const dupes = query(
 )[0].n;
 check('沒有只差大小寫的編號', dupes === 0, `${dupes} 組碰撞`);
 
-fs.rmSync(TMP, { force: true });
 console.log(failures === 0 ? '\n全部通過' : `\n${failures} 項未通過`);
 process.exit(failures === 0 ? 0 : 1);

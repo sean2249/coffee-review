@@ -7,7 +7,12 @@
 //
 // 先跑 `wrangler d1 migrations apply coffee-review --local|--remote` 建好 schema。
 // 產出可人工檢視的 SQL 而不是直接打 D1 API：同一份檔案先在本機套一次，確定沒問題
-// 才對正式環境重放。全部 insert or replace，所以跑到一半斷掉可以直接重跑。
+// 才對正式環境重放。全部 insert ... on conflict (id) do update，所以跑到一半斷掉
+// 可以直接重跑。
+//
+// 注意：目標的 users 表必須不含「同 email 但不同 id」的列。Worker 首次登入時會自己
+// 建一列（隨機 UUID），而 dump 帶的是 Supabase 原本的 UUID —— email 相同、id 不同，
+// on conflict (id) 接不到，會撞 email 的 unique。遷移前先把那一列刪掉（見 README）。
 
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -62,10 +67,16 @@ for (const table of TABLES) {
     if (rows.length === 0) continue;
     // 每張表的欄位取自第一列：PostgREST 的 select=* 對同一張表永遠給同一組鍵。
     const cols = Object.keys(rows[0]);
+    const updates = cols.filter((c) => c !== 'id').map((c) => `${c} = excluded.${c}`).join(', ');
     for (let i = 0; i < rows.length; i += BATCH) {
         const chunk = rows.slice(i, i + BATCH);
         const values = chunk.map((r) => `(${cols.map((c) => lit(r[c])).join(', ')})`).join(',\n    ');
-        statements.push(`insert or replace into ${table} (${cols.join(', ')}) values\n    ${values};`);
+        // on conflict do update 而不是 insert or replace：REPLACE 在衝突時是「先刪
+        // 再插」，第二次跑會因為記錄還參照著 users 而違反外鍵（實測過）。DO UPDATE
+        // 不刪任何列，所以整支腳本真的可以重跑。
+        statements.push(
+            `insert into ${table} (${cols.join(', ')}) values\n    ${values}\n    on conflict (id) do update set ${updates};`,
+        );
     }
     console.log(`${table}: ${rows.length}`);
 }
