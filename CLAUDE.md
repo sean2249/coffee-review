@@ -104,7 +104,8 @@ PWA-installable. All UI text is Traditional Chinese — keep it that way when ed
 - **Auth**: Cloudflare Access (Google IdP) in front of `coffee.kiwi-walk.com`; the Worker
   re-verifies the forwarded JWT (`src/worker/lib/access.ts`, a dependency-free JWKS
   verifier) so a misconfigured Access application fails closed.
-- **PWA**: `public/manifest.json` + `public/sw.js` (stale-while-revalidate for the app
+- **PWA**: `public/manifest.json` + `public/sw.js` (navigations are network-first so an
+  expired Access session can redirect to login; stale-while-revalidate for the app
   shell; same-origin `/api/*` and `/cdn-cgi/*` are passed straight through — see
   `shouldBypass`).
 - **Tooling**: ESLint flat config + typescript-eslint for `src/worker/**`, Stylelint,
