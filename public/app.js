@@ -1232,7 +1232,8 @@ async function viewRecordsList(root, query = {}) {
         el.value = state.listFilter[key];
         el.addEventListener('change', () => {
             state.listFilter[key] = el.value;
-            onFilterChange();
+            syncFilterToHash();
+            renderCards();
         });
     }
 
@@ -1243,37 +1244,54 @@ async function viewRecordsList(root, query = {}) {
     await loadAndRenderCards();
 }
 
+// 最近一次抓到、尚未篩選的列表。排序 / 分組只是重排，直接拿它重繪，不再打 API ——
+// 否則較慢的舊請求晚回來，會用舊的排序 / 分組蓋掉新的畫面。
+let listRows = null;
+
 async function loadAndRenderCards() {
     const container = document.getElementById('records-list');
     if (!container) return;
+    listRows = null;
     container.innerHTML = '<div class="empty-state"><i class="bi bi-hourglass-split"></i>讀取中…</div>';
     try {
-        const { type, sort, group } = state.listFilter;
-        const fetched = await api.listRecords({ type });
-        // 分組時先攤平場次再篩選，才不會把同場次裡不符合的杯也帶進來。
-        const rows = applyAdvancedFilters(group === 'none' ? fetched : flattenSessionCups(fetched));
-        if (rows.length === 0) {
-            container.innerHTML = hasAnyFilter()
-                ? `<div class="empty-state">
-                    <i class="bi bi-funnel"></i>
-                    <p>找不到符合條件的記錄</p>
-                </div>`
-                : `<div class="empty-state">
-                    <i class="bi bi-inbox"></i>
-                    <p>還沒有記錄</p>
-                    <a class="btn btn-primary btn-sm" href="#/new">新增第一筆</a>
-                </div>`;
-            return;
-        }
-        container.innerHTML = group === 'none'
-            ? sortRecords(rows, sort).map(renderRecordCard).join('')
-            : groupRecords(rows, group, sort).map(renderRecordGroup).join('');
+        listRows = await api.listRecords({ type: state.listFilter.type });
+        renderCards();
     } catch (e) {
         console.error(e);
         container.innerHTML = `<div class="empty-state error">
             <i class="bi bi-exclamation-triangle"></i>讀取失敗：${escapeHtml(e.message || String(e))}
         </div>`;
     }
+}
+
+// 分組時先把場次攤平成杯再篩選，才不會把同場次裡不符合的杯也帶進來。
+// 還沒有杯的場次保留原樣（落在「未指定」組），不然它會從分組清單裡消失。
+function rowsForGrouping(rows) {
+    return rows.flatMap(r => (r._type === 'session' && !(r.cups || []).length ? [r] : flattenSessionCups([r])));
+}
+
+// 讀的是當下的 sort / group，所以請求途中改了排序，回來時也會用新的。
+function renderCards() {
+    const container = document.getElementById('records-list');
+    if (!container || !listRows) return;
+    const { sort, group } = state.listFilter;
+    const rows = applyAdvancedFilters(group === 'none' ? listRows : rowsForGrouping(listRows));
+    if (rows.length === 0) {
+        container.innerHTML = hasAnyFilter()
+            ? `<div class="empty-state">
+                <i class="bi bi-funnel"></i>
+                <p>找不到符合條件的記錄</p>
+            </div>`
+            : `<div class="empty-state">
+                <i class="bi bi-inbox"></i>
+                <p>還沒有記錄</p>
+                <a class="btn btn-primary btn-sm" href="#/new">新增第一筆</a>
+            </div>`;
+        return;
+    }
+    container.innerHTML = group === 'none'
+        ? sortRecords(rows, sort).map(renderRecordCard).join('')
+        : groupRecords(rows, group, sort).map(renderRecordGroup).join('');
 }
 
 function deriveTitle(r) {

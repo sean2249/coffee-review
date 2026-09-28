@@ -92,3 +92,49 @@ describe('groupRecords', () => {
         expect(ids(groups[1].rows)).toEqual(['b1', 'a1']);
     });
 });
+
+describe('records list view — sort / group re-render', () => {
+    const records = [
+        { id: 'lo', _type: 'cupping', shop_id: 'shop-a', coe_total: 80, created_at: '2026-06-05T00:00:00Z' },
+        { id: 'hi', _type: 'cupping', shop_id: 'shop-b', coe_total: 90, created_at: '2026-06-01T00:00:00Z' },
+        { id: 'empty', _type: 'session', title: '空場次', cups: [], created_at: '2026-06-03T00:00:00Z' },
+    ];
+    let root, recordFetches;
+
+    beforeEach(async () => {
+        recordFetches = 0;
+        win.apiFetch = (path) => {
+            if (path.startsWith('/api/shops')) return Promise.resolve([{ id: 'shop-a', name: '甲咖啡' }, { id: 'shop-b', name: '乙烘豆' }]);
+            if (path.startsWith('/api/records')) { recordFetches += 1; return Promise.resolve(records); }
+            throw new Error(`unexpected apiFetch: ${path}`);
+        };
+        win.setSessionUser({ id: 'u1' });
+        // 掛在 #app 外面：app.js 的首次 renderRoute 會清掉 #app 的內容。
+        root = win.document.createElement('div');
+        win.document.body.appendChild(root);
+        await win.viewRecordsList(root, {});
+    });
+
+    const change = (id, value) => {
+        const el = win.document.getElementById(id);
+        el.value = value;
+        el.dispatchEvent(new win.Event('change'));
+    };
+    const hrefs = () => [...root.querySelectorAll('.record-card')].map(a => a.getAttribute('href'));
+
+    it('re-sorts from the cached rows without refetching', () => {
+        expect(hrefs()).toEqual(['#/cupping/lo', '#/session/empty', '#/cupping/hi']);
+        change('list-sort', 'score-desc');
+        expect(hrefs()).toEqual(['#/cupping/hi', '#/cupping/lo', '#/session/empty']);
+        expect(recordFetches).toBe(1);
+        expect(win.location.hash).toBe('#/records?sort=score-desc');
+    });
+
+    it('keeps a session with no cups when grouping', () => {
+        change('list-group', 'shop');
+        const titles = [...root.querySelectorAll('.records-group-title')].map(e => e.textContent);
+        expect(titles).toEqual(['甲咖啡', '乙烘豆', '未指定店家']);
+        expect(hrefs()).toContain('#/session/empty');
+        expect(recordFetches).toBe(1);
+    });
+});
