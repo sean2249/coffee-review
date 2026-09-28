@@ -221,7 +221,7 @@ const legacyTagSections = [
 const state = {
     shops: [],          // [{id, name, location, intro, ...}]
     shopsLoaded: false, // true after first successful fetch — distinguishes "deleted" from "not loaded yet"
-    listFilter: { type: 'all', shopKeyword: '', tiers: [], dateFrom: '', dateTo: '' },
+    listFilter: { type: 'all', shopKeyword: '', tiers: [], dateFrom: '', dateTo: '', sort: 'date-desc', group: 'none' },
     currentForm: null,  // { mode, recordId|null }
     knownOrigins: [],   // distinct origin strings from past cupping records
     knownOriginsLoaded: false,
@@ -928,6 +928,111 @@ function applyAdvancedFilters(rows) {
     });
 }
 
+// ─── Records list sorting / grouping ─────────────────────────────────────────
+// 排序、分組只改變呈現順序，不縮小結果 —— 所以不算進 hasAnyFilter / advancedFilterCount。
+const SORT_OPTIONS = {
+    'date-desc': '日期（新 → 舊）',
+    'date-asc': '日期（舊 → 新）',
+    'score-desc': '分數（高 → 低）',
+    'score-asc': '分數（低 → 高）',
+    'shop': '店家名稱',
+};
+const GROUP_OPTIONS = {
+    none: '不分組',
+    shop: '依店家',
+    bean: '依單品 / 配方',
+};
+
+// 場次卡顯示的是最高分那杯，排序也跟著用它。
+function recordScore(r) {
+    const src = r._type === 'session' ? bestSessionCup(r.cups) : r;
+    return src && typeof src.coe_total === 'number' ? src.coe_total : null;
+}
+
+function compareByDateDesc(a, b) {
+    return (recordDateIso(b) || '').localeCompare(recordDateIso(a) || '')
+        || String(b.created_at || '').localeCompare(String(a.created_at || ''));
+}
+
+// 缺值（未評分 / 沒有店家）不論升降冪都排最後；同值再依日期新 → 舊。
+function compareRecords(a, b, sort) {
+    if (sort === 'date-asc') return -compareByDateDesc(a, b);
+    if (sort === 'score-desc' || sort === 'score-asc') {
+        const sa = recordScore(a);
+        const sb = recordScore(b);
+        if (sa === null || sb === null) return (sa === null) - (sb === null) || compareByDateDesc(a, b);
+        return (sort === 'score-desc' ? sb - sa : sa - sb) || compareByDateDesc(a, b);
+    }
+    if (sort === 'shop') {
+        const na = shopName(a.shop_id);
+        const nb = shopName(b.shop_id);
+        if (!na || !nb) return !na - !nb || compareByDateDesc(a, b);
+        return na.localeCompare(nb, 'zh-Hant') || compareByDateDesc(a, b);
+    }
+    return compareByDateDesc(a, b);
+}
+
+function sortRecords(rows, sort) {
+    return [...rows].sort((a, b) => compareRecords(a, b, sort));
+}
+
+function recordGroupKey(r, group) {
+    if (group === 'shop') return r.shop_id || '';
+    return r.bean_type === 'single' || r.bean_type === 'blend' ? r.bean_type : '';
+}
+
+function recordGroupLabel(key, group) {
+    if (group === 'shop') return key ? shopName(key) : '未指定店家';
+    if (key === 'single') return '單品';
+    if (key === 'blend') return '配方豆';
+    return '未填豆子類型';
+}
+
+// 分組前場次已被攤平成杯（店家 / 豆子類型都在杯上）。組內依目前排序；
+// 組與組之間：分數排序看組平均，店家排序看組名，日期排序看各組排第一的那筆。
+// 「未指定」那組永遠放最後。
+function groupRecords(rows, group, sort) {
+    const map = new Map();
+    for (const r of rows) {
+        const key = recordGroupKey(r, group);
+        if (!map.has(key)) map.set(key, []);
+        map.get(key).push(r);
+    }
+    const groups = [...map].map(([key, list]) => {
+        const scores = list.map(recordScore).filter(v => v !== null);
+        return {
+            key,
+            label: recordGroupLabel(key, group),
+            rows: sortRecords(list, sort),
+            avgScore: scores.length ? scores.reduce((sum, v) => sum + v, 0) / scores.length : null,
+        };
+    });
+    const byLabel = (a, b) => a.label.localeCompare(b.label, 'zh-Hant');
+    return groups.sort((a, b) => {
+        if (!a.key || !b.key) return !a.key - !b.key;
+        if (sort === 'score-desc' || sort === 'score-asc') {
+            if (a.avgScore === null || b.avgScore === null) {
+                return (a.avgScore === null) - (b.avgScore === null) || byLabel(a, b);
+            }
+            return (sort === 'score-desc' ? b.avgScore - a.avgScore : a.avgScore - b.avgScore) || byLabel(a, b);
+        }
+        if (sort === 'shop') return byLabel(a, b);
+        return compareRecords(a.rows[0], b.rows[0], sort);
+    });
+}
+
+function renderRecordGroup(g) {
+    const avg = g.avgScore === null ? '' : ` · 平均 ${g.avgScore.toFixed(1)}`;
+    return `
+        <section class="records-group">
+            <header class="records-group-header">
+                <span class="records-group-title">${escapeHtml(g.label)}</span>
+                <span class="records-group-meta">${g.rows.length} 筆${avg}</span>
+            </header>
+            ${g.rows.map(renderRecordCard).join('')}
+        </section>`;
+}
+
 // 進階條件數（抽屜內的維度）— 用於 badge 與 empty state 判斷。
 // 徽章逐一計數（選 3 個徽章 → 3），日期範圍有任一 from/to 即算 1。
 function advancedFilterCount() {
@@ -949,6 +1054,8 @@ function hydrateFilterFromQuery(query) {
         tiers: query.tier ? query.tier.split(',').filter(Boolean) : [],
         dateFrom: query.from || '',
         dateTo: query.to || '',
+        sort: Object.hasOwn(SORT_OPTIONS, query.sort) ? query.sort : 'date-desc',
+        group: Object.hasOwn(GROUP_OPTIONS, query.group) ? query.group : 'none',
     };
 }
 
@@ -961,6 +1068,8 @@ function syncFilterToHash() {
     if (f.tiers.length) params.set('tier', f.tiers.join(','));
     if (f.dateFrom) params.set('from', f.dateFrom);
     if (f.dateTo) params.set('to', f.dateTo);
+    if (f.sort !== 'date-desc') params.set('sort', f.sort);
+    if (f.group !== 'none') params.set('group', f.group);
     const qs = params.toString();
     history.replaceState(null, '', '#/records' + (qs ? `?${qs}` : ''));
 }
@@ -1079,6 +1188,14 @@ async function viewRecordsList(root, query = {}) {
                 <i class="bi bi-sliders"></i>進階篩選<span class="filter-adv-badge" id="filter-adv-badge" hidden></span>
             </button>
         </div>
+        <div class="list-order-bar">
+            <select class="form-select form-select-sm" id="list-sort" aria-label="排序">
+                ${Object.entries(SORT_OPTIONS).map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}
+            </select>
+            <select class="form-select form-select-sm" id="list-group" aria-label="分組">
+                ${Object.entries(GROUP_OPTIONS).map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}
+            </select>
+        </div>
         <div id="records-list" class="records-list"></div>`;
 
     await refreshShopsCache();
@@ -1109,6 +1226,16 @@ async function viewRecordsList(root, query = {}) {
         });
     });
 
+    // Sort / group
+    for (const [id, key] of [['list-sort', 'sort'], ['list-group', 'group']]) {
+        const el = document.getElementById(id);
+        el.value = state.listFilter[key];
+        el.addEventListener('change', () => {
+            state.listFilter[key] = el.value;
+            onFilterChange();
+        });
+    }
+
     // Advanced filter drawer
     document.getElementById('filter-adv-btn').addEventListener('click', openFilterDrawer);
 
@@ -1121,7 +1248,10 @@ async function loadAndRenderCards() {
     if (!container) return;
     container.innerHTML = '<div class="empty-state"><i class="bi bi-hourglass-split"></i>讀取中…</div>';
     try {
-        const rows = applyAdvancedFilters(await api.listRecords({ type: state.listFilter.type }));
+        const { type, sort, group } = state.listFilter;
+        const fetched = await api.listRecords({ type });
+        // 分組時先攤平場次再篩選，才不會把同場次裡不符合的杯也帶進來。
+        const rows = applyAdvancedFilters(group === 'none' ? fetched : flattenSessionCups(fetched));
         if (rows.length === 0) {
             container.innerHTML = hasAnyFilter()
                 ? `<div class="empty-state">
@@ -1135,7 +1265,9 @@ async function loadAndRenderCards() {
                 </div>`;
             return;
         }
-        container.innerHTML = rows.map(renderRecordCard).join('');
+        container.innerHTML = group === 'none'
+            ? sortRecords(rows, sort).map(renderRecordCard).join('')
+            : groupRecords(rows, group, sort).map(renderRecordGroup).join('');
     } catch (e) {
         console.error(e);
         container.innerHTML = `<div class="empty-state error">

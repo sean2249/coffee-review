@@ -397,6 +397,27 @@ button.card-title {
 }
 
 /* ───── Records list ───────────────────────────────────────────────────── */
+.list-order-bar {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 0.8rem;
+}
+.list-order-bar .form-select { flex: 1 1 0; min-width: 0; max-width: 12rem; }
+.records-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.55rem;
+}
+.records-group + .records-group { margin-top: 0.6rem; }
+.records-group-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0 0.15rem;
+}
+.records-group-title { font-weight: 600; color: var(--text-primary); }
+.records-group-meta { font-size: 0.8rem; color: var(--text-muted); white-space: nowrap; }
 .records-list {
     display: flex;
     flex-direction: column;
