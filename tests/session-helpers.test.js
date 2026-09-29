@@ -133,3 +133,44 @@ describe('recordDateIso / recordHref', () => {
         expect(win.recordHref({ _type: 'cupping', id: 'c1' })).toBe('#/cupping/c1');
     });
 });
+
+describe('isAcceptableRandomCode / randomCupCode', () => {
+    it('三個數字都不同、相鄰兩位不連續', () => {
+        for (const ok of ['317', '952', '052', '860']) expect(win.isAcceptableRandomCode(ok)).toBe(true);
+        for (const bad of ['123', '321', '457', '870', '112', '303', '12', '1234', 'A12']) {
+            expect(win.isAcceptableRandomCode(bad)).toBe(false);
+        }
+    });
+
+    it('跑 1000 次都合格，而且不跟既有編號重複', () => {
+        const existing = ['317', '952'];
+        for (let i = 0; i < 1000; i++) {
+            const code = win.randomCupCode(existing);
+            expect(win.isAcceptableRandomCode(code)).toBe(true);
+            expect(existing).not.toContain(code);
+        }
+    });
+
+    it('合格的編號全部用完時回空字串', () => {
+        const all = [];
+        for (let n = 0; n < 1000; n++) {
+            const c = String(n).padStart(3, '0');
+            if (win.isAcceptableRandomCode(c)) all.push(c);
+        }
+        expect(win.randomCupCode(all)).toBe('');
+    });
+});
+
+describe('inferCodeStyle', () => {
+    it('manual 且編號都是三位數（或空白）→ 三位數；其他 manual → 自訂', () => {
+        expect(win.inferCodeStyle('manual', ['317', '', '052'])).toBe('three');
+        expect(win.inferCodeStyle('manual', [])).toBe('three');
+        expect(win.inferCodeStyle('manual', ['317', '#12'])).toBe('manual');
+        expect(win.inferCodeStyle(undefined, ['X'])).toBe('manual');
+    });
+
+    it('number / letter 原樣保留', () => {
+        expect(win.inferCodeStyle('number', ['1', '2'])).toBe('number');
+        expect(win.inferCodeStyle('letter', ['A'])).toBe('letter');
+    });
+});

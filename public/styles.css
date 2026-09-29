@@ -1870,17 +1870,10 @@ hr { border-color: var(--border); opacity: 0.7; }
 .cup-tab:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--accent-tint); }
 .cup-tab-code { font-weight: 700; font-size: 0.95rem; }
 .cup-tab-code.is-placeholder { font-weight: 500; opacity: 0.7; }
-.cup-tab-score { font-family: var(--font-mono); font-size: 0.72rem; }
-.cup-tab-add {
-    justify-content: center;
-    border-style: dashed;
-    color: var(--text-muted);
-    font-size: 1.1rem;
-}
-.cup-code-row {
-    display: flex;
-    align-items: flex-end;
-    gap: 0.5rem;
+.cup-tab.is-scored:not(.active) {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: var(--accent-tint);
 }
 .coe-clear-btn { padding: 0; font-size: 0.8rem; color: var(--text-muted); }
 .cup-ranking { display: flex; flex-direction: column; gap: 0.25rem; }
@@ -1898,9 +1891,6 @@ hr { border-color: var(--border); opacity: 0.7; }
     font: inherit;
     text-align: left;
 }
-button.cup-ranking-row { cursor: pointer; }
-button.cup-ranking-row:hover { background: var(--accent-tint); }
-.cup-ranking-row.active { background: var(--accent-tint); }
 .cup-ranking-rank { color: var(--text-muted); font-family: var(--font-mono); text-align: center; }
 .cup-ranking-bean {
     overflow: hidden;
@@ -1929,3 +1919,153 @@ button.cup-ranking-row:hover { background: var(--accent-tint); }
 }
 .session-cup-title { font-weight: 600; flex: 1 1 auto; }
 .session-cup-score { font-family: var(--font-mono); font-weight: 700; }
+
+/* 頂端固定列：階段名稱 + 前進按鈕（底部已經有 tabbar，所以不放下面），② 再加一排杯號 */
+.session-stage-bar {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    margin: 0 -0.75rem 0.75rem;
+    padding: 0.5rem 0.75rem;
+    background: var(--bg-page);
+    border-bottom: 1px solid var(--border);
+}
+.session-stage-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+}
+.session-stage-name { font-weight: 700; color: var(--text-primary); }
+.session-stage-bar .cup-tabbar { margin: 0.5rem 0 0; padding-bottom: 0.1rem; }
+.session-stage-bar .cup-tab { flex: 1 0 auto; min-width: 3rem; padding: 0.45rem 0.35rem; }
+
+/* 可收合的區塊標頭（③ 的場次卡、每杯評分） */
+.collapse-toggle {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    width: 100%;
+    padding: 0.75rem 1rem;
+    border: 0;
+    background: transparent;
+    color: var(--text-primary);
+    font: inherit;
+    font-weight: 600;
+    text-align: left;
+    cursor: pointer;
+}
+.collapse-caret { transition: transform 0.15s ease; color: var(--text-muted); }
+.collapse-toggle[aria-expanded="true"] .collapse-caret { transform: rotate(90deg); }
+
+/* 杯數 + 編號格子 */
+.cup-count-row { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.cup-count-row .bean-type-chip { min-width: 2.8rem; justify-content: center; }
+.cup-grid-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.4rem;
+}
+.cup-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.5rem;
+}
+.cup-grid-cell { display: flex; flex-direction: column; gap: 0.3rem; }
+.cup-grid-code-row { position: relative; }
+.cup-grid-code {
+    font-family: var(--font-mono);
+    font-size: 1.15rem;
+    font-weight: 700;
+    text-align: center;
+    letter-spacing: 0.08em;
+}
+.cup-grid-remove {
+    position: absolute;
+    top: -0.45rem;
+    right: -0.45rem;
+    width: 1.4rem;
+    height: 1.4rem;
+    padding: 0;
+    border: 1px solid var(--border-strong);
+    border-radius: 999px;
+    background: var(--bg-elevated);
+    color: var(--text-muted);
+    line-height: 1;
+    font-size: 0.9rem;
+    cursor: pointer;
+}
+.cup-grid-remove:hover { color: var(--bs-danger); border-color: currentcolor; }
+.cup-grid-bean { display: flex; gap: 0.25rem; }
+.cup-grid-bean-chip {
+    flex: 1;
+    padding: 0.15rem 0;
+    border: 1px solid var(--border-strong);
+    border-radius: 999px;
+    background: var(--bg-elevated);
+    color: var(--text-muted);
+    font: inherit;
+    font-size: 0.75rem;
+    cursor: pointer;
+}
+.cup-grid-bean-chip.selected {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+}
+
+/* ③ 揭曉：依分數排名的杯卡；每張的欄寬一致，豆名才會水平切齊 */
+.reveal-cup-cards { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 1rem; }
+.reveal-cup {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    background: var(--bg-card);
+    box-shadow: var(--shadow-sm);
+}
+.reveal-cup.is-open { border-color: var(--accent); }
+.reveal-cup-head {
+    display: grid;
+    grid-template-columns: 1.5rem 3.2rem 4.8rem minmax(0, 1fr) 1rem;
+    align-items: center;
+    gap: 0.5rem;
+    width: 100%;
+    padding: 0.6rem 0.75rem;
+    border: 0;
+    background: transparent;
+    color: var(--text-primary);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+.reveal-cup-rank { color: var(--text-muted); font-family: var(--font-mono); text-align: center; }
+.reveal-cup-medal {
+    padding: 0.1rem 0;
+    border-radius: 999px;
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    font-weight: 700;
+    text-align: center;
+    white-space: nowrap;
+}
+.reveal-cup-medal.is-empty { border: 1px dashed var(--border-strong); color: var(--text-muted); font-weight: 500; }
+.reveal-cup-medal.t-trash      { background: var(--t1-bg); color: var(--t1-fg); }
+.reveal-cup-medal.t-commercial { background: var(--t2-bg); color: var(--t2-fg); }
+.reveal-cup-medal.t-common     { background: var(--t3-bg); color: var(--t3-fg); }
+.reveal-cup-medal.t-like       { background: var(--t4-bg); color: var(--t4-fg); }
+.reveal-cup-medal.t-recommend  { background: var(--t5-bg); color: var(--t5-fg); }
+.reveal-cup-medal.t-amazing    { background: var(--t6-bg); color: var(--t6-fg); }
+.reveal-cup-medal.t-godly      { background: var(--t7-bg); color: var(--t7-fg); }
+.reveal-cup-bean { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.reveal-cup-bean.is-placeholder { color: var(--text-dim); }
+.reveal-cup-caret { color: var(--text-muted); transition: transform 0.15s ease; }
+.reveal-cup.is-open .reveal-cup-caret { transform: rotate(180deg); }
+.reveal-cup-slot:not(:empty) { padding: 0 0.75rem 0.75rem; border-top: 1px solid var(--border); }
+.reveal-cup-slot .cup-info-section { padding-top: 0.75rem; }
+.reveal-cup-slot .cup-score-section {
+    margin-top: 0.75rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+}
+.reveal-cup-slot #cup-score-body { padding: 0 0.5rem; }
+.session-delete-row { margin-bottom: 1rem; text-align: right; }

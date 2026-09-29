@@ -61,7 +61,7 @@ export const TASTING_COLS = [
     'schema_version',
 ] as const;
 
-export const SESSION_COLS = ['session_date', 'title', 'notes', 'code_style', 'schema_version'] as const;
+export const SESSION_COLS = ['session_date', 'title', 'notes', 'code_style', 'stage', 'schema_version'] as const;
 
 // 杯刻意沒有 tag_ids（與線上 schema 一致）。id / session_id / position 由 Worker 管。
 export const CUP_COLS = [
