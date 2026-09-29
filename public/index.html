@@ -342,7 +342,8 @@
                 </button>
                 <div class="card-body" id="session-info-body">
                     <div class="row g-2">
-                        <div class="col-md-4 col-6">
+                        <!-- 整列寬：半寬時手機的日期選擇器會把「日」截掉 -->
+                        <div class="col-12">
                             <label for="f-session-date" class="form-label">日期 *</label>
                             <input type="date" class="form-control" id="f-session-date">
                         </div>
@@ -355,30 +356,19 @@
                             <label for="f-session-notes" class="form-label">場次筆記</label>
                             <textarea class="form-control" id="f-session-notes" rows="2"></textarea>
                         </div>
-                        <div class="col-12">
-                            <label class="form-label">編號方式</label>
-                            <div class="code-style-row" role="group" aria-label="編號方式">
-                                <button type="button" class="bean-type-chip"
-                                        data-code-style="three" aria-pressed="false">三位數</button>
-                                <button type="button" class="bean-type-chip"
-                                        data-code-style="number" aria-pressed="false">1、2、3</button>
-                                <button type="button" class="bean-type-chip"
-                                        data-code-style="letter" aria-pressed="false">A、B、C</button>
-                                <button type="button" class="bean-type-chip"
-                                        data-code-style="manual" aria-pressed="false">自訂</button>
-                            </div>
+                        <div class="col-6">
+                            <label for="f-code-style" class="form-label">編號方式</label>
+                            <select class="form-select" id="f-code-style">
+                                <option value="three">三位數</option>
+                                <option value="number">1、2、3</option>
+                                <option value="letter">A、B、C</option>
+                                <option value="manual">自訂</option>
+                            </select>
                         </div>
-                        <div class="col-12">
-                            <label class="form-label">杯數</label>
-                            <div class="cup-count-row" id="cup-count-row" role="group" aria-label="杯數">
-                                <button type="button" class="bean-type-chip" data-cup-count="4">4</button>
-                                <button type="button" class="bean-type-chip" data-cup-count="5">5</button>
-                                <button type="button" class="bean-type-chip" data-cup-count="6">6</button>
-                                <button type="button" class="bean-type-chip" data-cup-count="8">8</button>
-                                <button type="button" class="bean-type-chip" data-cup-count="10">10</button>
-                                <button type="button" class="bean-type-chip" data-cup-count="+1"
-                                        aria-label="多一杯"><i class="bi bi-plus-lg"></i>1</button>
-                            </div>
+                        <div class="col-6">
+                            <label for="f-cup-count" class="form-label">杯數</label>
+                            <!-- 選項由 renderCupCountSelect 產生 -->
+                            <select class="form-select" id="f-cup-count"></select>
                         </div>
                         <div class="col-12">
                             <div class="cup-grid-head">

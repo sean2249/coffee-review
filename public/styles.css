@@ -1003,8 +1003,7 @@ button.card-title {
 }
 
 /* ───── Bean type chips (單品 / 配方豆) ─────────────────────────────────── */
-.bean-type-chip-row,
-.code-style-row {
+.bean-type-chip-row {
     display: flex;
     flex-wrap: wrap;
     gap: 0.4rem;
@@ -1980,8 +1979,6 @@ hr { border-color: var(--border); opacity: 0.7; }
 .collapse-toggle[aria-expanded="true"] .collapse-caret { transform: rotate(90deg); }
 
 /* 杯數 + 編號格子 */
-.cup-count-row { display: flex; flex-wrap: wrap; gap: 0.4rem; }
-.cup-count-row .bean-type-chip { min-width: 2.8rem; justify-content: center; }
 .cup-grid-head {
     display: flex;
     align-items: center;
