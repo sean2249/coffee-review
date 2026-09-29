@@ -58,6 +58,13 @@ const form = () => win.eval('state.currentForm');
 const $ = sel => doc.querySelector(sel);
 const $$ = sel => [...doc.querySelectorAll(sel)];
 const clickTab = i => $(`#cup-tabbar [data-cup-index="${i}"]`).click();
+const pick = (sel, value) => {
+    const el = $(sel);
+    el.value = String(value);
+    el.dispatchEvent(new win.Event('change', { bubbles: true }));
+};
+const pickCount = n => pick('#f-cup-count', n);
+const pickStyle = style => pick('#f-code-style', style);
 const gridInputs = () => $$('#cup-grid .cup-grid-code');
 const typeInto = (el, value) => {
     el.value = value;
@@ -152,7 +159,7 @@ describe('各階段只顯示該做的事', () => {
         expect($('#session-stage-name').textContent).toBe('① 設定');
         expect($('#f-save-label').textContent).toContain('開始杯測');
         expect(visible($('#f-session-date'))).toBe(true);
-        expect(visible($('#cup-count-row'))).toBe(true);
+        expect(visible($('#f-cup-count'))).toBe(true);
         expect(visible($('#f-session-title'))).toBe(false);
         expect(visible($('#f-session-notes'))).toBe(false);
         expect(visible($('#cup-tabbar'))).toBe(false);
@@ -195,19 +202,32 @@ describe('① 杯數與編號格子', () => {
     beforeEach(() => mount([], { stage: 'setup' }));
 
     it('新場次預設三位數；點杯數長出對應的格子，聚焦第一格', () => {
-        expect($('[data-code-style="three"]').classList.contains('selected')).toBe(true);
-        $('[data-cup-count="6"]').click();
+        expect($('#f-code-style').value).toBe('three');
+        pickCount(6);
         expect(form().cups).toHaveLength(6);
         expect(gridInputs()).toHaveLength(6);
         expect(gridInputs()[0].getAttribute('inputmode')).toBe('numeric');
         expect(doc.activeElement).toBe(gridInputs()[0]);
-        expect($('[data-cup-count="6"]').classList.contains('selected')).toBe(true);
-        $('[data-cup-count="+1"]').click();
+        expect($('#f-cup-count').value).toBe('6');
+        pickCount(form().cups.length + 1);
         expect(form().cups).toHaveLength(7);
     });
 
+    it('杯數選單：還沒選時是提示項，選項 1–20 杯；載入更多杯時照樣列出', async () => {
+        const opts = () => $$('#f-cup-count option');
+        expect($('#f-cup-count').value).toBe('');
+        expect(opts()[0].disabled).toBe(true);
+        expect(opts().filter(o => !o.disabled).map(o => o.value)).toEqual(
+            Array.from({ length: 20 }, (_, i) => String(i + 1)));
+        pickCount(3);
+        expect(opts().some(o => o.disabled)).toBe(false);
+
+        await mount(Array.from({ length: 22 }, (_, i) => ({ id: `c${i}`, code: String(100 + i) })), { stage: 'setup' });
+        expect($('#f-cup-count').value).toBe('22');
+    });
+
     it('三位數：只收數字，打滿 3 碼自動跳下一格；空格按 Backspace 回上一格', () => {
-        $('[data-cup-count="4"]').click();
+        pickCount(4);
         typeInto(gridInputs()[0], '3a17');
         expect(gridInputs()[0].value).toBe('317');
         expect(form().cups[0].code).toBe('317');
@@ -220,7 +240,7 @@ describe('① 杯數與編號格子', () => {
     });
 
     it('隨機產生只填空白的格子，編號合格且不重複', () => {
-        $('[data-cup-count="6"]').click();
+        pickCount(6);
         typeInto(gridInputs()[0], '999');
         $('#cup-code-random').click();
         const codes = form().cups.map(c => c.code);
@@ -230,40 +250,55 @@ describe('① 杯數與編號格子', () => {
         expect(gridInputs().map(i => i.value)).toEqual(codes);
     });
 
+    it('確認框開著時換頁：回來後不去動新頁面（沒有杯數選單也不丟錯）', async () => {
+        pickCount(6);
+        typeInto(gridInputs()[5], '952');
+        let answer;
+        win.confirmDialog = () => new Promise(r => { answer = r; });
+        pickCount(4);
+        // 模擬換到沒有杯數選單的表單（例如 #/new/cupping）
+        win.eval(`state.currentForm = { mode: 'cupping', cups: [] }`);
+        $('.session-form').remove();
+        answer(true);
+        await new Promise(r => setTimeout(r, 0));
+        expect(form().mode).toBe('cupping');
+    });
+
     it('減少杯數從後面移除；有打過的編號先確認', async () => {
-        $('[data-cup-count="6"]').click();
+        pickCount(6);
         typeInto(gridInputs()[5], '952');
         let asked = 0;
         win.confirmDialog = () => { asked += 1; return Promise.resolve(false); };
-        $('[data-cup-count="4"]').click();
+        pickCount(4);
         await new Promise(r => setTimeout(r, 0));
         expect(asked).toBe(1);
         expect(form().cups).toHaveLength(6);
+        expect($('#f-cup-count').value).toBe('6'); // 按了取消，選單回到實際杯數
 
         win.confirmDialog = () => Promise.resolve(true);
-        $('[data-cup-count="4"]').click();
+        pickCount(4);
         await new Promise(r => setTimeout(r, 0));
         expect(form().cups).toHaveLength(4);
         expect(gridInputs()).toHaveLength(4);
     });
 
     it('A、B、C：自動編號，加杯接著編，減杯不必確認', async () => {
-        $('[data-code-style="letter"]').click();
-        $('[data-cup-count="4"]').click();
+        pickStyle('letter');
+        pickCount(4);
         expect(form().cups.map(c => c.code)).toEqual(['A', 'B', 'C', 'D']);
         expect($('#cup-code-random').hidden).toBe(true);
-        $('[data-cup-count="+1"]').click();
+        pickCount(form().cups.length + 1);
         expect(form().cups.at(-1).code).toBe('E');
         let asked = 0;
         win.confirmDialog = () => { asked += 1; return Promise.resolve(true); };
-        $('[data-cup-count="4"]').click();
+        pickCount(4);
         await new Promise(r => setTimeout(r, 0));
         expect(asked).toBe(0);
         expect(form().cups).toHaveLength(4);
     });
 
     it('格子裡的單品 / 配方是選填，再點一次取消；目前這杯的元件跟著變', () => {
-        $('[data-cup-count="4"]').click();
+        pickCount(4);
         const chip = (i, t) => $$('#cup-grid .cup-grid-cell')[i].querySelector(`[data-cup-bean="${t}"]`);
         chip(1, 'blend').click();
         expect(form().cups[1].bean_type).toBe('blend');
@@ -276,7 +311,7 @@ describe('① 杯數與編號格子', () => {
     });
 
     it('× 依 id 移除（確認框開著時順序變了也不會移錯）；只剩一杯時不能移除', async () => {
-        $('[data-cup-count="4"]').click();
+        pickCount(4);
         typeInto(gridInputs()[1], '317');
         const target = form().cups[1].id;
         let answer;
@@ -431,11 +466,11 @@ describe('按鈕不會送出整場', () => {
         let submitted = 0;
         $('.session-form').addEventListener('submit', () => { submitted += 1; });
         win.confirmDialog = () => Promise.resolve(false);
-        $('[data-cup-count="4"]').click();
+        pickCount(4);
         $('#cup-code-random').click();
         $$('#cup-grid [data-cup-bean="single"]')[0].click();
         $$('#cup-grid [data-cup-remove]')[1].click();
-        $('[data-code-style="letter"]').click();
+        pickStyle('letter');
         win.setSessionStage('scoring');
         clickTab(1);
         $('.score-chip[data-score="82"]').click();
@@ -449,7 +484,7 @@ describe('按鈕不會送出整場', () => {
 
     it('在編號格子按 Enter 不送出', async () => {
         await mount([], { stage: 'setup' });
-        $('[data-cup-count="4"]').click();
+        pickCount(4);
         const ev = new win.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
         gridInputs()[0].dispatchEvent(ev);
         expect(ev.defaultPrevented).toBe(true);
@@ -478,7 +513,7 @@ describe('存檔：每次換階段都寫回伺服器', () => {
         await win.submitSessionForm();
         expect(toasts.at(-1)).toBe('請先選擇杯數');
 
-        $('[data-cup-count="4"]').click();
+        pickCount(4);
         typeInto(gridInputs()[0], '317');
         await win.submitSessionForm();
         expect(toasts.at(-1)).toBe('第 2 杯還沒有編號');
@@ -489,7 +524,7 @@ describe('存檔：每次換階段都寫回伺服器', () => {
     it('① 開始杯測：存成 scoring，重新載入進 ②', async () => {
         await mount([], { stage: 'setup' });
         stub();
-        $('[data-cup-count="4"]').click();
+        pickCount(4);
         $('#cup-code-random').click();
         await win.submitSessionForm();
         expect(saved).toHaveLength(1);
@@ -545,7 +580,7 @@ describe('存檔：每次換階段都寫回伺服器', () => {
 describe('每杯 key 集合', () => {
     it('載入、加杯、切換後每杯 key 都一樣，且不帶 DB 欄位', async () => {
         await mount([cupA, cupB], { stage: 'setup' });
-        $('[data-cup-count="+1"]').click();
+        pickCount(form().cups.length + 1);
         win.setSessionStage('scoring');
         clickTab(2);
         clickTab(0);
@@ -680,7 +715,7 @@ describe('viewSessionForm', () => {
         expect(doc.getElementById('f-session-date').value).toMatch(/^\d{4}-\d{2}-\d{2}$/);
         expect(win.eval('state.currentForm').cups).toHaveLength(0);
         expect(visible(doc.getElementById('f-delete'))).toBe(false);
-        expect(doc.querySelector('[data-code-style="three"]').classList.contains('selected')).toBe(true);
+        expect(doc.getElementById('f-code-style').value).toBe('three');
         expect(doc.getElementById('f-delete').hidden).toBe(true);
     });
 
@@ -693,7 +728,7 @@ describe('viewSessionForm', () => {
         await win.viewSessionForm(root, { sessionId: 's1' });
         expect(win.eval('state.currentForm').stage).toBe('scoring');
         expect(doc.getElementById('session-stage-name').textContent).toBe('② 評分');
-        expect(doc.querySelector('[data-code-style="three"]').classList.contains('selected')).toBe(true);
+        expect(doc.getElementById('f-code-style').value).toBe('three');
         // 評分到一半放棄的場次也刪得掉，不必先按完成評分
         expect(visible(doc.getElementById('f-delete'))).toBe(true);
     });

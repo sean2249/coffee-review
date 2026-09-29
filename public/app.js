@@ -4009,22 +4009,19 @@ function cupTier(c) {
 }
 
 // ─── 杯數與編號格子（① 與 ③ 的場次卡共用） ───
+const CUP_COUNT_MAX = 20; // 下拉選單的選項數；載入的場次杯數更多時照樣列出
+
 function getCodeStyle() {
-    return document.querySelector('.code-style-row [data-code-style].selected')?.dataset.codeStyle || 'three';
+    return document.getElementById('f-code-style')?.value || 'three';
 }
 
 function setCodeStyle(style) {
-    document.querySelectorAll('.code-style-row [data-code-style]').forEach(chip => {
-        const sel = chip.dataset.codeStyle === style;
-        chip.classList.toggle('selected', sel);
-        chip.setAttribute('aria-pressed', String(sel));
-    });
+    document.getElementById('f-code-style').value = style;
 }
 
-function onCodeStyleClick(style) {
+function onCodeStyleChange(style) {
     const f = state.currentForm;
     syncActiveCup();
-    setCodeStyle(style);
     const codes = fillBlankCupCodes(style, f.cups.map(c => c.code || ''));
     f.cups.forEach((c, i) => { c.code = codes[i]; });
     renderSessionCups();
@@ -4036,12 +4033,12 @@ function cupHasData(c) {
     return typeof c.coe_total === 'number' || !!c.bean_name || (!autoCode && !!(c.code || '').trim());
 }
 
-function setCupCount(n) {
+async function setCupCount(n) {
     const f = state.currentForm;
     if (n < 1) return;
     syncActiveCup();
     if (n < f.cups.length) {
-        removeCups(f.cups.slice(n).map(c => c.id));
+        await removeCups(f.cups.slice(n).map(c => c.id));
         return;
     }
     if (n === f.cups.length) return;
@@ -4123,13 +4120,19 @@ function renderCupGrid() {
             ${beanChips}
         </div>`;
     }).join('');
-    document.querySelectorAll('#cup-count-row [data-cup-count]').forEach(chip => {
-        if (chip.dataset.cupCount === '+1') return;
-        const sel = Number(chip.dataset.cupCount) === f.cups.length;
-        chip.classList.toggle('selected', sel);
-        chip.setAttribute('aria-pressed', String(sel));
-    });
+    renderCupCountSelect();
     document.getElementById('cup-code-random').hidden = !three || !f.cups.length;
+}
+
+function renderCupCountSelect() {
+    const select = document.getElementById('f-cup-count');
+    const n = state.currentForm.cups.length;
+    const options = Array.from({ length: Math.max(CUP_COUNT_MAX, n) }, (_, i) =>
+        `<option value="${i + 1}">${i + 1} 杯</option>`);
+    // 新場次還沒選：放一個選不回去的提示項
+    if (!n) options.unshift('<option value="" disabled selected>選擇杯數</option>');
+    select.innerHTML = options.join('');
+    select.value = n ? String(n) : '';
 }
 
 function onCupGridInput(e) {
@@ -4335,14 +4338,12 @@ function refreshSessionCups() {
 function bindSessionHandlers() {
     const form = document.querySelector('.session-form');
 
-    document.querySelectorAll('.code-style-row [data-code-style]').forEach(chip => {
-        chip.addEventListener('click', () => onCodeStyleClick(chip.dataset.codeStyle));
-    });
-    document.getElementById('cup-count-row').addEventListener('click', e => {
-        const chip = e.target.closest('[data-cup-count]');
-        if (!chip) return;
-        const n = chip.dataset.cupCount === '+1' ? state.currentForm.cups.length + 1 : Number(chip.dataset.cupCount);
-        setCupCount(n);
+    document.getElementById('f-code-style').addEventListener('change', e => onCodeStyleChange(e.target.value));
+    document.getElementById('f-cup-count').addEventListener('change', async e => {
+        const current = state.currentForm;
+        await setCupCount(Number(e.target.value));
+        // 減少杯數時按了取消：選單要回到實際的杯數（確認框開著時已換頁就不動）
+        if (state.currentForm === current) renderCupCountSelect();
     });
     const grid = document.getElementById('cup-grid');
     grid.addEventListener('input', onCupGridInput);
