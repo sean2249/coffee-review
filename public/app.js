@@ -4340,9 +4340,10 @@ function bindSessionHandlers() {
 
     document.getElementById('f-code-style').addEventListener('change', e => onCodeStyleChange(e.target.value));
     document.getElementById('f-cup-count').addEventListener('change', async e => {
+        const current = state.currentForm;
         await setCupCount(Number(e.target.value));
-        // 減少杯數時按了取消：選單要回到實際的杯數
-        if (state.currentForm) renderCupCountSelect();
+        // 減少杯數時按了取消：選單要回到實際的杯數（確認框開著時已換頁就不動）
+        if (state.currentForm === current) renderCupCountSelect();
     });
     const grid = document.getElementById('cup-grid');
     grid.addEventListener('input', onCupGridInput);

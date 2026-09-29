@@ -250,6 +250,20 @@ describe('① 杯數與編號格子', () => {
         expect(gridInputs().map(i => i.value)).toEqual(codes);
     });
 
+    it('確認框開著時換頁：回來後不去動新頁面（沒有杯數選單也不丟錯）', async () => {
+        pickCount(6);
+        typeInto(gridInputs()[5], '952');
+        let answer;
+        win.confirmDialog = () => new Promise(r => { answer = r; });
+        pickCount(4);
+        // 模擬換到沒有杯數選單的表單（例如 #/new/cupping）
+        win.eval(`state.currentForm = { mode: 'cupping', cups: [] }`);
+        $('.session-form').remove();
+        answer(true);
+        await new Promise(r => setTimeout(r, 0));
+        expect(form().mode).toBe('cupping');
+    });
+
     it('減少杯數從後面移除；有打過的編號先確認', async () => {
         pickCount(6);
         typeInto(gridInputs()[5], '952');
