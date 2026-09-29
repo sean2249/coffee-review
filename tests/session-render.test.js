@@ -45,7 +45,8 @@ describe('renderRecordCard — 杯測場次', () => {
         const card = toDom(win.renderRecordCard(unscored)).querySelector('.record-card');
         expect(card.querySelector('.record-card-medal-score').textContent).toBe('—');
         expect(card.querySelector('.record-card-medal-text').textContent).toBe('?');
-        expect(card.querySelector('.record-card-title').textContent).toBe('(未命名杯測)');
+        // 沒取名時用建立時間當名字，同一天的好幾場才分得出來
+        expect(card.querySelector('.record-card-title').textContent).toMatch(/^杯測 \d{2}:\d{2}$/);
         expect(card.querySelector('.bi-trophy')).toBeNull();
     });
 
@@ -88,6 +89,21 @@ describe('renderSessionDetail', () => {
         expect(ranking).toEqual([['1', 'B'], ['2', 'A'], ['—', 'C']]);
         // 詳細頁的排名只是顯示，不是按鈕
         expect(el.querySelector('button.cup-ranking-row')).toBeNull();
+    });
+
+    it('還沒揭曉的場次：按鈕寫「繼續杯測」；揭曉後（含舊場次）是「編輯」', () => {
+        const edit = st => toDom(win.renderSessionDetail({ ...session, stage: st }))
+            .querySelector('a[href="#/session/s1/edit"]').textContent.trim();
+        expect(edit('setup')).toBe('繼續杯測');
+        expect(edit('scoring')).toBe('繼續杯測');
+        expect(edit('reveal')).toBe('編輯');
+        expect(edit(undefined)).toBe('編輯');
+    });
+
+    it('沒取名的場次標題用建立時間；沒有 created_at 才退回未命名', () => {
+        expect(win.sessionTitle({ title: '日曬比較', created_at: '2026-09-02T00:00:00Z' })).toBe('日曬比較');
+        expect(win.sessionTitle({ title: null, created_at: '2026-09-02T00:00:00Z' })).toMatch(/^杯測 \d{2}:\d{2}$/);
+        expect(win.sessionTitle({ title: null })).toBe('(未命名杯測)');
     });
 
     it('每杯一段：豆源店家連結、未評分、tier 缺漏時依分數補', () => {

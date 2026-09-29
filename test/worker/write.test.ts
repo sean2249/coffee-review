@@ -228,6 +228,28 @@ describe('PUT /api/sessions/:id', () => {
         expect((await put('g1', {}, [])).status).toBe(400);
     });
 
+    it('stage 存得進去；沒給時是 reveal（既有場次）', async () => {
+        await put('g1', { stage: 'scoring' }, [{ id: 'cup-a', code: '317' }]);
+        expect((await getJson<Rec>('/api/sessions/g1')).stage).toBe('scoring');
+        await put('g2', {}, [{ id: 'cup-b', code: '452' }]);
+        expect((await getJson<Rec>('/api/sessions/g2')).stage).toBe('reveal');
+    });
+
+    it('不認得的 stage 被 check constraint 擋下，什麼都沒寫進去', async () => {
+        const res = await put('g1', { stage: 'locked' }, [{ id: 'cup-a', code: '317' }]);
+        expect(res.ok).toBe(false);
+        expect(await getJson('/api/sessions/g1')).toBeNull();
+    });
+
+    it('同一天的兩場各自獨立，不會互相覆蓋', async () => {
+        await put('g1', { session_date: '2026-09-28' }, [{ id: 'cup-a', code: '317' }]);
+        await put('g2', { session_date: '2026-09-28' }, [{ id: 'cup-b', code: '317' }]);
+        expect((await getJson<Rec>('/api/sessions/g1')).cups).toHaveLength(1);
+        expect(((await getJson<Rec>('/api/sessions/g2')).cups as Rec[])[0].id).toBe('cup-b');
+        const rows = await env.DB.prepare("select id from cupping_sessions where session_date = '2026-09-28'").all<Rec>();
+        expect(rows.results).toHaveLength(2);
+    });
+
     it('拿別人的場次 id 來 PUT 是 404，且完全沒動到它', async () => {
         await seedSession('g1', OTHER_ID);
         await seedCup('their-cup', 'g1', 'A', 0, OTHER_ID);

@@ -858,6 +858,32 @@ function findCupCodeProblem(cups) {
     return null;
 }
 
+// 三位數的隨機編號：三個數字都不同，相鄰兩位也不能是連續數字（123、457、870 都不行），
+// 杯上的標籤才不容易看錯、記混。
+function isAcceptableRandomCode(code) {
+    if (!/^\d{3}$/.test(code)) return false;
+    const [a, b, c] = [...code].map(Number);
+    if (a === b || b === c || a === c) return false;
+    return Math.abs(a - b) !== 1 && Math.abs(b - c) !== 1;
+}
+
+// 從還沒用過的合格編號裡隨機挑一個；全部用完時回空字串。
+function randomCupCode(existing, random = Math.random) {
+    const used = new Set(existing.map(c => String(c || '').trim()));
+    const pool = [];
+    for (let n = 0; n < 1000; n++) {
+        const code = String(n).padStart(3, '0');
+        if (isAcceptableRandomCode(code) && !used.has(code)) pool.push(code);
+    }
+    return pool.length ? pool[Math.floor(random() * pool.length)] : '';
+}
+
+// DB 只有 manual / number / letter；三位數存成 manual，載入時看編號長相還原。
+function inferCodeStyle(style, codes) {
+    if (style === 'number' || style === 'letter') return style;
+    return codes.every(c => /^(\d{3})?$/.test(String(c || '').trim())) ? 'three' : 'manual';
+}
+
 // 有分數的杯依 coe_total 由高到低（同分同名次、維持杯序）；未評分的杯排最後、不給名次。
 function rankCups(cups) {
     const rows = cups.map((cup, index) => ({ cup, index, rank: null }));
@@ -1294,11 +1320,19 @@ function renderCards() {
         : groupRecords(rows, group, sort).map(renderRecordGroup).join('');
 }
 
+// 沒取名的場次用建立時間當名字：同一天的好幾場在清單上才分得出來。
+function sessionTitle(s) {
+    if (s.title) return s.title;
+    const t = s.created_at ? new Date(s.created_at) : null;
+    if (!t || Number.isNaN(+t)) return '(未命名杯測)';
+    return `杯測 ${t.toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit', hour12: false })}`;
+}
+
 function deriveTitle(r) {
     if (r._type === 'cupping') {
         return r.bean_name || r.origin || '(未命名沖煮)';
     }
-    if (r._type === 'session') return r.title || '(未命名杯測)';
+    if (r._type === 'session') return sessionTitle(r);
     if (r._type === 'session_cup') return r.bean_name || '(未填豆名)';
     return r.item_ordered || r.bean_name || '(未指定品項)';
 }
@@ -3849,10 +3883,17 @@ async function loadRecordIntoForm(mode, recordId) {
 }
 
 // ─── View: 杯測場次 form ─────────────────────────────────────────────────────
-// 一場多杯，但 DOM 裡同時只有「目前這一杯」的評分元件（coeState 單例、accordion 全域 id、
-// initEvaluationAccordion 重複呼叫會疊 listener），其他杯存在 state.currentForm.cups。
-// 切換、存檔、草稿、總覽前一律先 syncActiveCup()。每杯只有 id + readCupFromForm() 的 key，
-// 絕不含 created_at / user_id / session_id / position（那些由 api 層補上）。
+// 三個階段只往前走：setup（日期 + 杯數 + 編號）→ scoring（只評分）→ reveal（全部都能改）。
+// 一場多杯，但 DOM 裡同時只有「目前這一杯」的評分元件（#cup-editor：coeState 單例、accordion
+// 全域 id、initEvaluationAccordion 重複呼叫會疊 listener），其他杯存在 state.currentForm.cups。
+// 杯的 code 由編號格子直接寫進 cups，不經過元件；其餘欄位在切換、存檔、草稿前一律先 syncActiveCup()。
+// 每杯只有 id + code + readCupFromForm() 的 key，絕不含 created_at / user_id / session_id / position。
+const SESSION_STAGES = {
+    setup: { name: '① 設定', save: '開始杯測 ›', next: 'scoring' },
+    scoring: { name: '② 評分', save: '完成評分 ›', next: 'reveal' },
+    reveal: { name: '③ 揭曉', save: '儲存', next: 'reveal' },
+};
+
 function newCup(code = '') {
     // id 由前端產生：新增與編輯共用同一個可重送的 upsert（見 api.saveSession）。
     return { id: crypto.randomUUID(), code };
@@ -3870,7 +3911,6 @@ function readCupFromForm() {
     const text = id => document.getElementById(id).value.trim() || null;
     const ev = buildEvaluationPayload();
     return {
-        code: document.getElementById('f-cup-code').value.trim(),
         shop_id: document.getElementById('f-shop').value || null,
         bean_name: text('f-cup-bean'),
         bean_type: beanType || null,
@@ -3892,14 +3932,13 @@ function readCupFromForm() {
 function syncActiveCup() {
     const f = state.currentForm;
     const cup = f.cups[f.activeIndex];
-    if (!cup) return; // 表單還在載入，杯還沒放進來
-    f.cups[f.activeIndex] = { id: cup.id, ...readCupFromForm() };
+    if (!cup) return; // 表單還在載入，或還沒選杯數
+    f.cups[f.activeIndex] = { id: cup.id, code: cup.code ?? '', ...readCupFromForm() };
 }
 
 // 把一杯寫進表單：每個元件都要「重設」成這杯的值，不能留著上一杯的。
 function writeCupToForm(c) {
     const set = (id, val) => { document.getElementById(id).value = val || ''; };
-    set('f-cup-code', c.code);
     set('f-shop', c.shop_id);
     renderShopTriggerLabel();
     set('f-cup-bean', c.bean_name);
@@ -3925,6 +3964,22 @@ function writeCupToForm(c) {
     applyEvaluationsToForm(c);
 }
 
+// 由後往前逐杯 write → sync：補齊 key 集合（批次 upsert 需要每杯 key 一致）並正規化
+// jsonb key 順序（否則「只切分頁」也會被草稿當成修改），最後回到原本那一杯。
+// 呼叫前目前這杯要已經 sync 過（或 cups 是剛換上的整批資料）。
+function normalizeCups() {
+    const f = state.currentForm;
+    if (!f.cups.length) return;
+    const keep = Math.min(Math.max(f.activeIndex, 0), f.cups.length - 1);
+    for (let i = f.cups.length - 1; i >= 0; i--) {
+        f.activeIndex = i;
+        writeCupToForm(f.cups[i]);
+        syncActiveCup();
+    }
+    f.activeIndex = keep;
+    if (keep !== 0) writeCupToForm(f.cups[keep]);
+}
+
 function updateCoeClearButton() {
     const btn = document.getElementById('f-coe-clear');
     if (btn) btn.hidden = coeState.coeTotal == null;
@@ -3945,48 +4000,17 @@ function switchCup(i) {
     syncActiveCup();
     f.activeIndex = i;
     writeCupToForm(f.cups[i]);
-    renderSessionCups();
+    refreshSessionCups();
 }
 
-function addCup() {
-    const f = state.currentForm;
-    syncActiveCup();
-    const code = nextCupCode(getCodeStyle(), f.cups.map(c => c.code));
-    f.cups.push(newCup(code));
-    f.activeIndex = f.cups.length - 1;
-    writeCupToForm(f.cups[f.activeIndex]);
-    syncActiveCup(); // 正規化成完整的 key 集合
-    renderSessionCups();
-    if (!code) document.getElementById('f-cup-code').focus();
+function cupTier(c) {
+    if (c.coe_tier_id) return tierById(c.coe_tier_id);
+    return typeof c.coe_total === 'number' ? tierFromScore(c.coe_total) : null;
 }
 
-async function removeActiveCup() {
-    const form = state.currentForm;
-    if (form.cups.length <= 1) {
-        showToast('至少要有一杯');
-        return;
-    }
-    syncActiveCup();
-    const cup = form.cups[form.activeIndex];
-    const ok = await confirmDialog({
-        title: '移除這一杯',
-        message: `移除「${cup.code || `第 ${form.activeIndex + 1} 杯`}」？儲存後才會生效。`,
-        confirmText: '移除',
-        danger: true,
-    });
-    // 確認框開著時杯的物件會被替換（syncActiveCup），用 id 找回確認的那一杯。
-    const idx = form.cups.findIndex(c => c.id === cup.id);
-    if (!ok || state.currentForm !== form || idx < 0) return;
-    form.cups.splice(idx, 1);
-    form.activeIndex = Math.min(idx, form.cups.length - 1);
-    writeCupToForm(form.cups[form.activeIndex]);
-    renderSessionCups();
-    // 讓草稿記到這次移除（確認框在表單外，原本那一下 click 當時杯還在）。
-    document.querySelector('.session-form')?.dispatchEvent(new Event('change', { bubbles: true }));
-}
-
+// ─── 杯數與編號格子（① 與 ③ 的場次卡共用） ───
 function getCodeStyle() {
-    return document.querySelector('.code-style-row [data-code-style].selected')?.dataset.codeStyle || 'manual';
+    return document.querySelector('.code-style-row [data-code-style].selected')?.dataset.codeStyle || 'three';
 }
 
 function setCodeStyle(style) {
@@ -4001,12 +4025,171 @@ function onCodeStyleClick(style) {
     const f = state.currentForm;
     syncActiveCup();
     setCodeStyle(style);
-    const codes = fillBlankCupCodes(style, f.cups.map(c => c.code));
+    const codes = fillBlankCupCodes(style, f.cups.map(c => c.code || ''));
     f.cups.forEach((c, i) => { c.code = codes[i]; });
-    document.getElementById('f-cup-code').value = f.cups[f.activeIndex]?.code || '';
     renderSessionCups();
 }
 
+// 自動編號（1、2、3 / A、B、C）的編號不是使用者打的，減少杯數時不必為它確認。
+function cupHasData(c) {
+    const autoCode = ['number', 'letter'].includes(getCodeStyle());
+    return typeof c.coe_total === 'number' || !!c.bean_name || (!autoCode && !!(c.code || '').trim());
+}
+
+function setCupCount(n) {
+    const f = state.currentForm;
+    if (n < 1) return;
+    syncActiveCup();
+    if (n < f.cups.length) {
+        removeCups(f.cups.slice(n).map(c => c.id));
+        return;
+    }
+    if (n === f.cups.length) return;
+    const style = getCodeStyle();
+    while (f.cups.length < n) f.cups.push(newCup(nextCupCode(style, f.cups.map(c => c.code || ''))));
+    normalizeCups();
+    renderSessionCups();
+    [...document.querySelectorAll('.cup-grid-code')].find(el => !el.value)?.focus();
+}
+
+// 依 id 移除（確認框開著時杯的順序可能已經變了）。
+async function removeCups(ids) {
+    const form = state.currentForm;
+    syncActiveCup();
+    const remaining = () => form.cups.filter(c => !ids.includes(c.id));
+    if (!remaining().length) {
+        showToast('至少要有一杯');
+        return;
+    }
+    const targets = form.cups.filter(c => ids.includes(c.id));
+    if (targets.some(cupHasData)) {
+        const label = targets.map((c, i) => c.code || `第 ${form.cups.indexOf(targets[i]) + 1} 杯`).join('、');
+        const ok = await confirmDialog({
+            title: '移除杯',
+            message: `移除「${label}」？已填的內容會一起移除，儲存後才會生效。`,
+            confirmText: '移除',
+            danger: true,
+        });
+        if (!ok || state.currentForm !== form || !remaining().length) return;
+    }
+    const activeId = form.cups[form.activeIndex]?.id;
+    const oldIndex = form.activeIndex;
+    form.cups = remaining();
+    const idx = form.cups.findIndex(c => c.id === activeId);
+    if (idx >= 0) {
+        form.activeIndex = idx;
+    } else {
+        form.activeIndex = Math.min(oldIndex, form.cups.length - 1);
+        writeCupToForm(form.cups[form.activeIndex]);
+    }
+    if (ids.includes(form.revealOpenId)) form.revealOpenId = null;
+    renderSessionCups();
+    // 讓草稿記到這次移除（確認框在表單外，原本那一下 click 當時杯還在）。
+    document.querySelector('.session-form')?.dispatchEvent(new Event('change', { bubbles: true }));
+}
+
+function fillRandomCupCodes() {
+    const f = state.currentForm;
+    f.cups.forEach(c => {
+        if (!(c.code || '').trim()) c.code = randomCupCode(f.cups.map(x => x.code || ''));
+    });
+    renderCupGrid();
+    refreshSessionCups();
+}
+
+function renderCupGrid() {
+    const grid = document.getElementById('cup-grid');
+    if (!grid) return;
+    const f = state.currentForm;
+    const three = getCodeStyle() === 'three';
+    const withBeanType = f.stage === 'setup'; // ③ 由咖啡資訊卡負責豆子類型
+    grid.innerHTML = f.cups.map((c, i) => {
+        const beanChips = !withBeanType ? '' : `<div class="cup-grid-bean" role="group" aria-label="豆子類型">
+            ${[['single', '單品'], ['blend', '配方']].map(([type, label]) => {
+                const sel = c.bean_type === type;
+                return `<button type="button" class="cup-grid-bean-chip${sel ? ' selected' : ''}"
+                    data-cup-bean="${type}" aria-pressed="${sel}">${label}</button>`;
+            }).join('')}
+        </div>`;
+        return `<div class="cup-grid-cell">
+            <div class="cup-grid-code-row">
+                <input type="text" class="form-control cup-grid-code" data-cup-index="${i}"
+                       value="${escapeHtml(c.code || '')}" aria-label="第 ${i + 1} 杯編號" autocomplete="off"
+                       placeholder="${three ? '000' : `#${i + 1}`}"
+                       ${three ? 'inputmode="numeric" pattern="[0-9]*" maxlength="3"' : 'maxlength="12"'}>
+                <button type="button" class="cup-grid-remove" data-cup-remove="${i}"
+                        aria-label="移除第 ${i + 1} 杯"><i class="bi bi-x"></i></button>
+            </div>
+            ${beanChips}
+        </div>`;
+    }).join('');
+    document.querySelectorAll('#cup-count-row [data-cup-count]').forEach(chip => {
+        if (chip.dataset.cupCount === '+1') return;
+        const sel = Number(chip.dataset.cupCount) === f.cups.length;
+        chip.classList.toggle('selected', sel);
+        chip.setAttribute('aria-pressed', String(sel));
+    });
+    document.getElementById('cup-code-random').hidden = !three || !f.cups.length;
+}
+
+function onCupGridInput(e) {
+    const el = e.target.closest('.cup-grid-code');
+    if (!el) return;
+    const f = state.currentForm;
+    const i = Number(el.dataset.cupIndex);
+    if (!f.cups[i]) return;
+    const three = getCodeStyle() === 'three';
+    if (three) {
+        const digits = el.value.replace(/\D/g, '').slice(0, 3);
+        if (digits !== el.value) el.value = digits;
+    }
+    f.cups[i].code = el.value.trim();
+    // 三位數打滿就跳下一格：六杯可以一路打完，不用每格點一次。
+    if (three && el.value.length === 3) {
+        const next = document.querySelector(`.cup-grid-code[data-cup-index="${i + 1}"]`);
+        if (next) next.focus();
+        else el.blur();
+    }
+}
+
+function onCupGridKeydown(e) {
+    const el = e.target.closest('.cup-grid-code');
+    if (!el) return;
+    // 編號欄按 Enter 不送出整場
+    if (e.key === 'Enter') e.preventDefault();
+    if (e.key === 'Backspace' && !el.value) {
+        const prev = document.querySelector(`.cup-grid-code[data-cup-index="${Number(el.dataset.cupIndex) - 1}"]`);
+        if (prev) {
+            e.preventDefault();
+            prev.focus();
+        }
+    }
+}
+
+function onCupGridClick(e) {
+    const f = state.currentForm;
+    const remove = e.target.closest('[data-cup-remove]');
+    if (remove) {
+        const cup = f.cups[Number(remove.dataset.cupRemove)];
+        if (cup) removeCups([cup.id]);
+        return;
+    }
+    const chip = e.target.closest('[data-cup-bean]');
+    if (!chip) return;
+    const i = Number(chip.closest('.cup-grid-cell').querySelector('.cup-grid-code').dataset.cupIndex);
+    const cup = f.cups[i];
+    if (!cup) return;
+    cup.bean_type = cup.bean_type === chip.dataset.cupBean ? null : chip.dataset.cupBean; // 選填：再點一次取消
+    // 目前這杯的豆子類型以元件為準（syncActiveCup 從元件讀），要一起改。
+    if (i === f.activeIndex) setBeanType('session', cup.bean_type || '');
+    chip.parentElement.querySelectorAll('[data-cup-bean]').forEach(b => {
+        const sel = b.dataset.cupBean === cup.bean_type;
+        b.classList.toggle('selected', sel);
+        b.setAttribute('aria-pressed', String(sel));
+    });
+}
+
+// ─── ② 評分：頂端只放編號 ───
 function renderCupTabs() {
     const f = state.currentForm;
     const bar = document.getElementById('cup-tabbar');
@@ -4014,44 +4197,139 @@ function renderCupTabs() {
     const hadFocus = bar.contains(document.activeElement);
     bar.innerHTML = f.cups.map((c, i) => {
         const active = i === f.activeIndex;
-        return `<button type="button" class="cup-tab${active ? ' active' : ''}" data-cup-index="${i}" aria-pressed="${active}">
+        const scored = typeof c.coe_total === 'number';
+        return `<button type="button" class="cup-tab${active ? ' active' : ''}${scored ? ' is-scored' : ''}" data-cup-index="${i}" aria-pressed="${active}">
             <span class="cup-tab-code${c.code ? '' : ' is-placeholder'}">${escapeHtml(c.code || `#${i + 1}`)}</span>
-            <span class="cup-tab-score">${formatCupScore(c)}</span>
         </button>`;
-    }).join('') + `<button type="button" class="cup-tab cup-tab-add" id="cup-add" aria-label="新增一杯">
-            <i class="bi bi-plus-lg"></i>
-        </button>`;
+    }).join('');
     // 重畫會換掉按鈕；焦點原本在分頁列裡就跟著 active 分頁走，鍵盤操作才不會掉到 body。
     if (hadFocus) bar.querySelector('.cup-tab.active')?.focus();
 }
 
-// 排名：表單總覽（可點、切到該杯）與場次詳細頁共用。不用 href（hash router 會當成路由）。
-function renderCupRanking(cups, { selectable = false, activeIndex = -1 } = {}) {
-    const rows = rankCups(cups).map(({ cup, index, rank }) => {
-        const tag = selectable ? 'button' : 'div';
-        const attrs = selectable ? ` type="button" data-cup-index="${index}"` : '';
-        const tier = cup.coe_tier_id ? tierById(cup.coe_tier_id)
-            : (typeof cup.coe_total === 'number' ? tierFromScore(cup.coe_total) : null);
-        return `<${tag} class="cup-ranking-row${index === activeIndex ? ' active' : ''}"${attrs}>
-            <span class="cup-ranking-rank">${rank ?? '—'}</span>
-            <span><span class="cup-code-badge">${escapeHtml(cup.code || `#${index + 1}`)}</span></span>
-            <span class="cup-ranking-bean">${escapeHtml(cup.bean_name || '')}</span>
-            <span class="cup-ranking-score"${tier ? ` style="color:${tier.color}"` : ''}>${formatCupScore(cup)}</span>
-        </${tag}>`;
-    });
-    return `<div class="cup-ranking">${rows.join('')}</div>`;
+// ─── ③ 揭曉：依分數排名的杯卡，點開的那張下面掛 #cup-editor ───
+function renderRevealCardHead(cup, rank) {
+    const tier = cupTier(cup);
+    const scored = typeof cup.coe_total === 'number';
+    return `<span class="reveal-cup-rank">${rank ?? '—'}</span>
+        <span><span class="cup-code-badge">${escapeHtml(cup.code || '—')}</span></span>
+        <span class="reveal-cup-medal ${scored ? tier.cssClass : 'is-empty'}">${scored ? `${tier.medal} ${formatCupScore(cup)}` : '未評分'}</span>
+        <span class="reveal-cup-bean${cup.bean_name ? '' : ' is-placeholder'}">${escapeHtml(cup.bean_name || '未填豆名')}</span>
+        <i class="bi bi-chevron-down reveal-cup-caret"></i>`;
 }
 
-function renderSessionOverview() {
-    const el = document.getElementById('session-overview');
-    if (!el) return;
+function renderRevealCards() {
+    const list = document.getElementById('reveal-cup-cards');
+    if (!list) return;
     const f = state.currentForm;
-    el.innerHTML = renderCupRanking(f.cups, { selectable: true, activeIndex: f.activeIndex });
+    const editor = document.getElementById('cup-editor');
+    // 先把元件搬回家，重畫卡片才不會把它們一起清掉。
+    document.getElementById('cup-editor-home').appendChild(editor);
+    const ranked = rankCups(f.cups);
+    const ranks = new Map(ranked.map(r => [r.cup.id, r.rank]));
+    let order = ranked.map(r => r.cup.id);
+    // 有卡片展開時凍結順序：改分數時卡片不會在手指底下跳走，收合才重新排序。
+    if (f.revealOpenId && f.revealOrder) {
+        const kept = f.revealOrder.filter(id => ranks.has(id));
+        order = [...kept, ...order.filter(id => !kept.includes(id))];
+    }
+    f.revealOrder = order;
+    const byId = new Map(f.cups.map(c => [c.id, c]));
+    list.innerHTML = order.map(id => {
+        const open = id === f.revealOpenId;
+        return `<div class="reveal-cup${open ? ' is-open' : ''}">
+            <button type="button" class="reveal-cup-head" data-reveal-cup="${escapeHtml(id)}" aria-expanded="${open}">
+                ${renderRevealCardHead(byId.get(id), ranks.get(id))}
+            </button>
+            <div class="reveal-cup-slot"></div>
+        </div>`;
+    }).join('');
+    if (f.revealOpenId) list.querySelector('.reveal-cup.is-open .reveal-cup-slot')?.appendChild(editor);
 }
 
+// 輸入時只換卡片標頭的字，不整個重畫（重畫會把 #cup-editor 搬走、輸入框失焦）。
+function refreshRevealCardHeads() {
+    const f = state.currentForm;
+    const ranks = new Map(rankCups(f.cups).map(r => [r.cup.id, r.rank]));
+    const byId = new Map(f.cups.map(c => [c.id, c]));
+    document.querySelectorAll('#reveal-cup-cards .reveal-cup-head').forEach(head => {
+        const cup = byId.get(head.dataset.revealCup);
+        if (cup) head.innerHTML = renderRevealCardHead(cup, ranks.get(cup.id));
+    });
+}
+
+function toggleRevealCard(id) {
+    const f = state.currentForm;
+    if (f.revealOpenId === id) {
+        f.revealOpenId = null;
+    } else {
+        const i = f.cups.findIndex(c => c.id === id);
+        if (i < 0) return;
+        switchCup(i);
+        f.revealOpenId = id;
+        setCollapsed('cup-score', true); // 分數預設收合，點開才改得到
+    }
+    renderRevealCards();
+    refreshSessionSummaries();
+    document.querySelector(`#reveal-cup-cards [data-reveal-cup="${CSS.escape(id)}"]`)?.focus();
+}
+
+// ─── 收合區塊（③ 的場次卡與每杯評分） ───
+function setCollapsed(name, collapsed) {
+    const toggle = document.getElementById(`${name}-toggle`);
+    const body = document.getElementById(`${name}-body`);
+    if (!toggle || !body) return;
+    body.hidden = collapsed;
+    toggle.setAttribute('aria-expanded', String(!collapsed));
+}
+
+function refreshSessionSummaries() {
+    const f = state.currentForm;
+    const info = document.getElementById('session-info-summary');
+    if (info) {
+        const date = document.getElementById('f-session-date').value;
+        info.textContent = `${date || '未填日期'} · ${f.cups.length} 杯`;
+    }
+    const score = document.getElementById('cup-score-summary');
+    const cup = f.cups[f.activeIndex];
+    if (score && cup) {
+        score.textContent = typeof cup.coe_total === 'number'
+            ? `評分 ${formatCupScore(cup)} ${cupTier(cup).medal}`
+            : '評分 未評分';
+    }
+}
+
+function setSessionStage(stage) {
+    const f = state.currentForm;
+    const s = SESSION_STAGES[stage] ? stage : 'setup';
+    f.stage = s;
+    document.querySelectorAll('.session-form [data-session-stage]').forEach(el => {
+        el.hidden = !el.dataset.sessionStage.split(' ').includes(s);
+    });
+    document.getElementById('session-stage-name').textContent = SESSION_STAGES[s].name;
+    document.getElementById('f-save-label').textContent = SESSION_STAGES[s].save;
+    // ① 場次卡、② 評分都直接攤開；③ 兩者都收合，避免誤改。
+    setCollapsed('session-info', s === 'reveal');
+    setCollapsed('cup-score', s === 'reveal');
+    f.revealOpenId = null;
+    f.revealOrder = null;
+    renderSessionCups();
+}
+
+// 結構有變（階段、杯數、編號方式）時整個重畫。
 function renderSessionCups() {
-    renderCupTabs();
-    renderSessionOverview();
+    const stage = state.currentForm.stage;
+    if (stage === 'scoring') renderCupTabs();
+    else renderCupGrid();
+    if (stage === 'reveal') renderRevealCards();
+    refreshSessionSummaries();
+}
+
+// 每次輸入 / 點擊後的輕量更新：不重畫編號格子與杯卡，輸入中的欄位才不會失焦。
+function refreshSessionCups() {
+    const stage = state.currentForm.stage;
+    if (stage === 'scoring') renderCupTabs();
+    if (stage === 'reveal') refreshRevealCardHeads();
+    refreshSessionSummaries();
 }
 
 function bindSessionHandlers() {
@@ -4060,33 +4338,41 @@ function bindSessionHandlers() {
     document.querySelectorAll('.code-style-row [data-code-style]').forEach(chip => {
         chip.addEventListener('click', () => onCodeStyleClick(chip.dataset.codeStyle));
     });
-    document.getElementById('cup-tabbar').addEventListener('click', e => {
-        if (e.target.closest('#cup-add')) {
-            addCup();
-            return;
-        }
-        const tab = e.target.closest('[data-cup-index]');
-        if (tab) switchCup(Number(tab.dataset.cupIndex));
+    document.getElementById('cup-count-row').addEventListener('click', e => {
+        const chip = e.target.closest('[data-cup-count]');
+        if (!chip) return;
+        const n = chip.dataset.cupCount === '+1' ? state.currentForm.cups.length + 1 : Number(chip.dataset.cupCount);
+        setCupCount(n);
     });
-    document.getElementById('session-overview').addEventListener('click', e => {
-        const row = e.target.closest('[data-cup-index]');
-        if (!row) return;
-        switchCup(Number(row.dataset.cupIndex));
-        // focus 同時會把分頁捲進畫面
-        document.querySelector('#cup-tabbar .cup-tab.active')?.focus();
-    });
-    document.getElementById('f-cup-remove').addEventListener('click', () => removeActiveCup());
-    document.getElementById('f-coe-clear').addEventListener('click', clearCupScore);
-    document.getElementById('f-cup-code').addEventListener('keydown', e => {
-        // 打完編號按 Enter 不送出整場
-        if (e.key === 'Enter') e.preventDefault();
-    });
+    const grid = document.getElementById('cup-grid');
+    grid.addEventListener('input', onCupGridInput);
+    grid.addEventListener('keydown', onCupGridKeydown);
+    grid.addEventListener('click', onCupGridClick);
+    document.getElementById('cup-code-random').addEventListener('click', fillRandomCupCodes);
 
-    // 任何輸入 / 點擊（分數、chip、風味輪…）後，同步目前這杯並更新分頁與總覽的分數。
+    document.getElementById('cup-tabbar').addEventListener('click', e => {
+        const tab = e.target.closest('[data-cup-index]');
+        if (!tab) return;
+        switchCup(Number(tab.dataset.cupIndex));
+        // 換杯後回到最上面，從總分開始填，不用自己往上滑。
+        form.scrollIntoView?.({ block: 'start' });
+    });
+    document.getElementById('reveal-cup-cards').addEventListener('click', e => {
+        const head = e.target.closest('[data-reveal-cup]');
+        if (head) toggleRevealCard(head.dataset.revealCup);
+    });
+    ['session-info', 'cup-score'].forEach(name => {
+        document.getElementById(`${name}-toggle`).addEventListener('click', () => {
+            setCollapsed(name, !document.getElementById(`${name}-body`).hidden);
+        });
+    });
+    document.getElementById('f-coe-clear').addEventListener('click', clearCupScore);
+
+    // 任何輸入 / 點擊（分數、chip、風味輪…）後，同步目前這杯並更新分頁、杯卡與摘要。
     // 子元素上的 handler 先跑完才輪到這裡。
     const refresh = () => {
         syncActiveCup();
-        renderSessionCups();
+        refreshSessionCups();
         updateCoeClearButton();
     };
     form.addEventListener('input', refresh);
@@ -4107,26 +4393,22 @@ function applySessionToForm(s) {
     document.getElementById('f-session-date').value = s.session_date || '';
     document.getElementById('f-session-title').value = s.title || '';
     document.getElementById('f-session-notes').value = s.notes || '';
-    setCodeStyle(s.code_style || 'manual');
     f.cups = (s.cups || []).map(c => ({ ...c }));
-    if (!f.cups.length) f.cups = [newCup()];
-    // 由後往前逐杯 write → sync：正規化 key 集合與 jsonb key 順序（否則「只切分頁」也會
-    // 被草稿當成修改），最後停在第 1 杯。
-    for (let i = f.cups.length - 1; i >= 0; i--) {
-        f.activeIndex = i;
-        writeCupToForm(f.cups[i]);
-        syncActiveCup();
-    }
-    renderSessionCups();
+    setCodeStyle(inferCodeStyle(s.code_style, f.cups.map(c => c.code)));
+    f.activeIndex = 0;
+    normalizeCups();
+    setSessionStage(s.stage || f.stage);
 }
 
 function buildSessionPayload() {
     const text = id => document.getElementById(id).value.trim() || null;
+    const style = getCodeStyle();
     return {
         session_date: document.getElementById('f-session-date').value || null,
         title: text('f-session-title'),
         notes: text('f-session-notes'),
-        code_style: getCodeStyle(),
+        code_style: style === 'three' ? 'manual' : style, // 三位數在 DB 裡就是手動編號
+        stage: state.currentForm.stage,
         schema_version: 1,
     };
 }
@@ -4157,6 +4439,9 @@ async function viewSessionForm(root, { sessionId = null } = {}) {
         cups: [],
         activeIndex: 0,
         savedCupCount: 0,
+        stage: 'setup',
+        revealOpenId: null,
+        revealOrder: null,
     };
 
     await refreshShopsCache();
@@ -4180,8 +4465,10 @@ async function viewSessionForm(root, { sessionId = null } = {}) {
             return;
         }
         form.savedCupCount = session.cups.length;
+        form.stage = session.stage || 'reveal'; // 舊草稿沒有 stage 時沿用
     } else {
-        session = { session_date: todayLocalIso(), code_style: 'manual', cups: [newCup()] };
+        // 新場次先不放杯：選杯數才長出編號格子。
+        session = { session_date: todayLocalIso(), code_style: 'manual', stage: 'setup', cups: [] };
     }
 
     const tpl = document.getElementById('tpl-session-form');
@@ -4193,7 +4480,6 @@ async function viewSessionForm(root, { sessionId = null } = {}) {
     populateOriginDatalist();
 
     applySessionToForm(session);
-    document.getElementById('f-save-label').textContent = sessionId ? '儲存變更' : '儲存';
     document.getElementById('f-delete').hidden = !sessionId;
 
     // baseline 需拍在表單完整初始化／還原之後。新場次的草稿還原時換新的杯 id：
@@ -4207,28 +4493,44 @@ async function viewSessionForm(root, { sessionId = null } = {}) {
     });
 }
 
+// ① → 存成 scoring、② → 存成 reveal：每次換階段都寫回伺服器，再從伺服器重新載入。
+// ③ 存完回到場次頁。
 async function submitSessionForm() {
     const form = state.currentForm;
     if (!form) return;
     syncActiveCup();
+    const dateEl = document.getElementById('f-session-date');
+    if (!dateEl.value) {
+        setCollapsed('session-info', false);
+        dateEl.focus();
+        showToast('請先填日期');
+        return;
+    }
+    if (!form.cups.length) {
+        showToast('請先選擇杯數');
+        return;
+    }
     const problem = findCupCodeProblem(form.cups);
     if (problem) {
-        switchCup(problem.index);
-        document.getElementById('f-cup-code').focus();
+        setCollapsed('session-info', false);
+        document.querySelector(`.cup-grid-code[data-cup-index="${problem.index}"]`)?.focus();
         showToast(problem.message);
         return;
     }
 
+    const stage = form.stage;
     const saveBtn = document.getElementById('f-save');
     saveBtn.disabled = true;
     try {
-        await api.saveSession(form.id, buildSessionPayload(), form.cups);
+        await api.saveSession(form.id, { ...buildSessionPayload(), stage: SESSION_STAGES[stage].next }, form.cups);
         // 用拿在手上的 form：存檔期間就算已離開頁面，草稿也要清掉。
         form.cancelDraftSave?.();
         if (form.draftKey) clearDraft(form.draftKey);
-        showToast(form.recordId ? '✓ 已更新' : '✓ 已儲存');
+        showToast(stage === 'reveal' && form.recordId ? '✓ 已更新' : '✓ 已儲存');
         // 存檔期間已經離開頁面就別把人硬拉回場次頁（草稿還是要清掉）。
-        if (state.currentForm === form) navigate(`/session/${form.id}`);
+        if (state.currentForm === form) {
+            navigate(stage === 'reveal' ? `/session/${form.id}` : `/session/${form.id}/edit`);
+        }
     } catch (e) {
         // 表單與記憶體都原封不動，直接再按一次儲存即可重試。
         console.error(e);
@@ -4259,6 +4561,20 @@ async function deleteCurrentSession() {
     } catch (e) {
         showErrorToast('刪除失敗：' + (e.message || e));
     }
+}
+
+// 場次詳細頁的排名。
+function renderCupRanking(cups) {
+    const rows = rankCups(cups).map(({ cup, index, rank }) => {
+        const tier = cupTier(cup);
+        return `<div class="cup-ranking-row">
+            <span class="cup-ranking-rank">${rank ?? '—'}</span>
+            <span><span class="cup-code-badge">${escapeHtml(cup.code || `#${index + 1}`)}</span></span>
+            <span class="cup-ranking-bean">${escapeHtml(cup.bean_name || '')}</span>
+            <span class="cup-ranking-score"${tier ? ` style="color:${tier.color}"` : ''}>${formatCupScore(cup)}</span>
+        </div>`;
+    });
+    return `<div class="cup-ranking">${rows.join('')}</div>`;
 }
 
 // ─── View: 杯測場次 detail (read-only) ───────────────────────────────────────
@@ -4294,14 +4610,16 @@ function renderSessionDetail(s) {
 
         <div class="card detail-header-card">
             <div class="card-body">
-                <h2 class="detail-title">${escapeHtml(s.title || '(未命名杯測)')}</h2>
+                <h2 class="detail-title">${escapeHtml(sessionTitle(s))}</h2>
                 <div class="detail-meta">
                     ${date ? `<span><i class="bi bi-calendar3"></i>${escapeHtml(date)}</span>` : ''}
                     <span><i class="bi bi-cup"></i>${cups.length} 杯</span>
                 </div>
                 ${s.notes ? `<p class="detail-eval-notes">${escapeHtml(s.notes)}</p>` : ''}
                 <a class="btn btn-outline-secondary btn-sm mt-2" href="#/session/${encodeURIComponent(s.id)}/edit">
-                    <i class="bi bi-pencil me-1"></i>編輯
+                    ${s.stage && s.stage !== 'reveal'
+        ? '<i class="bi bi-play-fill me-1"></i>繼續杯測'
+        : '<i class="bi bi-pencil me-1"></i>編輯'}
                 </a>
             </div>
         </div>
