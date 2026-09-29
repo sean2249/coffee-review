@@ -34,7 +34,7 @@ routes.get('/api/records', async (c) => {
     const db = c.env.DB;
 
     const flavour = withEvaluations ? ', evaluations, observation' : '';
-    const base = `id, shop_id, coe_total, coe_tier_id, created_at${flavour}`;
+    const base = `id, shop_id, bean_type, coe_total, coe_tier_id, created_at${flavour}`;
     const tasks: Promise<Row[]>[] = [];
 
     if (type === 'all' || type === 'cupping') {
@@ -94,7 +94,7 @@ async function listSessionsWithCups(db: D1Database, userId: string, flavour: str
 
     const cups = await db
         .prepare(
-            `select session_id, id, code, position, shop_id, bean_name, coe_total, coe_tier_id${flavour}
+            `select session_id, id, code, position, shop_id, bean_name, bean_type, coe_total, coe_tier_id${flavour}
              from cupping_session_cups where user_id = ?1 order by position`,
         )
         .bind(userId)

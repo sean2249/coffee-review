@@ -59,6 +59,17 @@ describe('GET /api/records', () => {
         expect((full.cups as Rec[])[1].evaluations).toEqual({ body: { score: 6 } });
     });
 
+    it('列表帶 bean_type（記錄與杯），供依單品 / 配方分組', async () => {
+        await seedRecord('cupping_records', { id: 'c1', extra: { bean_type: 'blend' } });
+        await seedSession('g1');
+        await seedCup('cup1', 'g1', 'A', 0, OWNER_ID, { bean_type: 'single' });
+
+        const rows = await getJson<Rec[]>('/api/records');
+        const byId = Object.fromEntries(rows.map((r) => [r.id, r]));
+        expect(byId.c1.bean_type).toBe('blend');
+        expect((byId.g1.cups as Rec[])[0].bean_type).toBe('single');
+    });
+
     it('沒有杯的場次仍然回一個空陣列', async () => {
         await seedSession('g1');
         const rows = await getJson<Rec[]>('/api/records?type=session');
