@@ -26,7 +26,7 @@ jobs:
 
       # 順序是硬性的：migration 先於 deploy，否則新 Worker 會打到舊 schema。
       - name: Apply D1 migrations
-        uses: cloudflare/wrangler-action@v3
+        uses: cloudflare/wrangler-action@v4
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -36,7 +36,7 @@ jobs:
       # 解析不了 create trigger。這條走 /import，而且檔案是 create ... if not exists，
       # 所以每次部署重跑都安全。
       - name: Apply triggers
-        uses: cloudflare/wrangler-action@v3
+        uses: cloudflare/wrangler-action@v4
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -50,7 +50,7 @@ jobs:
           test -n "${{ vars.ACCESS_AUD }}" || { echo "vars.ACCESS_AUD is not set"; exit 1; }
 
       - name: Deploy Worker
-        uses: cloudflare/wrangler-action@v3
+        uses: cloudflare/wrangler-action@v4
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
