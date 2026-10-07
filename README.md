@@ -205,34 +205,12 @@ migration，最後 `wrangler deploy --var ACCESS_…`。順序是硬性的 —�
 
 `GOOGLE_MAPS_API_KEY` 是唯一的 Worker secret。`.dev.vars` 只在本機、已 gitignore。
 
-## 從 Supabase 遷移（一次性）
+## 從 Supabase 遷移（一次性，已完成）
 
-```bash
-# 1. 匯出。service role key 只活在這一次 shell 裡，絕不進 repo / GitHub Secrets
-SUPABASE_URL=https://xxx.supabase.co SUPABASE_SERVICE_ROLE_KEY=... \
-    node scripts/export-supabase.mjs        # → migration/dump.json
+匯出 / 匯入 / 驗收腳本（`scripts/`）與完整 runbook 已從 repo 移除，需要時從 git 歷史
+（`485752f` 之前）找回。`users` 表取代 `auth.users`，沿用 Supabase 原本的 UUID。
 
-# 2. 先對本地 D1 演練
-npm run db:migrate:local
-node scripts/import-d1.mjs --local          # → migration/seed.sql，再灌進去
-node scripts/verify-migration.mjs --local
-
-# 3. 確認全綠之後對正式環境重放同一份 SQL
-npm run db:migrate:remote
-node scripts/import-d1.mjs --remote
-node scripts/verify-migration.mjs --remote
-```
-
-`migration/` 已 gitignore。匯入全部是 `insert or replace`，跑到一半斷掉直接重跑即可。
-
-`users` 表取代 `auth.users`，沿用 Supabase 原本的 UUID，所以既有資料的 `user_id`
-一列都不用改。驗收腳本會檢查筆數、JSON 欄位合法性、JSON 值抽樣深度比對、
-`user_id` 孤兒、時間格式，以及杯編號的大小寫碰撞。
-
-人工驗收：開 `#/records` 對筆數，各開一個場次、一家有筆記的店、一筆有
-`defects_tags` 與風味輪的記錄。
-
-遷移完成並實際用過一陣子之後再收尾：停用 Supabase 專案、輪替 service role key、
+收尾待辦：停用 Supabase 專案、輪替 service role key、
 把 Google Maps key 的 HTTP referrer 限制改掉（呼叫方變成 Worker，沒有 referer）。
 
 ## Lint 規則

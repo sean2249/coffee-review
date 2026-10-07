@@ -1,8 +1,6 @@
 // D1 沒有陣列與 jsonb：這些欄位在 SQLite 裡是存 JSON 文字的 text。
 //
-// Worker（src/worker/lib/json.ts）與一次性遷移腳本（scripts/import-d1.mjs）
-// 共用這一份清單 —— 兩邊各抄一份的話，遷移當下某一欄少轉一次就會變成一列壞資料。
-// 純 JS 而非 TS，是為了讓 node 腳本能直接 import。
+// Worker（src/worker/lib/json.ts）依這份清單在讀寫時轉換 JSON 文字。
 
 const RECORD_ARRAYS = ['defects_tags', 'tag_ids'];
 const RECORD_OBJECTS = ['evaluations', 'observation'];

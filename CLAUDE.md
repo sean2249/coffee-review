@@ -134,16 +134,15 @@ public/            everything the browser loads (this is the assets directory)
   manifest.json    PWA manifest
   icons/           192/512 PNG + source SVG
 src/worker/        index.ts (Hono) + routes/ + lib/{access,auth,columns,errors,json,sql,users}.ts
-src/shared/        json-columns.js — array/jsonb/timestamp manifest, shared with scripts/
+src/shared/        json-columns.js — array/jsonb/timestamp manifest
 migrations/        D1 schema (0001_init.sql). Add new files; never edit applied ones.
 schema/triggers.sql triggers — cannot live in migrations/, see Tech stack
-scripts/           one-off Supabase → D1 export / import / verify
 tests/             jsdom unit tests + load-app.js harness
 test/worker/       workerd tests (separate directory so the include globs cannot overlap)
 wrangler.jsonc     assets + D1 + rate limit + routes + Access vars
 .dev.vars.example  copy → .dev.vars (gitignored)
 .github/workflows  ci.yml + deploy.yml
-README.md          architecture, local dev, deploy, migration runbook
+README.md          architecture, local dev, deploy
 purpose.md, 口感.md design notes (Chinese)
 ```
 
