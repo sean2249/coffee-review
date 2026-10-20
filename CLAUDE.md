@@ -284,6 +284,18 @@ convention. `.dev.vars` is gitignored; never commit credentials.
 If you change anything in `APP_SHELL` (public/sw.js) or want to force users off an old
 cache, bump `VERSION` at the top of `public/sw.js`.
 
+### Issue workflow
+
+Issues move `status: raw` → (`status: needs-info`) → `status: ai-enhanced` → `status: approved`.
+Only the author sets `status: approved`. Skills: `issue-enhance`, `issue-implement`, `article-handoff`.
+
+- Verify command: `npm run typecheck && npm run lint && npm test && npx wrangler deploy --dry-run --outdir .wrangler/dry-run`
+- Preview URL: `none` (`workers_dev: false`, no preview environment; locally `npm run dev` → http://localhost:8787)
+- Low-risk paths: `.github/low-risk-paths.txt`
+- Merge mode: `auto`
+- Article target: `sean2249/sean2249.github.io`
+- Issue assets branch: `issue-assets`
+
 ## Editing checklist
 
 - Touching the form? Update both modes in `index.html` (#tpl-form) and the corresponding
