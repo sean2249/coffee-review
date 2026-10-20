@@ -1,0 +1,80 @@
+# Fails a PR labelled `risk: low` if any changed file is outside the low-risk allowlist.
+# PRs with any other risk label (or none) pass, so this can be a required status check.
+# Installed by the setup-issue-workflow skill.
+name: risk-guard
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  risk-guard:
+    runs-on: ubuntu-latest
+    steps:
+      # Read the allowlist from the base branch so a PR cannot widen its own allowlist.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+
+      - name: Check that low-risk PRs stay inside the allowlist
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+          ALLOWLIST: .github/low-risk-paths.txt
+        run: |
+          python3 - <<'PY'
+          import json, os, re, subprocess, sys
+
+          labels = json.loads(os.environ["LABELS"])
+          risk = [l for l in labels if l.startswith("risk: ")]
+          if len(risk) > 1:
+              sys.exit(f"::error::PR has more than one risk label: {risk}")
+          if risk != ["risk: low"]:
+              print(f"Risk label is {risk or 'missing'}; allowlist check does not apply.")
+              sys.exit(0)
+
+          def to_regex(glob):
+              if glob.endswith("/"):
+                  glob += "**"
+              out, i = "", 0
+              while i < len(glob):
+                  if glob.startswith("**/", i):
+                      out += "(?:.*/)?"; i += 3
+                  elif glob.startswith("**", i):
+                      out += ".*"; i += 2
+                  elif glob[i] == "*":
+                      out += "[^/]*"; i += 1
+                  elif glob[i] == "?":
+                      out += "[^/]"; i += 1
+                  else:
+                      out += re.escape(glob[i]); i += 1
+              return re.compile(out + r"\Z")
+
+          path = os.environ["ALLOWLIST"]
+          if not os.path.exists(path):
+              sys.exit(f"::error::{path} not found on the base branch; cannot verify risk: low.")
+          globs = [l.strip() for l in open(path) if l.strip() and not l.lstrip().startswith("#")]
+          patterns = [to_regex(g) for g in globs]
+
+          files = subprocess.run(
+              ["gh", "api", "--paginate", f"repos/{os.environ['REPO']}/pulls/{os.environ['PR']}/files",
+               "--jq", ".[] | .filename, (.previous_filename // empty)"],
+              check=True, capture_output=True, text=True,
+          ).stdout.split()
+
+          # .github/ (workflows, templates, the allowlist itself) is never low risk.
+          bad = [f for f in files
+                 if f.startswith(".github/") or not any(p.match(f) for p in patterns)]
+          if bad:
+              print("::error::risk: low, but these files are outside the low-risk allowlist:")
+              for f in bad:
+                  print(f"  {f}")
+              sys.exit(1)
+          print(f"All {len(files)} changed files are inside the low-risk allowlist.")
+          PY
