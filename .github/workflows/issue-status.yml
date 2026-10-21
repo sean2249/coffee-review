@@ -1,5 +1,5 @@
-# Adds `status: raw` to every new issue that was opened without a status label.
-# Installed by the setup-issue-workflow skill.
+# Caller for the shared issue-status workflow. Written by issue-workflow-setup.
+# sean2249/skills is the <owner>/<repo> that hosts the reusable workflows.
 name: issue-status
 
 on:
@@ -10,19 +10,5 @@ permissions:
   issues: write
 
 jobs:
-  label-raw:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Add the raw status label when no status label is present
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GH_REPO: ${{ github.repository }}
-          NUMBER: ${{ github.event.issue.number }}
-          LABELS: ${{ toJSON(github.event.issue.labels.*.name) }}
-        # Keep this a block scalar: a label like "status: raw" inline would break YAML parsing.
-        run: |
-          if printf '%s' "$LABELS" | grep -q '"status: '; then
-            echo "Issue #$NUMBER already has a status label; nothing to do."
-            exit 0
-          fi
-          gh issue edit "$NUMBER" --add-label "status: raw"
+  issue-status:
+    uses: sean2249/skills/.github/workflows/issue-status.yml@main
