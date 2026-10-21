@@ -4,5 +4,4 @@
 # a trailing `/` means "everything under this directory". Lines starting with # are ignored.
 # Anything under .github/ is always rejected, whatever is listed here.
 #
-# Starter entries: tailor these to the repo (content, docs, copy, static assets).
 README.md

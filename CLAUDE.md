@@ -284,10 +284,10 @@ convention. `.dev.vars` is gitignored; never commit credentials.
 If you change anything in `APP_SHELL` (public/sw.js) or want to force users off an old
 cache, bump `VERSION` at the top of `public/sw.js`.
 
-### Issue workflow
+## Issue workflow
 
 Issues move `status: raw` → (`status: needs-info`) → `status: ai-enhanced` → `status: approved`.
-Only the author sets `status: approved`. Skills: `issue-enhance`, `issue-implement`, `article-handoff`.
+Only the author sets `status: approved`. Skills: `issue-enhance`, `issue-implement`, `article-request`.
 
 - Verify command: `npm run typecheck && npm run lint && npm test && npx wrangler deploy --dry-run --outdir .wrangler/dry-run`
 - Preview URL: `none` (`workers_dev: false`, no preview environment; locally `npm run dev` → http://localhost:8787)
