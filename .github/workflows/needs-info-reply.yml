@@ -1,0 +1,14 @@
+# Caller for the shared needs-info-reply workflow. Written by issue-workflow-setup.
+# sean2249/skills is the <owner>/<repo> that hosts the reusable workflows.
+name: needs-info-reply
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  issues: write
+
+jobs:
+  needs-info-reply:
+    uses: sean2249/skills/.github/workflows/needs-info-reply.yml@main

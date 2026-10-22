@@ -7,10 +7,13 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, labeled, unlabeled]
 
-# `gh pr create --label` fires both `opened` and `labeled`; keep only the latest run per PR.
+# `gh pr create --label` fires both `opened` and `labeled`. Queue the second run behind the
+# first instead of cancelling it: cancelled runs can send failure-style notification emails,
+# and the run that finishes last (with the labels) is the one the check shows.
+# `opened` stays in the triggers so PRs opened without any label still report the check.
 concurrency:
   group: risk-guard-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
   contents: read
