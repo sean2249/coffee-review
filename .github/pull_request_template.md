@@ -22,6 +22,11 @@ Closes #<!-- issue number -->
 
 - <criterion> → <the behaviour above that meets it>
 
+**Risks and opportunities**
+
+<!-- One line per Risk in the issue → how its mitigation was handled; one line per "this time" Opportunity → where it's done. "None" if the issue lists none. -->
+- <risk> → <mitigation applied>
+
 ## Acceptance criteria — evidence
 
 <!-- One line per acceptance criterion from the approved issue. Copy the wording. -->
@@ -41,6 +46,16 @@ Closes #<!-- issue number -->
 - Level: `risk: low` / `risk: medium` / `risk: high`
 - Reason: <!-- low = every changed file is in the low-risk allowlist; high = auth, DB migrations, .github/workflows, secrets, billing -->
 
+## Review
+
+<!-- Filled by issue-implement after code-review and security-review (at most 3 rounds each). -->
+- code-review: <N> round(s)
+- security-review: <N> round(s)
+
+| Review | Severity | Location | Outcome |
+|---|---|---|---|
+| code / security | high / medium / low | `file:line` | fixed in <sha> / not fixed: <reason> |
+
 ## Verification commands
 
 ```
@@ -48,7 +63,7 @@ Closes #<!-- issue number -->
 ```
 
 <!--
-If the issue has the `article` label, add a `## 文章素材` section here:
+If the issue has `article-status: request`, add a `## 文章素材` section here:
 background, the author's own words from the session (decision points), approach,
 pitfalls hit, before/after numbers.
 -->

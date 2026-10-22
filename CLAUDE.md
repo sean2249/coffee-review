@@ -141,7 +141,9 @@ tests/             jsdom unit tests + load-app.js harness
 test/worker/       workerd tests (separate directory so the include globs cannot overlap)
 wrangler.jsonc     assets + D1 + rate limit + routes + Access vars
 .dev.vars.example  copy → .dev.vars (gitignored)
-.github/workflows  ci.yml + deploy.yml
+.github/workflows  ci.yml + deploy.yml + issue-workflow callers (issue-status, risk-guard,
+                   article-pending, needs-info-reply → sean2249/skills reusable workflows)
+.github/           pull_request_template.md + low-risk-paths.txt + dependabot.yml
 README.md          architecture, local dev, deploy
 purpose.md, 口感.md design notes (Chinese)
 ```
@@ -295,6 +297,7 @@ Only the author sets `status: approved`. Skills: `issue-enhance`, `issue-impleme
 - Merge mode: `auto`
 - Article target: `sean2249/sean2249.github.io`
 - Issue assets branch: `issue-assets`
+- Mockup path: `<N>/<file>` (inside the issue assets branch; `<N>` = issue number)
 
 ## Editing checklist
 
