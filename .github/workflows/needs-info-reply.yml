@@ -5,6 +5,8 @@ name: needs-info-reply
 on:
   issue_comment:
     types: [created]
+  issues:
+    types: [edited]   # the author ticks Pending decisions boxes in the issue body
 
 permissions:
   issues: write
