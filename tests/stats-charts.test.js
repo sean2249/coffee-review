@@ -249,7 +249,12 @@ describe('#/stats charts card', () => {
     const SHOPS = [{ id: 'A', name: '森高砂咖啡館' }, { id: 'B', name: '<b>鳥窩</b>' }];
 
     // 和 Worker 一樣：沒帶 withEvaluations=1 就不回 evaluations / observation（場次內嵌的杯也是）。
-    const strip = ({ evaluations, observation, ...rest }) => rest;
+    const strip = (r) => {
+        const rest = { ...r };
+        delete rest.evaluations;
+        delete rest.observation;
+        return rest;
+    };
     const asWorker = (path, records) => (path.includes('withEvaluations=1') ? records
         : records.map(r => (r.cups ? { ...strip(r), cups: r.cups.map(strip) } : strip(r))));
 
