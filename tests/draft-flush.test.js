@@ -153,6 +153,48 @@ describe('存檔', () => {
         release({ id: 'r1' });
         await settle();
         expect(draftOf('cupping')).toBeNull();
+        expect(win.location.hash).toBe('#/shops'); // 不把人從別頁拉回記錄頁
+    });
+
+    it('存檔中離開、又打開同一個新增表單繼續寫 → 存檔回來不清掉新表單的草稿，也不跳走', async () => {
+        let release;
+        await boot('#/new/cupping', (p, init = {}) => (init.method === 'POST'
+            ? new Promise(r => { release = r; })
+            : defaultApi(p, init)));
+        fillCupping();
+        $('#f-save').click();
+        await tick();
+        await go('#/records');
+        await go('#/new/cupping');
+        $('.draft-banner [data-draft="restore"]').click();
+        type('#f-notes', '新表單接著寫');
+        await settle(20); // 過 debounce，pending 已寫出
+
+        release({ id: 'r1' });
+        await settle();
+        expect(win.location.hash).toBe('#/new/cupping');
+        expect(draftOf('cupping')?.payload.notes).toBe('新表單接著寫');
+    });
+
+    it('品鑑存檔中離開 → 記錄存好後不拿別頁的 DOM 去存店家筆記，也不報錯', async () => {
+        let release;
+        const calls = [];
+        await boot('#/new/tasting?shop=shop1', (p, init = {}) => {
+            calls.push(`${init.method || 'GET'} ${p}`);
+            return init.method === 'POST' ? new Promise(r => { release = r; }) : defaultApi(p, init);
+        });
+        $('.bean-type-chip-row[data-bean-type-group="tasting"] .bean-type-chip').click();
+        type('#f-item_ordered', '拿鐵');
+        type('#sn-intro', '筆記改了');
+        $('#f-save').click();
+        await tick();
+        await go('#/records');
+
+        release({ id: 'r1' });
+        await settle();
+        expect(calls.some(c => c.startsWith('PUT') && c.endsWith('/note'))).toBe(false);
+        expect(doc.getElementById('toastMsg')?.classList.contains('error')).toBe(false);
+        expect(win.location.hash).toBe('#/records');
     });
 
     it('存檔失敗後離開 → 草稿還在', async () => {

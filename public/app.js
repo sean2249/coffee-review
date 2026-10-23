@@ -3721,24 +3721,33 @@ async function submitForm() {
 
     const saveBtn = document.getElementById('f-save');
     saveBtn.disabled = true;
+    // 存檔期間使用者可能已離開（不攔離開，修改靠草稿保底）：
+    // - 店家筆記讀的是當下掛載的 DOM，離開後就不是這張表單的筆記了 → 不存（筆記本來就沒有草稿）
+    // - 若又開了同一個新增表單（同一把草稿 key），那份草稿屬於新表單，不能清
+    // - 不把人從別頁拉回記錄頁
+    const stillHere = () => state.currentForm === form;
+    const clearOwnDraft = () => {
+        form.cancelDraftSave?.();
+        if (form.draftKey && (stillHere() || state.currentForm?.draftKey !== form.draftKey)) {
+            clearDraft(form.draftKey);
+        }
+    };
     try {
         const payload = buildFormPayload(mode);
         if (recordId) {
             await api.updateRecord(mode, recordId, payload);
-            const noteSaved = await saveFormShopNoteIfDirty();
-            form.cancelDraftSave?.();
-            if (form.draftKey) clearDraft(form.draftKey);
+            const noteSaved = stillHere() ? await saveFormShopNoteIfDirty() : true;
+            clearOwnDraft();
             if (noteSaved) showToast('✓ 已更新');
             else showErrorToast('記錄已更新，但店家筆記沒存起來，請再存一次');
         } else {
             const created = await api.createRecord(mode, payload);
-            const noteSaved = await saveFormShopNoteIfDirty();
-            form.cancelDraftSave?.();
-            if (form.draftKey) clearDraft(form.draftKey);
+            const noteSaved = stillHere() ? await saveFormShopNoteIfDirty() : true;
+            clearOwnDraft();
             // 接著就離開表單：筆記沒存成功的話編輯內容也跟著消失，得說清楚。
             if (noteSaved) showToast('✓ 已儲存');
             else showErrorToast('記錄已儲存，但店家筆記沒存起來，請到店家頁再填一次');
-            navigate(`/${mode}/${created.id}`);
+            if (stillHere()) navigate(`/${mode}/${created.id}`);
             return;
         }
     } catch (e) {
