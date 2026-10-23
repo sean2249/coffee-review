@@ -110,17 +110,18 @@ describe('#/stats route', () => {
         expect(called).toBe(false);
     });
 
-    it('fetches records once and renders the stats when signed in', async () => {
+    it('fetches records and shops once and renders the stats when signed in', async () => {
         win.setSessionUser({ id: 'u1', email: 'a@b.com' });
         const paths = [];
         win.apiFetch = (path) => {
             paths.push(path);
+            if (path === '/api/shops') return Promise.resolve([]);
             return Promise.resolve([cupping({ id: 'c1', shop_id: 'A', coe_total: 86 })]);
         };
         win.location.hash = '#/stats';
         await tick();
         await tick();
-        expect(paths).toEqual(['/api/records?type=all']);
+        expect(paths).toEqual(['/api/records?type=all', '/api/shops']);
         const html = doc.getElementById('app').innerHTML;
         expect(html).toContain('我的數據');
         expect(html).toContain('86.0');
@@ -146,15 +147,18 @@ describe('#/stats route', () => {
     it('does not overwrite the next page when the response arrives after leaving', async () => {
         win.setSessionUser({ id: 'u1' });
         let resolve;
-        win.apiFetch = () => new Promise(r => { resolve = r; });
+        win.apiFetch = (path) => path === '/api/shops'
+            ? Promise.resolve([])
+            : new Promise(r => { resolve = r; });
         win.location.hash = '#/stats';
         await tick();
         win.location.hash = '#/me';
         await tick();
-        resolve([]);
+        resolve([{ _type: 'cupping', id: 'c1', coe_total: 86 }]);
         await tick();
         const html = doc.getElementById('app').innerHTML;
         expect(html).toContain('account-card');
         expect(html).not.toContain('記錄過的店家');
+        expect(html).not.toContain('stats-charts');
     });
 });

@@ -1936,6 +1936,181 @@ hr { border-color: var(--border); opacity: 0.7; }
     font-size: 1rem;
     color: var(--text-primary);
 }
+.stats-charts {
+    margin-bottom: 1rem;
+    overflow: hidden;
+}
+.stats-tabs {
+    display: flex;
+    border-bottom: 1px solid var(--border);
+}
+.stats-tab {
+    flex: 1 1 0;
+    min-width: 0;
+    padding: 0.75rem 0.25rem;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    background: none;
+    color: var(--text-secondary);
+    font-family: inherit;
+    cursor: pointer;
+}
+.stats-tab[aria-selected="true"] {
+    border-bottom-color: var(--accent);
+    color: var(--accent);
+    font-weight: 700;
+}
+.stats-panel { padding: 0.75rem 1rem 1rem; }
+.stats-note {
+    margin: 0 0 0.6rem;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+}
+.stats-chart-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 1.5rem 0 1rem;
+    color: var(--text-secondary);
+}
+.stats-chart-empty .bi {
+    font-size: 1.5rem;
+    color: var(--text-muted);
+}
+.stats-dist-row {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.35rem 0;
+}
+.stats-dist-medal {
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    width: 1.6rem;
+    height: 1.6rem;
+    border-radius: 50%;
+    font-size: 0.8rem;
+    font-weight: 700;
+}
+.stats-dist-range {
+    flex-shrink: 0;
+    width: 3rem;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+}
+.stats-dist-track {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+.stats-dist-bar {
+    display: block;
+    min-width: 2px;
+    height: 0.6rem;
+    border-radius: var(--radius-sm);
+}
+.stats-dist-count {
+    flex-shrink: 0;
+    min-width: 1.5rem;
+    text-align: right;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+.stats-dist-medal.t-trash,      .stats-dist-bar.t-trash      { background: var(--t1-bg); color: var(--t1-fg); }
+.stats-dist-medal.t-commercial, .stats-dist-bar.t-commercial { background: var(--t2-bg); color: var(--t2-fg); }
+.stats-dist-medal.t-common,     .stats-dist-bar.t-common     { background: var(--t3-bg); color: var(--t3-fg); }
+.stats-dist-medal.t-like,       .stats-dist-bar.t-like       { background: var(--t4-bg); color: var(--t4-fg); }
+.stats-dist-medal.t-recommend,  .stats-dist-bar.t-recommend  { background: var(--t5-bg); color: var(--t5-fg); }
+.stats-dist-medal.t-amazing,    .stats-dist-bar.t-amazing    { background: var(--t6-bg); color: var(--t6-fg); }
+.stats-dist-medal.t-godly,      .stats-dist-bar.t-godly      { background: var(--t7-bg); color: var(--t7-fg); }
+.stats-trend {
+    display: block;
+    width: 100%;
+    max-width: 30rem;
+    margin: 0 auto;
+}
+.stats-trend-grid { stroke: var(--border); }
+.stats-trend-axis {
+    fill: var(--text-muted);
+    font-size: 9px;
+}
+.stats-trend-line {
+    fill: none;
+    stroke: var(--accent);
+    stroke-width: 2;
+}
+.stats-trend-dot { fill: var(--accent); }
+.stats-trend-foot { margin: 0.4rem 0 0; }
+.stats-rank-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    margin-bottom: 0.25rem;
+}
+.stats-rank-head .stats-note { margin: 0; }
+.stats-toggle {
+    display: inline-flex;
+    flex-shrink: 0;
+    border: 1px solid var(--border-strong);
+    border-radius: 999px;
+    overflow: hidden;
+}
+.stats-toggle-btn {
+    padding: 0.2rem 0.75rem;
+    border: 0;
+    background: none;
+    color: var(--text-secondary);
+    font-family: inherit;
+    font-size: 0.8rem;
+    cursor: pointer;
+}
+.stats-toggle-btn[aria-pressed="true"] {
+    background: var(--accent);
+    color: var(--bg-elevated);
+    font-weight: 700;
+}
+.stats-rank-row {
+    display: flex;
+    align-items: baseline;
+    gap: 0.75rem;
+    padding: 0.75rem 0;
+    border-bottom: 1px solid var(--border);
+    color: var(--text-primary);
+    text-decoration: none;
+}
+.stats-rank-row:last-child { border-bottom: 0; }
+.stats-rank-row:hover .stats-rank-name { color: var(--accent); }
+.stats-rank-no {
+    flex-shrink: 0;
+    width: 1rem;
+    color: var(--text-muted);
+    font-weight: 700;
+}
+.stats-rank-name {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.stats-rank-main {
+    flex-shrink: 0;
+    font-weight: 700;
+    color: var(--accent);
+    font-variant-numeric: tabular-nums;
+}
+.stats-rank-sub {
+    flex-shrink: 0;
+    min-width: 2.5rem;
+    text-align: right;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+}
 
 /* ───── 杯測場次 (session) ─────────────────────────────────────────────── */
 .cup-tabbar {
