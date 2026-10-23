@@ -144,6 +144,7 @@ wrangler.jsonc     assets + D1 + rate limit + routes + Access vars
 .github/workflows  ci.yml + deploy.yml + issue-workflow callers (issue-status, risk-guard,
                    article-pending, needs-info-reply → sean2249/skills reusable workflows)
 .github/           pull_request_template.md + low-risk-paths.txt + dependabot.yml
+.claude/settings.json  permissions.deny for secret files (the only tracked file in .claude/)
 README.md          architecture, local dev, deploy
 purpose.md, 口感.md design notes (Chinese)
 ```

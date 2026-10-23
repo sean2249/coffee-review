@@ -48,13 +48,16 @@ Closes #<!-- issue number -->
 
 ## Review
 
-<!-- Filled by issue-implement after its fresh-context code and security reviewer subagents (at most 3 rounds each). -->
+<!-- Filled by issue-implement after its fresh-context code and security reviewer subagents (at most 3 rounds each). Every finding has a category and is fixed a category at a time. Round 3 is the last review: if it found only low findings, all are fixed and nothing is sent for another review; if it found any medium+ finding, nothing is patched, the PR becomes a draft and goes back to the author to rethink the approach. Only a fix that needs the author's product decision is handed over, with the reason. -->
 - code-review: <N> round(s)
 - security-review: <N> round(s)
+<!-- If round 3 ran, keep the one line that applies: -->
+- Round 3 findings all fixed; not sent for another review.
+- Round 3 found medium+ findings; sent back to the author to rethink the approach.
 
-| Review | Severity | Location | Outcome |
-|---|---|---|---|
-| code / security | high / medium / low | `file:line` | fixed in <sha> / not fixed: <reason> |
+| Review | Severity | Category | Location | Outcome |
+|---|---|---|---|---|
+| code / security | high / medium / low | state / race, error handling, a11y, input validation… | `file:line` | fixed in <sha> / not fixed: <reason> |
 
 ## Verification commands
 

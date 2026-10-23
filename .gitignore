@@ -2,5 +2,6 @@
 .wrangler/
 .DS_Store
 node_modules/
-.claude/
+.claude/*
+!.claude/settings.json
 .claude.local.md
