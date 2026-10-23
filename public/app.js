@@ -833,14 +833,16 @@ function statsRankMarkup(rankings, mode) {
 }
 
 function statsChartsMarkup({ tab, mode, distribution, months, rankings }) {
+    // 只有選中的分頁在 Tab 順序裡，分頁之間用方向鍵移動（ARIA tabs 的鍵盤模型）。
     const tabs = STATS_TABS.map(t => `<button type="button" role="tab" class="stats-tab"
-        id="stats-tab-${t.id}" data-stats-tab="${t.id}" aria-selected="${t.id === tab}">${t.label}</button>`).join('');
+        id="stats-tab-${t.id}" data-stats-tab="${t.id}" aria-controls="stats-panel"
+        aria-selected="${t.id === tab}" tabindex="${t.id === tab ? 0 : -1}">${t.label}</button>`).join('');
     const panel = tab === 'trend' ? statsTrendMarkup(months)
         : tab === 'rank' ? statsRankMarkup(rankings, mode)
         : statsDistMarkup(distribution);
     return `<div class="card stats-charts">
         <div class="stats-tabs" role="tablist">${tabs}</div>
-        <div class="stats-panel" role="tabpanel" aria-labelledby="stats-tab-${tab}">${panel}</div>
+        <div class="stats-panel" id="stats-panel" role="tabpanel" aria-labelledby="stats-tab-${tab}">${panel}</div>
     </div>`;
 }
 
@@ -872,6 +874,15 @@ function mountStatsCharts(box, records) {
             charts.mode = mode.dataset.statsMode;
             draw(`[data-stats-mode="${charts.mode}"]`);
         }
+    });
+    box.addEventListener('keydown', (e) => {
+        if (!e.target.closest('[data-stats-tab]')) return;
+        const i = STATS_TABS.findIndex(t => t.id === charts.tab);
+        const next = { ArrowRight: i + 1, ArrowLeft: i - 1, Home: 0, End: STATS_TABS.length - 1 }[e.key];
+        if (next === undefined) return;
+        e.preventDefault();
+        charts.tab = STATS_TABS[(next + STATS_TABS.length) % STATS_TABS.length].id;
+        draw(`[data-stats-tab="${charts.tab}"]`);
     });
     draw();
 }
@@ -2091,7 +2102,16 @@ function scoreDistribution(flat) {
     return totalScoreTiers.map(tier => ({ tier, count: counts.get(tier.id) }));
 }
 
-// 最近 12 個曆月（由舊到新，最後一個是 now 的月份）。依 recordDateIso 的 YYYY-MM 分組；
+// recordDateIso 的月份（YYYY-MM）。visit_date / session_date 是純日期字串，直接取前 7 字；
+// fallback 的 created_at 是 UTC 時間戳，要換成裝置時區的月份，才和以 now 算出的「本月」一致。
+function recordMonthKey(r) {
+    const iso = recordDateIso(r) || '';
+    if (iso.length <= 10) return iso.slice(0, 7);
+    const d = new Date(iso);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+// 最近 12 個曆月（由舊到新，最後一個是 now 的月份），依 recordMonthKey 分組；
 // 沒有評分的月份 avg 為 null（圖上留空、不補 0）。
 function monthlyAverages(flat, now = new Date()) {
     const months = [];
@@ -2103,7 +2123,7 @@ function monthlyAverages(flat, now = new Date()) {
     const byMonth = new Map(months.map(m => [m.month, m]));
     for (const r of flat) {
         if (typeof r.coe_total !== 'number') continue;
-        const m = byMonth.get((recordDateIso(r) || '').slice(0, 7));
+        const m = byMonth.get(recordMonthKey(r));
         if (!m) continue;
         m.sum += r.coe_total;
         m.n += 1;

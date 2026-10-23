@@ -81,6 +81,14 @@ describe('monthlyAverages', () => {
         expect(byMonth['2026-10']).toBeNull();
     });
 
+    it('puts a created_at timestamp in the device-local month', () => {
+        const iso = '2026-09-30T23:30:00Z';
+        const d = new Date(iso);
+        const local = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        const m = win.monthlyAverages(flat([cupping({ id: 'c1', coe_total: 85, created_at: iso })]), now());
+        expect(m.filter(x => x.avg !== null).map(x => x.month)).toEqual([local]);
+    });
+
     it('ignores records older than 12 months', () => {
         const m = win.monthlyAverages(flat([
             tasting({ id: 't1', coe_total: 88, visit_date: '2025-10-31' }),
@@ -191,6 +199,24 @@ describe('#/stats charts card', () => {
         click('[data-stats-tab="rank"]');
         expect(doc.querySelector('[data-stats-mode="count"]').getAttribute('aria-pressed')).toBe('true');
         expect(paths).toEqual(['/api/records?type=all', '/api/shops']);
+    });
+
+    it('links tabs to the panel and moves between tabs with the arrow keys', async () => {
+        await open(sample());
+        const key = k => doc.activeElement.dispatchEvent(new win.KeyboardEvent('keydown', { key: k, bubbles: true }));
+        const tabindex = () => [...doc.querySelectorAll('[role="tab"]')].map(t => t.getAttribute('tabindex'));
+        expect(tabindex()).toEqual(['0', '-1', '-1']);
+        expect(doc.querySelector('[role="tab"]').getAttribute('aria-controls')).toBe(doc.querySelector('[role="tabpanel"]').id);
+        doc.querySelector('[data-stats-tab="dist"]').focus();
+        key('ArrowRight');
+        expect(selectedTab()).toBe('每月平均');
+        expect(doc.activeElement.dataset.statsTab).toBe('trend');
+        key('ArrowLeft');
+        key('ArrowLeft');
+        expect(selectedTab()).toBe('店家排行');
+        key('Home');
+        expect(selectedTab()).toBe('分數分布');
+        expect(tabindex()).toEqual(['0', '-1', '-1']);
     });
 
     it('links each ranking row to its shop page', async () => {
