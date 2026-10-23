@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { loadApp } from './load-app.js';
 
-// 個人數據頁的分頁卡（issue #23）：分數分布、每月平均、店家排行。
+// 個人數據頁的分頁卡（issue #23、#25）：分數分布、每月平均、店家排行、風味偏好。
 // 單位是杯（杯測每一杯各算一筆）；沒有 CoE 總分的不進分布、趨勢與平均分。
 
 const BODY = `<main id="app"></main><nav>
@@ -145,6 +145,102 @@ describe('rankShops', () => {
     });
 });
 
+describe('flavorCategoryCounts', () => {
+    const withFlavors = (id, flavor = [], aroma = [], o = {}) => tasting({
+        id, evaluations: { flavor: { score: 6, flavors: flavor } }, observation: { aroma: { flavors: aroma } }, ...o,
+    });
+    const byName = list => Object.fromEntries(list.map(c => [c.name, c.count]));
+
+    it('lists all 8 categories in flavor-wheel order, including empty ones', () => {
+        const c = win.flavorCategoryCounts([]);
+        expect(c.map(x => x.name)).toEqual(['花香類', '水果類', '糖香類', '堅果/巧克力類', '香料類', '草本類', '焙烤', '其他']);
+        expect(c.every(x => x.count === 0)).toBe(true);
+        expect(c[1].color).toBe('#e8590c');
+    });
+
+    it('counts flavor + aroma separately, every leaf, and L3 words under their category', () => {
+        const c = byName(win.flavorCategoryCounts(flat([
+            // 風味和香氣都勾檸檬：2 次；同類兩個詞（檸檬、草莓）各 1 次；祖先 id 不另外算
+            withFlavors('t1',
+                ['flavor__l1-fruit', 'flavor__l1-fruit__l2-citrus', 'flavor__l1-fruit__l2-citrus__l3-檸檬', 'flavor__l1-fruit__l2-berry__l3-草莓'],
+                ['aroma__l1-fruit__l2-citrus__l3-檸檬']),
+        ])));
+        expect(c['水果類']).toBe(3);
+    });
+
+    it('counts an id that only reaches L1, and skips ids it cannot decode', () => {
+        const c = byName(win.flavorCategoryCounts(flat([
+            withFlavors('t1', ['flavor__l1-roast', 'flavor__l1-nope', 'flavor__l1-floral__l2-不存在', 42]),
+        ])));
+        expect(c['焙烤']).toBe(1);
+        expect(Object.values(c).reduce((a, b) => a + b, 0)).toBe(1);
+    });
+
+    it('counts each session cup and unscored records', () => {
+        const c = byName(win.flavorCategoryCounts(flat([
+            withFlavors('t1', ['flavor__l1-floral__l2-茉莉']),
+            cupping({ id: 'c1', coe_total: 85, observation: { aroma: { flavors: ['aroma__l1-floral__l2-玫瑰'] } } }),
+            session('s1', [
+                { evaluations: { flavor: { flavors: ['flavor__l1-floral__l2-茉莉'] } } },
+                { coe_total: 86, observation: { aroma: { flavors: ['aroma__l1-nutty_cocoa__l2-chocolate__l3-黑巧克力'] } } },
+            ]),
+        ])));
+        expect(c['花香類']).toBe(3);
+        expect(c['堅果/巧克力類']).toBe(1);
+    });
+
+    it('agrees with the shop page\'s 常見風味 counts', () => {
+        const records = flat([
+            withFlavors('t1', ['flavor__l1-fruit__l2-citrus__l3-檸檬', 'flavor__l1-sugar__l2-蜂蜜'], ['aroma__l1-sugar__l2-蜂蜜']),
+            withFlavors('t2', ['flavor__l1-sugar__l2-焦糖']),
+        ]);
+        const top = win.summarizeRecords(records).topFlavors;
+        const total = top.reduce((n, f) => n + f.count, 0);
+        expect(win.flavorCategoryCounts(records).reduce((n, c) => n + c.count, 0)).toBe(total);
+        expect(byName(win.flavorCategoryCounts(records))['糖香類']).toBe(3);
+    });
+});
+
+describe('treemapLayout', () => {
+    // issue #25 mockup 的假資料
+    const items = () => [
+        ['水果類', 49], ['堅果/巧克力類', 26], ['糖香類', 21], ['花香類', 18], ['草本類', 7], ['香料類', 5], ['焙烤', 3], ['其他', 1],
+    ].map(([name, count]) => ({ name, count }));
+    const EPS = 1e-6;
+
+    it('gives each block an area proportional to its count and fills the box', () => {
+        const blocks = win.treemapLayout(items(), 320, 200);
+        expect(blocks.map(b => b.name)).toEqual(items().map(i => i.name));
+        const total = 130;
+        for (const b of blocks) {
+            expect(b.w * b.h).toBeCloseTo((b.count / total) * 320 * 200, 6);
+        }
+        expect(blocks.reduce((n, b) => n + b.w * b.h, 0)).toBeCloseTo(320 * 200, 6);
+    });
+
+    it('keeps every block inside the box without overlaps', () => {
+        const blocks = win.treemapLayout(items(), 320, 200);
+        for (const b of blocks) {
+            expect(b.x).toBeGreaterThanOrEqual(-EPS);
+            expect(b.y).toBeGreaterThanOrEqual(-EPS);
+            expect(b.x + b.w).toBeLessThanOrEqual(320 + EPS);
+            expect(b.y + b.h).toBeLessThanOrEqual(200 + EPS);
+        }
+        for (let i = 0; i < blocks.length; i++) {
+            for (let j = i + 1; j < blocks.length; j++) {
+                const a = blocks[i], b = blocks[j];
+                const ox = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x);
+                const oy = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y);
+                expect(ox <= EPS || oy <= EPS).toBe(true);
+            }
+        }
+    });
+
+    it('fills the whole box with a single category', () => {
+        expect(win.treemapLayout([{ name: '水果類', count: 4 }], 320, 200)).toEqual([{ name: '水果類', count: 4, x: 0, y: 0, w: 320, h: 200 }]);
+    });
+});
+
 describe('#/stats charts card', () => {
     const thisMonth = () => {
         const d = new Date();
@@ -152,12 +248,22 @@ describe('#/stats charts card', () => {
     };
     const SHOPS = [{ id: 'A', name: '森高砂咖啡館' }, { id: 'B', name: '<b>鳥窩</b>' }];
 
+    // 和 Worker 一樣：沒帶 withEvaluations=1 就不回 evaluations / observation（場次內嵌的杯也是）。
+    const strip = (r) => {
+        const rest = { ...r };
+        delete rest.evaluations;
+        delete rest.observation;
+        return rest;
+    };
+    const asWorker = (path, records) => (path.includes('withEvaluations=1') ? records
+        : records.map(r => (r.cups ? { ...strip(r), cups: r.cups.map(strip) } : strip(r))));
+
     async function open(records, { shops = SHOPS } = {}) {
         win.setSessionUser({ id: 'u1' });
         const paths = [];
         win.apiFetch = (path) => {
             paths.push(path);
-            return Promise.resolve(path === '/api/shops' ? shops : records);
+            return Promise.resolve(path === '/api/shops' ? shops : asWorker(path, records));
         };
         win.location.hash = '#/stats';
         await tick();
@@ -175,10 +281,10 @@ describe('#/stats charts card', () => {
         tasting({ id: 't3', shop_id: 'B', coe_total: 84, visit_date: thisMonth() }),
     ];
 
-    it('shows three tabs below the list card, starting on 分數分布', async () => {
+    it('shows four tabs below the list card, starting on 分數分布', async () => {
         await open(sample());
         expect(card()).not.toBe(null);
-        expect([...doc.querySelectorAll('[role="tab"]')].map(t => t.textContent)).toEqual(['分數分布', '每月平均', '店家排行']);
+        expect([...doc.querySelectorAll('[role="tab"]')].map(t => t.textContent)).toEqual(['分數分布', '每月平均', '店家排行', '風味偏好']);
         expect(selectedTab()).toBe('分數分布');
         expect(doc.querySelectorAll('.stats-dist-row')).toHaveLength(7);
         expect(panel()).toContain('杯測場次以每一杯計；未評分的不算');
@@ -205,14 +311,14 @@ describe('#/stats charts card', () => {
         click('[data-stats-tab="dist"]');
         click('[data-stats-tab="rank"]');
         expect(doc.querySelector('[data-stats-mode="count"]').getAttribute('aria-pressed')).toBe('true');
-        expect(paths).toEqual(['/api/records?type=all', '/api/shops']);
+        expect(paths).toEqual(['/api/records?type=all&withEvaluations=1', '/api/shops']);
     });
 
     it('links tabs to the panel and moves between tabs with the arrow keys', async () => {
         await open(sample());
         const key = k => doc.activeElement.dispatchEvent(new win.KeyboardEvent('keydown', { key: k, bubbles: true }));
         const tabindex = () => [...doc.querySelectorAll('[role="tab"]')].map(t => t.getAttribute('tabindex'));
-        expect(tabindex()).toEqual(['0', '-1', '-1']);
+        expect(tabindex()).toEqual(['0', '-1', '-1', '-1']);
         expect(doc.querySelector('[role="tab"]').getAttribute('aria-controls')).toBe(doc.querySelector('[role="tabpanel"]').id);
         doc.querySelector('[data-stats-tab="dist"]').focus();
         key('ArrowRight');
@@ -220,12 +326,20 @@ describe('#/stats charts card', () => {
         expect(doc.activeElement.dataset.statsTab).toBe('trend');
         key('ArrowLeft');
         key('ArrowLeft');
+        expect(selectedTab()).toBe('風味偏好');
+        key('ArrowLeft');
         expect(selectedTab()).toBe('店家排行');
+        key('ArrowRight');
+        expect(selectedTab()).toBe('風味偏好');
+        key('ArrowRight');
+        expect(selectedTab()).toBe('分數分布');
+        key('End');
+        expect(selectedTab()).toBe('風味偏好');
         key('Home');
         expect(selectedTab()).toBe('分數分布');
         doc.activeElement.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'ArrowRight', altKey: true, bubbles: true }));
         expect(selectedTab()).toBe('分數分布');
-        expect(tabindex()).toEqual(['0', '-1', '-1']);
+        expect(tabindex()).toEqual(['0', '-1', '-1', '-1']);
     });
 
     it('links each ranking row to its shop page', async () => {
@@ -284,5 +398,67 @@ describe('#/stats charts card', () => {
         win.console.warn = realWarn;
         click('[data-stats-tab="rank"]');
         expect(doc.querySelectorAll('.stats-rank-row')).toHaveLength(2);
+    });
+
+    describe('風味偏好 tab', () => {
+        // issue #25 mockup 的假資料：130 次勾選
+        const MOCK = { fruit: 49, nutty_cocoa: 26, sugar: 21, floral: 18, herbal: 7, spice: 5, roast: 3, other: 1 };
+        const flavorRecords = () => Object.entries(MOCK).flatMap(([slug, n]) => Array.from({ length: n }, (_, i) =>
+            tasting({ id: `${slug}-${i}`, shop_id: 'A', evaluations: { flavor: { flavors: [`flavor__l1-${slug}`] } } })));
+        const svg = () => doc.querySelector('svg.stats-flavor-map');
+        const block = name => [...svg().querySelectorAll('g')].find(g => g.querySelector('title').textContent.startsWith(`${name} `));
+        const texts = g => [...g.querySelectorAll('text')].map(t => t.textContent);
+
+        it('shows the note and a treemap of the categories without refetching', async () => {
+            const paths = await open(flavorRecords());
+            click('[data-stats-tab="flavor"]');
+            expect(selectedTab()).toBe('風味偏好');
+            expect(panel()).toContain('風味＋香氣的勾選次數；杯測場次以每一杯計');
+            expect(svg().getAttribute('viewBox')).toBe('0 0 320 200');
+            expect(svg().querySelectorAll('rect')).toHaveLength(8);
+            expect(paths).toEqual(['/api/records?type=all&withEvaluations=1', '/api/shops']);
+        });
+
+        it('labels blocks by size and gives every block a title and the svg an aria-label', async () => {
+            await open(flavorRecords());
+            click('[data-stats-tab="flavor"]');
+            expect(texts(block('水果類'))).toEqual(['水果類', '49 次 · 38%']);
+            expect(texts(block('其他'))).toEqual([]);
+            expect(block('焙烤').querySelector('title').textContent).toBe('焙烤 3 次');
+            expect(block('水果類').querySelector('rect').getAttribute('fill')).toBe('#e8590c');
+            expect(svg().getAttribute('aria-label')).toBe(
+                '風味類別占比：水果類 49 次、堅果/巧克力類 26 次、糖香類 21 次、花香類 18 次、草本類 7 次、香料類 5 次、焙烤 3 次、其他 1 次');
+            // 有字的色塊，字一定在色塊寬度內（中文字一個字號寬）
+            for (const g of svg().querySelectorAll('g')) {
+                const w = Number(g.querySelector('rect').getAttribute('width'));
+                const name = g.querySelector('.stats-flavor-name');
+                if (name) expect(name.textContent.length * 11).toBeLessThanOrEqual(w);
+            }
+        });
+
+        it('draws no block for a category with zero picks, and nothing is clickable', async () => {
+            await open([tasting({ id: 't1', evaluations: { flavor: { flavors: ['flavor__l1-floral__l2-茉莉'] } } })]);
+            click('[data-stats-tab="flavor"]');
+            expect(svg().querySelectorAll('rect')).toHaveLength(1);
+            expect(texts(block('花香類'))).toEqual(['花香類', '1 次 · 100%']);
+            expect(doc.querySelector('.stats-panel').querySelectorAll('a, button, [tabindex]')).toHaveLength(0);
+        });
+
+        it('counts flavors on session cups loaded from the API', async () => {
+            await open([session('s1', [
+                { evaluations: { flavor: { flavors: ['flavor__l1-herbal__l2-薄荷'] } } },
+                { observation: { aroma: { flavors: ['aroma__l1-herbal__l2-茶感'] } } },
+            ])]);
+            click('[data-stats-tab="flavor"]');
+            expect(block('草本類').querySelector('title').textContent).toBe('草本類 2 次');
+        });
+
+        it('says no flavors yet when records have none', async () => {
+            await open(sample());
+            click('[data-stats-tab="flavor"]');
+            expect(panel()).toContain('風味＋香氣的勾選次數；杯測場次以每一杯計');
+            expect(panel()).toContain('還沒有勾選過風味');
+            expect(svg()).toBe(null);
+        });
     });
 });
