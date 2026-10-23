@@ -694,13 +694,84 @@ function accountMarkup({ user }) {
         <button class="btn btn-outline-secondary" id="account-signout">
             <i class="bi bi-box-arrow-right me-2"></i>登出
         </button>
-    </div></div>`;
+    </div></div>
+    <a class="card stats-entry-card" href="#/stats">
+        <span class="stats-entry-label"><i class="bi bi-bar-chart-line"></i>我的數據</span>
+        <i class="bi bi-chevron-right"></i>
+    </a>`;
 }
 
 function viewAccount(root) {
     root.innerHTML = accountMarkup({ user: state.user });
     document.getElementById('account-signin')?.addEventListener('click', retrySignIn);
     document.getElementById('account-signout')?.addEventListener('click', signOutUser);
+}
+
+// ─── View: 我的數據 (#/stats) ────────────────────────────────────────────────
+function statsMarkup(stats) {
+    const avg = typeof stats.avgScore === 'number' ? stats.avgScore.toFixed(1) : '—';
+    const empty = stats.total === 0
+        ? `<div class="empty-state">
+            <i class="bi bi-journal-plus"></i>還沒有任何記錄
+            <div><a class="btn btn-primary mt-3" href="#/new">
+                新增第一筆記錄
+            </a></div>
+        </div>`
+        : '';
+    return `
+        <div class="stats-header">
+            <a class="stats-back" href="#/me" aria-label="返回個人"><i class="bi bi-chevron-left"></i></a>
+            <h2 class="stats-title">我的數據</h2>
+        </div>
+        <div class="card stats-list">
+            <div class="stats-row">
+                <span class="stats-label"><i class="bi bi-shop"></i>記錄過的店家</span>
+                <span class="stats-num">${stats.shopCount}</span>
+            </div>
+            <div class="stats-row">
+                <span class="stats-label"><i class="bi bi-collection"></i>已完成記錄</span>
+                <span class="stats-num">${stats.total}</span>
+            </div>
+            <div class="stats-row stats-row-sub">
+                <span class="stats-label">${TYPE_LABELS.cupping}</span>
+                <span class="stats-num">${stats.cupping}</span>
+            </div>
+            <div class="stats-row stats-row-sub">
+                <span class="stats-label">${TYPE_LABELS.tasting}</span>
+                <span class="stats-num">${stats.tasting}</span>
+            </div>
+            <div class="stats-row stats-row-sub">
+                <span class="stats-label">${TYPE_LABELS.session}</span>
+                <span class="stats-num">${stats.sessions} <small>場 · ${stats.sessionCups} 杯</small></span>
+            </div>
+            <div class="stats-row">
+                <span class="stats-label"><i class="bi bi-award"></i>我的平均 CoE 總分</span>
+                <span class="stats-num">${avg}</span>
+            </div>
+        </div>
+        ${empty}`;
+}
+
+async function viewStats(root) {
+    if (renderAccessGate(root)) return;
+    root.innerHTML = '<div class="empty-state"><i class="bi bi-hourglass-split"></i>讀取中…</div>';
+    // 讀取期間使用者可能已經換頁；#app 是共用的，晚回來的結果不能蓋掉新畫面。
+    const route = location.hash;
+    try {
+        const records = await api.listRecords({ type: 'all' });
+        if (location.hash !== route) return;
+        root.innerHTML = statsMarkup(summarizePersonalStats(records));
+    } catch (e) {
+        console.error(e);
+        if (location.hash !== route) return;
+        root.innerHTML = `<div class="empty-state error">
+            <i class="bi bi-exclamation-triangle"></i>讀取失敗：${escapeHtml(e.message || String(e))}
+            <div><button type="button" class="btn btn-outline-secondary mt-3" id="stats-retry">
+                重新載入
+            </button></div>
+        </div>`;
+        document.getElementById('stats-retry').addEventListener('click', () => renderRoute());
+    }
 }
 
 async function refreshShopsCache() {
@@ -769,6 +840,8 @@ async function renderRoute() {
         await viewShopDetail(root, parts[1]);
     } else if (parts[0] === 'me') {
         viewAccount(root);
+    } else if (parts[0] === 'stats') {
+        await viewStats(root);
     } else {
         viewNotFound(root);
     }
@@ -782,7 +855,7 @@ function updateTabbarActive() {
     let activeRoute = '/records';
     if (first === 'new') activeRoute = '/new';
     else if (first === 'shops') activeRoute = '/shops';
-    else if (first === 'me') activeRoute = '/me';
+    else if (first === 'me' || first === 'stats') activeRoute = '/me';
     document.querySelectorAll('.tabbar-btn').forEach(a => {
         const isActive = a.dataset.route === activeRoute;
         a.classList.toggle('active', isActive);
@@ -1828,6 +1901,24 @@ function summarizeRecords(records) {
         lowest: lowest ? { record: lowest, score: lowest.coe_total } : null,
         lastDate,
         topFlavors,
+    };
+}
+
+// 個人數據頁（#/stats）的數字。輸入是 listRecords({ type: 'all' }) 的原始結果（場次未攤平）：
+// 記錄數算「場次」，杯數、平均分與店家則以每一杯為單位（豆源店家掛在杯上）。
+function summarizePersonalStats(records) {
+    const sessions = records.filter(r => r._type === 'session').length;
+    const flat = flattenSessionCups(records);
+    const { counts, avgScore } = summarizeRecords(flat);
+    const shopCount = new Set(flat.map(r => r.shop_id).filter(Boolean)).size;
+    return {
+        shopCount,
+        cupping: counts.cupping,
+        tasting: counts.tasting,
+        sessions,
+        sessionCups: counts.sessionCup,
+        total: counts.cupping + counts.tasting + sessions,
+        avgScore,
     };
 }
 

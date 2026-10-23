@@ -19,6 +19,11 @@ describe('accountMarkup', () => {
         expect(html).toContain('a@b.com');
     });
 
+    it('links to #/stats only when signed in', () => {
+        expect(win.accountMarkup({ user: { id: 'u1', email: 'a@b.com' } })).toContain('href="#/stats"');
+        expect(win.accountMarkup({ user: null })).not.toContain('href="#/stats"');
+    });
+
     it('escapes the email', () => {
         const html = win.accountMarkup({ user: { id: 'u1', email: '<b>hack</b>' } });
         expect(html).not.toContain('<b>hack</b>');
