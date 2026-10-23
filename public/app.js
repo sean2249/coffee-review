@@ -876,7 +876,7 @@ function mountStatsCharts(box, records) {
         }
     });
     box.addEventListener('keydown', (e) => {
-        if (!e.target.closest('[data-stats-tab]')) return;
+        if (!e.target.closest('[data-stats-tab]') || e.altKey || e.ctrlKey || e.metaKey) return;
         const i = STATS_TABS.findIndex(t => t.id === charts.tab);
         const next = { ArrowRight: i + 1, ArrowLeft: i - 1, Home: 0, End: STATS_TABS.length - 1 }[e.key];
         if (next === undefined) return;

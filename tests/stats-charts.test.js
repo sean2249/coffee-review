@@ -81,12 +81,19 @@ describe('monthlyAverages', () => {
         expect(byMonth['2026-10']).toBeNull();
     });
 
+    // 時區固定成 UTC+8：在 UTC 的 CI 上，直接切字串和換成本地月份會得到同一個答案，測不出差別。
     it('puts a created_at timestamp in the device-local month', () => {
-        const iso = '2026-09-30T23:30:00Z';
-        const d = new Date(iso);
-        const local = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-        const m = win.monthlyAverages(flat([cupping({ id: 'c1', coe_total: 85, created_at: iso })]), now());
-        expect(m.filter(x => x.avg !== null).map(x => x.month)).toEqual([local]);
+        const realTz = process.env.TZ;
+        process.env.TZ = 'Asia/Taipei';
+        try {
+            const m = win.monthlyAverages(flat([
+                cupping({ id: 'c1', coe_total: 85, created_at: '2026-09-30T23:30:00Z' }),
+            ]), now());
+            expect(m.filter(x => x.avg !== null).map(x => x.month)).toEqual(['2026-10']);
+        } finally {
+            if (realTz === undefined) delete process.env.TZ;
+            else process.env.TZ = realTz;
+        }
     });
 
     it('ignores records older than 12 months', () => {
@@ -215,6 +222,8 @@ describe('#/stats charts card', () => {
         key('ArrowLeft');
         expect(selectedTab()).toBe('店家排行');
         key('Home');
+        expect(selectedTab()).toBe('分數分布');
+        doc.activeElement.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'ArrowRight', altKey: true, bubbles: true }));
         expect(selectedTab()).toBe('分數分布');
         expect(tabindex()).toEqual(['0', '-1', '-1']);
     });
