@@ -176,12 +176,15 @@ describe('存檔', () => {
         expect(draftOf('cupping')?.payload.notes).toBe('新表單接著寫');
     });
 
-    it('品鑑存檔中離開 → 記錄存好後不拿別頁的 DOM 去存店家筆記，也不報錯', async () => {
+    // 品鑑表單：填好必填、改店家筆記、按儲存（POST 卡住），然後離開到記錄頁。
+    async function saveTastingThenLeave({ noteFails = false } = {}) {
         let release;
         const calls = [];
         await boot('#/new/tasting?shop=shop1', (p, init = {}) => {
-            calls.push(`${init.method || 'GET'} ${p}`);
-            return init.method === 'POST' ? new Promise(r => { release = r; }) : defaultApi(p, init);
+            calls.push({ method: init.method || 'GET', path: p, body: init.body });
+            if (init.method === 'POST') return new Promise(r => { release = r; });
+            if (init.method === 'PUT' && p.endsWith('/note') && noteFails) return Promise.reject(new Error('note boom'));
+            return defaultApi(p, init);
         });
         $('.bean-type-chip-row[data-bean-type-group="tasting"] .bean-type-chip').click();
         type('#f-item_ordered', '拿鐵');
@@ -189,12 +192,60 @@ describe('存檔', () => {
         $('#f-save').click();
         await tick();
         await go('#/records');
+        return { calls, release: () => release({ id: 'r1' }) };
+    }
 
-        release({ id: 'r1' });
+    it('品鑑存檔中離開 → 記錄存好後用送出當下的快照存店家筆記，顯示成功、不跳走', async () => {
+        const { calls, release } = await saveTastingThenLeave();
+        release();
         await settle();
-        expect(calls.some(c => c.startsWith('PUT') && c.endsWith('/note'))).toBe(false);
-        expect(doc.getElementById('toastMsg')?.classList.contains('error')).toBe(false);
+        const put = calls.find(c => c.method === 'PUT' && c.path === '/api/shops/shop1/note');
+        expect(put?.body.intro).toBe('筆記改了');
+        expect(doc.getElementById('toastMsg').textContent).toBe('✓ 已儲存');
         expect(win.location.hash).toBe('#/records');
+    });
+
+    it('品鑑存檔中離開、店家筆記存失敗 → 不顯示「✓ 已儲存」，改顯示錯誤', async () => {
+        const { release } = await saveTastingThenLeave({ noteFails: true });
+        const realError = win.console.error;
+        win.console.error = () => {};
+        release();
+        await settle();
+        win.console.error = realError;
+        const toast = doc.getElementById('toastMsg');
+        expect(toast.textContent).not.toBe('✓ 已儲存');
+        expect(toast.textContent).toContain('店家筆記沒存起來');
+        expect(toast.classList.contains('error')).toBe(true);
+    });
+
+    it('存檔中離開、又打開同一個新增表單但沒改 → 存檔回來照樣清掉那份草稿（不留已存內容的草稿）', async () => {
+        let release;
+        await boot('#/new/cupping', (p, init = {}) => (init.method === 'POST'
+            ? new Promise(r => { release = r; })
+            : defaultApi(p, init)));
+        fillCupping();
+        $('#f-save').click();
+        await tick();
+        await go('#/records');
+        await go('#/new/cupping');
+        expect($('.draft-banner')).not.toBeNull();
+
+        release({ id: 'r1' }); // 存檔回來時還停在重開的表單上
+        await settle();
+        expect(draftOf('cupping')).toBeNull();
+        await go('#/shops'); // 不理橫幅就走
+        expect(draftOf('cupping')).toBeNull();
+    });
+
+    it('先存過一版草稿、改了又立刻按儲存 → 存檔成功後沒有草稿（比對前先 flush）', async () => {
+        await boot('#/new/cupping');
+        fillCupping();
+        await settle(20); // 第一版草稿已寫出
+        type('#f-notes', '最後一刻才改');
+        $('#f-save').click(); // 300 ms 內就按
+        await settle();
+        expect(win.location.hash).toBe('#/cupping/r1');
+        expect(draftOf('cupping')).toBeNull();
     });
 
     it('存檔失敗後離開 → 草稿還在', async () => {

@@ -3448,15 +3448,23 @@ function formShopNoteIsDirty() {
     return JSON.stringify(buildShopNotePayload()) !== formShopNote.baseline;
 }
 
-// 記錄與筆記分屬兩張表：記錄存完才寫筆記。筆記失敗不該讓已存檔的記錄看起來失敗，
-// 但也不能無聲無息 —— toast 只有一個節點，這裡自己跳提示會馬上被 submitForm 的
-// 成功訊息蓋掉，所以只回傳成敗，由 submitForm 決定最後顯示哪一句。
-async function saveFormShopNoteIfDirty() {
-    if (!formShopNote.shopId || !formShopNoteIsDirty()) return true;
-    const payload = buildShopNotePayload();
+// 記錄與筆記分屬兩張表：記錄存完才寫筆記。筆記要在送出記錄「之前」先快照：記錄
+// 回來時使用者可能已離開表單，那時的 DOM 已不是這張表單（筆記也沒有草稿可保底）。
+// 沒有要存的筆記 → null。
+function snapshotFormShopNote() {
+    if (!formShopNote.shopId || !formShopNoteIsDirty()) return null;
+    return { shopId: formShopNote.shopId, payload: buildShopNotePayload() };
+}
+
+// 筆記失敗不該讓已存檔的記錄看起來失敗，但也不能無聲無息 —— toast 只有一個節點，
+// 這裡自己跳提示會馬上被 submitForm 的成功訊息蓋掉，所以只回傳成敗，由 submitForm
+// 決定最後顯示哪一句。updateBaseline：表單還在時才重拍 baseline（離開後 formShopNote
+// 可能已屬於別張表單）。
+async function saveShopNoteSnapshot(snapshot, { updateBaseline }) {
+    if (!snapshot) return true;
     try {
-        await api.upsertShopNote(formShopNote.shopId, payload);
-        formShopNote.baseline = JSON.stringify(payload);
+        await api.upsertShopNote(snapshot.shopId, snapshot.payload);
+        if (updateBaseline) formShopNote.baseline = JSON.stringify(snapshot.payload);
         return true;
     } catch (e) {
         console.error(e);
@@ -3722,27 +3730,31 @@ async function submitForm() {
     const saveBtn = document.getElementById('f-save');
     saveBtn.disabled = true;
     // 存檔期間使用者可能已離開（不攔離開，修改靠草稿保底）：
-    // - 店家筆記讀的是當下掛載的 DOM，離開後就不是這張表單的筆記了 → 不存（筆記本來就沒有草稿）
-    // - 若又開了同一個新增表單（同一把草稿 key），那份草稿屬於新表單，不能清
+    // - 店家筆記送出前先快照，回來後不管還在不在都用快照存
+    // - 草稿只在內容就是這次送出的內容時才清：離開後又開了同一個新增表單（同一把
+    //   草稿 key）並改了東西，那份草稿屬於新表單；送出後還在原表單繼續改的也不能清
     // - 不把人從別頁拉回記錄頁
     const stillHere = () => state.currentForm === form;
-    const clearOwnDraft = () => {
-        form.cancelDraftSave?.();
-        if (form.draftKey && (stillHere() || state.currentForm?.draftKey !== form.draftKey)) {
-            clearDraft(form.draftKey);
-        }
-    };
+    const noteSnapshot = snapshotFormShopNote();
+    const saveNote = () => saveShopNoteSnapshot(noteSnapshot, { updateBaseline: stillHere() });
     try {
         const payload = buildFormPayload(mode);
+        const submitted = JSON.stringify(payload);
+        const clearOwnDraft = () => {
+            if (!form.draftKey) return;
+            form.flushDraft?.(); // 送出前 300 ms 內的輸入先落地，比對的才是最新的草稿
+            const draft = readDraft(form.draftKey);
+            if (draft && JSON.stringify(draft.payload) === submitted) clearDraft(form.draftKey);
+        };
         if (recordId) {
             await api.updateRecord(mode, recordId, payload);
-            const noteSaved = stillHere() ? await saveFormShopNoteIfDirty() : true;
+            const noteSaved = await saveNote();
             clearOwnDraft();
             if (noteSaved) showToast('✓ 已更新');
             else showErrorToast('記錄已更新，但店家筆記沒存起來，請再存一次');
         } else {
             const created = await api.createRecord(mode, payload);
-            const noteSaved = stillHere() ? await saveFormShopNoteIfDirty() : true;
+            const noteSaved = await saveNote();
             clearOwnDraft();
             // 接著就離開表單：筆記沒存成功的話編輯內容也跟著消失，得說清楚。
             if (noteSaved) showToast('✓ 已儲存');
