@@ -48,7 +48,7 @@ Closes #<!-- issue number -->
 
 ## Review
 
-<!-- Filled by issue-implement after code-review and security-review (at most 3 rounds each). -->
+<!-- Filled by issue-implement after its fresh-context code and security reviewer subagents (at most 3 rounds each). -->
 - code-review: <N> round(s)
 - security-review: <N> round(s)
 
