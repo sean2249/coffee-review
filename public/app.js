@@ -752,15 +752,142 @@ function statsMarkup(stats) {
         ${empty}`;
 }
 
+const STATS_TABS = [
+    { id: 'dist', label: '分數分布' },
+    { id: 'trend', label: '每月平均' },
+    { id: 'rank', label: '店家排行' },
+];
+
+function statsChartEmpty(text) {
+    return `<div class="stats-chart-empty"><i class="bi bi-bar-chart"></i>${text}</div>`;
+}
+
+function statsDistMarkup(distribution) {
+    const max = Math.max(...distribution.map(d => d.count));
+    const body = max === 0
+        ? statsChartEmpty('還沒有評分過的記錄')
+        : distribution.map(({ tier, count }) => `
+            <div class="stats-dist-row">
+                <span class="stats-dist-medal ${tier.cssClass}">${tier.medal}</span>
+                <span class="stats-dist-range">${tier.label}</span>
+                <span class="stats-dist-track"><span class="stats-dist-bar ${tier.cssClass}" style="width: ${(count / max) * 100}%"></span></span>
+                <span class="stats-dist-count">${count}</span>
+            </div>`).join('');
+    return `<p class="stats-note">杯測場次以每一杯計；未評分的不算</p>${body}`;
+}
+
+// 12 個月的折線：只連相鄰且都有值的月份，沒有評分的月份留空、線斷開。
+// 縱軸依資料上下各留 1 分，格線只標整數偶數分。
+function statsTrendMarkup(months) {
+    const values = months.map(m => m.avg).filter(v => v !== null);
+    if (!values.length) {
+        return `<p class="stats-note">最近 12 個月</p>${statsChartEmpty('最近 12 個月沒有評分記錄')}`;
+    }
+    const W = 320, H = 150, left = 24, right = 8, top = 8, bottom = 22;
+    const lo = Math.floor(Math.min(...values) - 1);
+    const hi = Math.ceil(Math.max(...values) + 1);
+    const x = i => left + (i * (W - left - right)) / (months.length - 1);
+    const y = v => top + ((hi - v) * (H - top - bottom)) / (hi - lo);
+    let grid = '';
+    for (let v = Math.ceil(lo / 2) * 2; v <= hi; v += 2) {
+        grid += `<line class="stats-trend-grid" x1="${left}" x2="${W - right}" y1="${y(v)}" y2="${y(v)}"></line>
+            <text class="stats-trend-axis" x="${left - 4}" y="${y(v) + 3}" text-anchor="end">${v}</text>`;
+    }
+    let path = '';
+    let dots = '';
+    months.forEach((m, i) => {
+        if (m.avg === null) return;
+        path += `${i > 0 && months[i - 1].avg !== null ? 'L' : 'M'}${x(i)} ${y(m.avg)} `;
+        dots += `<circle class="stats-trend-dot" cx="${x(i)}" cy="${y(m.avg)}" r="3"><title>${m.label} ${m.avg.toFixed(1)}</title></circle>`;
+    });
+    const labels = months.map((m, i) =>
+        `<text class="stats-trend-axis" x="${x(i)}" y="${H - 6}" text-anchor="middle">${m.label}</text>`).join('');
+    return `<p class="stats-note">最近 12 個月</p>
+        <svg class="stats-trend" viewBox="0 0 ${W} ${H}" role="img" aria-label="最近 12 個月每月平均 CoE 總分">
+            ${grid}<path class="stats-trend-line" d="${path.trim()}"></path>${dots}${labels}
+        </svg>
+        <p class="stats-note stats-trend-foot">空白的月份 = 那個月沒有評分記錄</p>`;
+}
+
+function statsRankMarkup(rankings, mode) {
+    if (!rankings.count.length) return statsChartEmpty('還沒有記錄過店家');
+    const toggle = [['avg', '平均分'], ['count', '筆數']].map(([id, label]) =>
+        `<button type="button" class="stats-toggle-btn" data-stats-mode="${id}" aria-pressed="${id === mode}">${label}</button>`).join('');
+    const rows = rankings[mode];
+    const body = rows.length
+        ? rows.map((r, i) => {
+            const avg = r.avgScore !== null ? r.avgScore.toFixed(1) : '—';
+            const [main, sub] = mode === 'avg' ? [avg, `${r.total} 筆`] : [`${r.total} 筆`, avg];
+            return `<a class="stats-rank-row" href="#/shops/${encodeURIComponent(r.shopId)}">
+                <span class="stats-rank-no">${i + 1}</span>
+                <span class="stats-rank-name">${escapeHtml(shopName(r.shopId))}</span>
+                <span class="stats-rank-main">${main}</span>
+                <span class="stats-rank-sub">${sub}</span>
+            </a>`;
+        }).join('')
+        : statsChartEmpty('還沒有評分過的店家記錄');
+    return `<div class="stats-rank-head">
+            <p class="stats-note">前 5 家 · 點店名看店家頁</p>
+            <div class="stats-toggle" role="group" aria-label="排行依據">${toggle}</div>
+        </div>${body}`;
+}
+
+function statsChartsMarkup({ tab, mode, distribution, months, rankings }) {
+    const tabs = STATS_TABS.map(t => `<button type="button" role="tab" class="stats-tab"
+        id="stats-tab-${t.id}" data-stats-tab="${t.id}" aria-selected="${t.id === tab}">${t.label}</button>`).join('');
+    const panel = tab === 'trend' ? statsTrendMarkup(months)
+        : tab === 'rank' ? statsRankMarkup(rankings, mode)
+        : statsDistMarkup(distribution);
+    return `<div class="card stats-charts">
+        <div class="stats-tabs" role="tablist">${tabs}</div>
+        <div class="stats-panel" role="tabpanel" aria-labelledby="stats-tab-${tab}">${panel}</div>
+    </div>`;
+}
+
+// 分頁與排序只存在這次進頁的區域變數裡：切換只重畫卡片、不重打 API，
+// 離開再進 #/stats 一律從「分數分布」「平均分」開始。
+function mountStatsCharts(box, records) {
+    const flat = flattenSessionCups(records);
+    const charts = {
+        tab: 'dist',
+        mode: 'avg',
+        distribution: scoreDistribution(flat),
+        months: monthlyAverages(flat),
+        rankings: { avg: rankShops(flat, 'avg'), count: rankShops(flat, 'count') },
+    };
+    const draw = (focusSelector) => {
+        box.innerHTML = statsChartsMarkup(charts);
+        if (focusSelector) box.querySelector(focusSelector)?.focus();
+    };
+    // 監聽掛在容器上（事件委派），重畫內容不會疊加監聽。
+    box.addEventListener('click', (e) => {
+        const tab = e.target.closest('[data-stats-tab]');
+        if (tab) {
+            charts.tab = tab.dataset.statsTab;
+            draw(`[data-stats-tab="${charts.tab}"]`);
+            return;
+        }
+        const mode = e.target.closest('[data-stats-mode]');
+        if (mode) {
+            charts.mode = mode.dataset.statsMode;
+            draw(`[data-stats-mode="${charts.mode}"]`);
+        }
+    });
+    draw();
+}
+
 async function viewStats(root) {
     if (renderAccessGate(root)) return;
     root.innerHTML = '<div class="empty-state"><i class="bi bi-hourglass-split"></i>讀取中…</div>';
     // 讀取期間使用者可能已經換頁；#app 是共用的，晚回來的結果不能蓋掉新畫面。
     const route = location.hash;
     try {
-        const records = await api.listRecords({ type: 'all' });
+        // refreshShopsCache 失敗只會 warn：排行照樣顯示，店名留空。
+        const [records] = await Promise.all([api.listRecords({ type: 'all' }), refreshShopsCache()]);
         if (location.hash !== route) return;
-        root.innerHTML = statsMarkup(summarizePersonalStats(records));
+        const stats = summarizePersonalStats(records);
+        root.innerHTML = statsMarkup(stats) + (stats.total > 0 ? '<div id="stats-charts"></div>' : '');
+        if (stats.total > 0) mountStatsCharts(document.getElementById('stats-charts'), records);
     } catch (e) {
         console.error(e);
         if (location.hash !== route) return;
@@ -1950,6 +2077,50 @@ function aggregateShopStats(records) {
         delete s.scoreCount;
     }
     return byShop;
+}
+
+// 個人數據頁的分頁卡（issue #23）。輸入都是 flattenSessionCups 後的結果：杯測每一杯各算一筆，
+// 沒有 CoE 總分的不進分布、趨勢與平均。
+function scoreDistribution(flat) {
+    const counts = new Map(totalScoreTiers.map(t => [t.id, 0]));
+    for (const r of flat) {
+        if (typeof r.coe_total !== 'number') continue;
+        const id = tierFromScore(r.coe_total).id;
+        counts.set(id, counts.get(id) + 1);
+    }
+    return totalScoreTiers.map(tier => ({ tier, count: counts.get(tier.id) }));
+}
+
+// 最近 12 個曆月（由舊到新，最後一個是 now 的月份）。依 recordDateIso 的 YYYY-MM 分組；
+// 沒有評分的月份 avg 為 null（圖上留空、不補 0）。
+function monthlyAverages(flat, now = new Date()) {
+    const months = [];
+    for (let i = 11; i >= 0; i--) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        const m = d.getMonth() + 1;
+        months.push({ month: `${d.getFullYear()}-${String(m).padStart(2, '0')}`, label: `${m}月`, sum: 0, n: 0 });
+    }
+    const byMonth = new Map(months.map(m => [m.month, m]));
+    for (const r of flat) {
+        if (typeof r.coe_total !== 'number') continue;
+        const m = byMonth.get((recordDateIso(r) || '').slice(0, 7));
+        if (!m) continue;
+        m.sum += r.coe_total;
+        m.n += 1;
+    }
+    return months.map(({ month, label, sum, n }) => ({ month, label, avg: n ? sum / n : null }));
+}
+
+// 店家排行前 5 名，數字和店家列表卡片同源（aggregateShopStats）。
+// 'avg'：只排有評分的店，平均分高的在前、同分筆數多的在前。
+// 'count'：筆數多的在前、同筆數平均分高的在前，沒有評分的排最後。
+function rankShops(flat, mode) {
+    const rows = [...aggregateShopStats(flat)].map(([shopId, s]) => ({ shopId, avgScore: s.avgScore, total: s.total }));
+    const byAvg = (a, b) => (a.avgScore === null) - (b.avgScore === null) || (b.avgScore ?? 0) - (a.avgScore ?? 0);
+    const sorted = mode === 'avg'
+        ? rows.filter(r => r.avgScore !== null).sort((a, b) => byAvg(a, b) || b.total - a.total)
+        : rows.sort((a, b) => b.total - a.total || byAvg(a, b));
+    return sorted.slice(0, 5);
 }
 
 // Trim a Taiwan postal-code + 縣市 prefix off a free-text address for compact
