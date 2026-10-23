@@ -59,6 +59,18 @@ describe('confirmDialog', () => {
         await expect(p).resolves.toBe(false);
     });
 
+    it('alertdialog：aria-describedby 指到放訊息文字的節點，焦點預設在取消鈕', async () => {
+        const { p, backdrop } = openDialog({ title: '有未儲存的變更', message: '離開後不會儲存。' });
+        const shell = backdrop.querySelector('.confirm-dialog');
+        expect(shell.getAttribute('role')).toBe('alertdialog');
+        const described = doc.getElementById(shell.getAttribute('aria-describedby'));
+        expect(described).toBe(backdrop.querySelector('.confirm-dialog-message'));
+        expect(described.textContent).toBe('離開後不會儲存。');
+        expect(doc.activeElement).toBe(backdrop.querySelector('[data-confirm="cancel"]'));
+        backdrop.querySelector('[data-confirm="cancel"]').click();
+        await p;
+    });
+
     it('escapes HTML in title and renders message as plain text', async () => {
         const { p, backdrop } = openDialog({
             title: '<img src=x onerror=1>',

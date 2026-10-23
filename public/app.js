@@ -361,9 +361,11 @@ function showDraftBanner(form, draft, onRestore, onDiscard) {
 
 // 掛在 viewForm 尾端：進場偵測草稿 → 顯示 banner；並綁 debounce 自動儲存。
 // build / apply 預設是單筆記錄的 payload；杯測場次傳自己的（場次 + 所有杯）。
+// extraDirty：不在 build() 裡、但離開時也該問的修改（品鑑表單的我的店家筆記）。
 function setupDraftAutosave(mode, recordId, {
     build = () => buildFormPayload(mode),
     apply = payload => applyRecordToForm(mode, payload),
+    extraDirty = () => false,
 } = {}) {
     const form = document.querySelector('.record-form');
     if (!form) return;
@@ -384,18 +386,24 @@ function setupDraftAutosave(mode, recordId, {
     }
 
     let timer = null;
+    let pending = null; // 已排程、還沒寫出去的最後一次序列化（給 flushDraft）
+    const persist = current => {
+        if (current === baseline) {
+            clearDraft(key); // 改回原狀 → 不留草稿
+        } else {
+            writeDraft(key, mode, JSON.parse(current));
+        }
+    };
     const schedule = () => {
         // 同步在事件當下就把 payload 算好（此時表單仍掛載）；setTimeout 只負責寫入。
         // 如此即使使用者輸入後立刻離開頁面（表單被卸載、DOM 消失），最後一次輸入
         // 仍會被存下，也不會因 build 讀不到 #f-shop 而在 timeout 內丟錯。
         const current = JSON.stringify(build());
+        pending = current;
         clearTimeout(timer);
         timer = setTimeout(() => {
-            if (current === baseline) {
-                clearDraft(key); // 改回原狀 → 不留草稿
-            } else {
-                writeDraft(key, mode, JSON.parse(current));
-            }
+            pending = null;
+            persist(current);
         }, 300);
     };
 
@@ -405,8 +413,27 @@ function setupDraftAutosave(mode, recordId, {
     form.addEventListener('click', schedule);
 
     // 供 submit 成功後清草稿 + 取消尚未觸發的 debounce（避免 clear 後又被寫回）。
-    state.currentForm.draftKey = key;
-    state.currentForm.cancelDraftSave = () => clearTimeout(timer);
+    const entry = state.currentForm;
+    entry.draftKey = key;
+    entry.cancelDraftSave = () => {
+        clearTimeout(timer);
+        pending = null;
+    };
+    // 離開提示用（dirty guard）。isDirty 會呼叫 build()，只能在表單還掛載時同步呼叫。
+    // 存檔進行中不算 dirty：存檔流程自己會清草稿。markClean 給程式自己跳頁前用，
+    // 一次性：表單接著就會卸載或重新掛載（重拍 baseline）。
+    let clean = false;
+    entry.isDirty = () => !clean && !entry.saving
+        && (JSON.stringify(build()) !== baseline || extraDirty());
+    entry.markClean = () => { clean = true; };
+    // 切到背景 / 離開時把還在 debounce 的最後一次輸入立刻寫進草稿。
+    entry.flushDraft = () => {
+        clearTimeout(timer);
+        if (pending === null) return;
+        const current = pending;
+        pending = null;
+        persist(current);
+    };
 }
 
 function showToast(msg, ms = 2000, isError = false) {
@@ -436,13 +463,13 @@ function confirmDialog({ title = '確認', message = '', confirmText = '確認',
         const backdrop = document.createElement('div');
         backdrop.className = 'modal-backdrop-custom';
         backdrop.innerHTML = `
-            <div class="modal-shell confirm-dialog" role="dialog" aria-modal="true"
-                 aria-labelledby="confirm-dialog-title">
+            <div class="modal-shell confirm-dialog" role="alertdialog" aria-modal="true"
+                 aria-labelledby="confirm-dialog-title" aria-describedby="confirm-dialog-message">
                 <header class="modal-header">
                     <h3 id="confirm-dialog-title">${escapeHtml(title)}</h3>
                 </header>
                 <div class="modal-body">
-                    <p class="confirm-dialog-message"></p>
+                    <p class="confirm-dialog-message" id="confirm-dialog-message"></p>
                     <div class="modal-actions">
                         <button type="button" class="btn btn-outline-secondary" data-confirm="cancel">${escapeHtml(cancelText)}</button>
                         <button type="button" class="btn ${danger ? 'btn-danger' : 'btn-primary'}" data-confirm="ok">${escapeHtml(confirmText)}</button>
@@ -1965,8 +1992,11 @@ async function viewForm(root, { mode, recordId, prefillShopId = null }) {
         document.getElementById('f-delete').hidden = true;
     }
 
-    // baseline 需拍在表單完整初始化／還原之後。
-    setupDraftAutosave(mode, recordId);
+    // baseline 需拍在表單完整初始化／還原之後。店家筆記只有品鑑表單算 dirty：
+    // formShopNote 是模組層級單例，別的表單不會重設它。
+    setupDraftAutosave(mode, recordId, {
+        extraDirty: mode === 'tasting' ? formShopNoteIsDirty : undefined,
+    });
 }
 
 function applyShopPrefill(shopId) {
@@ -3657,7 +3687,9 @@ function buildFormPayload(mode) {
 
 async function submitForm() {
     if (!state.currentForm) return;
-    const { mode, recordId } = state.currentForm;
+    // 存檔期間可能已離開頁面（state.currentForm 換掉），之後一律用手上的 form。
+    const form = state.currentForm;
+    const { mode, recordId } = form;
 
     // Bean type must be validated first — bean-name inputs are now hidden
     // until a type is chosen, so focusing them before that would be confusing.
@@ -3700,23 +3732,25 @@ async function submitForm() {
 
     const saveBtn = document.getElementById('f-save');
     saveBtn.disabled = true;
+    form.saving = true;
     try {
         const payload = buildFormPayload(mode);
         if (recordId) {
             await api.updateRecord(mode, recordId, payload);
             const noteSaved = await saveFormShopNoteIfDirty();
-            state.currentForm?.cancelDraftSave?.();
-            if (state.currentForm?.draftKey) clearDraft(state.currentForm.draftKey);
+            form.cancelDraftSave?.();
+            if (form.draftKey) clearDraft(form.draftKey);
             if (noteSaved) showToast('✓ 已更新');
             else showErrorToast('記錄已更新，但店家筆記沒存起來，請再存一次');
         } else {
             const created = await api.createRecord(mode, payload);
             const noteSaved = await saveFormShopNoteIfDirty();
-            state.currentForm?.cancelDraftSave?.();
-            if (state.currentForm?.draftKey) clearDraft(state.currentForm.draftKey);
+            form.cancelDraftSave?.();
+            if (form.draftKey) clearDraft(form.draftKey);
             // 接著就離開表單：筆記沒存成功的話編輯內容也跟著消失，得說清楚。
             if (noteSaved) showToast('✓ 已儲存');
             else showErrorToast('記錄已儲存，但店家筆記沒存起來，請到店家頁再填一次');
+            form.markClean?.();
             navigate(`/${mode}/${created.id}`);
             return;
         }
@@ -3725,6 +3759,7 @@ async function submitForm() {
         showErrorToast('儲存失敗：' + (e.message || e));
     } finally {
         saveBtn.disabled = false;
+        form.saving = false;
     }
 }
 
@@ -4522,6 +4557,7 @@ async function submitSessionForm() {
     const stage = form.stage;
     const saveBtn = document.getElementById('f-save');
     saveBtn.disabled = true;
+    form.saving = true;
     try {
         await api.saveSession(form.id, { ...buildSessionPayload(), stage: SESSION_STAGES[stage].next }, form.cups);
         // 用拿在手上的 form：存檔期間就算已離開頁面，草稿也要清掉。
@@ -4530,6 +4566,7 @@ async function submitSessionForm() {
         showToast(stage === 'reveal' && form.recordId ? '✓ 已更新' : '✓ 已儲存');
         // 存檔期間已經離開頁面就別把人硬拉回場次頁（草稿還是要清掉）。
         if (state.currentForm === form) {
+            form.markClean?.();
             navigate(stage === 'reveal' ? `/session/${form.id}` : `/session/${form.id}/edit`);
         }
     } catch (e) {
@@ -4538,6 +4575,7 @@ async function submitSessionForm() {
         showErrorToast('儲存失敗：' + (e.message || e));
     } finally {
         saveBtn.disabled = false;
+        form.saving = false;
     }
 }
 
@@ -4558,6 +4596,7 @@ async function deleteCurrentSession() {
         form.cancelDraftSave?.();
         if (form.draftKey) clearDraft(form.draftKey);
         showToast('✓ 已刪除');
+        form.markClean?.();
         navigate('/records');
     } catch (e) {
         showErrorToast('刪除失敗：' + (e.message || e));
@@ -5177,6 +5216,73 @@ async function viewShopDetail(root, shopId) {
     }
 }
 
+// ─── Dirty guard ─────────────────────────────────────────────────────────────
+// 表單有未儲存的修改時，離開前先問。三條離開路徑：app 內連結（capture click，
+// hash 還沒變）、瀏覽器返回 / 前進（hashchange，hash 已經變了 → pushState 放回）、
+// 關分頁 / 重新整理（beforeunload，瀏覽器原生提示）。選「離開」草稿一律保留。
+let leavePromptOpen = false;
+
+function isFormDirty() {
+    return state.currentForm?.isDirty?.() === true;
+}
+
+async function confirmLeaveForm() {
+    if (!isFormDirty()) return true;
+    const form = state.currentForm;
+    const noteLost = form.mode === 'tasting' && formShopNoteIsDirty();
+    leavePromptOpen = true;
+    try {
+        const ok = await confirmDialog({
+            title: '有未儲存的變更',
+            message: '離開後，這次的修改不會儲存。表單內容會留成草稿，下次進來可以還原。'
+                + (noteLost ? '\n我的店家筆記的修改不會保留。' : ''),
+            confirmText: '離開',
+            cancelText: '繼續編輯',
+        });
+        if (ok && state.currentForm === form) {
+            form.flushDraft?.();
+            // 接下來的跳頁（navigate / history.back）就不會再被攔一次。
+            form.markClean?.();
+        }
+        return ok;
+    } finally {
+        leavePromptOpen = false;
+    }
+}
+
+async function onAppLinkClick(e) {
+    // 修飾鍵 / 中鍵 = 開新分頁，原頁面不動，不攔。
+    if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    const link = e.target.closest?.('a[href^="#/"]');
+    if (!link || !isFormDirty()) return;
+    e.preventDefault();
+    if (leavePromptOpen) return;
+    if (await confirmLeaveForm()) navigate(link.getAttribute('href').slice(1));
+}
+
+async function onHashChange(e) {
+    // isDirty 存在 = 表單已掛載完成（setupDraftAutosave 跑過）。
+    if (!state.currentForm?.isDirty) {
+        renderRoute();
+        return;
+    }
+    // 其他對話框或離開提示開著：只把網址放回表單，什麼都不做。從外面關對話框會漏掉
+    // 它 closure 裡的 listener，所以讓使用者自己關掉再按一次返回。
+    if (leavePromptOpen || document.querySelector('.modal-backdrop-custom')) {
+        history.pushState(null, '', e.oldURL);
+        return;
+    }
+    if (!isFormDirty()) {
+        renderRoute();
+        return;
+    }
+    // pushState 不觸發 hashchange，表單不重繪；返回時取代前方的那一筆，history 不變長。
+    history.pushState(null, '', e.oldURL);
+    // 選「離開」時 confirmLeaveForm 已把表單標成乾淨，history.back() 觸發的下一次
+    // hashchange 就直接重繪；選「繼續編輯」時 confirmDialog 會把焦點還給原本的元素。
+    if (await confirmLeaveForm()) history.back();
+}
+
 // ─── Init ────────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
     if (!location.hash) location.hash = '#/records';
@@ -5187,6 +5293,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     await initAuth();
     authBootstrapped = true;
     // 在 auth 就緒後才掛 hashchange，避免 bootstrap 期間的 hash 設定觸發一次半成品 render。
-    window.addEventListener('hashchange', renderRoute);
+    window.addEventListener('hashchange', onHashChange);
+    document.addEventListener('click', onAppLinkClick, true);
+    // 只在 dirty 時要求瀏覽器原生提示；不清任何東西，草稿照留。iOS 不會顯示，靠草稿保底。
+    window.addEventListener('beforeunload', e => {
+        if (isFormDirty()) {
+            e.preventDefault();
+            e.returnValue = '';
+        }
+    });
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'hidden') state.currentForm?.flushDraft?.();
+    });
+    window.addEventListener('pagehide', () => state.currentForm?.flushDraft?.());
     renderRoute();
 });
