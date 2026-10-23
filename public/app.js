@@ -756,6 +756,7 @@ const STATS_TABS = [
     { id: 'dist', label: '分數分布' },
     { id: 'trend', label: '每月平均' },
     { id: 'rank', label: '店家排行' },
+    { id: 'flavor', label: '風味偏好' },
 ];
 
 function statsChartEmpty(text) {
@@ -832,13 +833,49 @@ function statsRankMarkup(rankings, mode) {
         </div>${body}`;
 }
 
-function statsChartsMarkup({ tab, mode, distribution, months, rankings }) {
+// SVG 文字的估計寬度：中文字一個字號寬，數字約 0.56 個，其他符號（空白、·、%）抓 4px。
+function svgTextWidth(text, fontSize) {
+    return [...text].reduce((w, ch) => w + (/[0-9]/.test(ch) ? fontSize * 0.56 : ch.charCodeAt(0) > 0x2e80 ? fontSize : 4), 0);
+}
+
+// 8 個大類的 treemap：面積 = 次數，色塊照風味輪的大類顏色、白字，不能點。
+// 文字分三級：放得下兩行就「類別名」＋「N 次 · P%」，只放得下名稱就只有名稱，再小就沒字
+// （數字靠 <title> 和整張圖的 aria-label 補）。
+function statsFlavorMarkup(categories) {
+    const note = '<p class="stats-note">風味＋香氣的勾選次數；杯測場次以每一杯計</p>';
+    const total = categories.reduce((n, c) => n + c.count, 0);
+    if (total === 0) return note + statsChartEmpty('還沒有勾選過風味');
+    const W = 320, H = 200;
+    const items = categories.filter(c => c.count > 0).sort((a, b) => b.count - a.count);
+    const blocks = treemapLayout(items, W, H).map(b => {
+        // 色塊之間留 2px 縫：四邊各內縮 1px。
+        const x = b.x + 1, y = b.y + 1, w = Math.max(0, b.w - 2), h = Math.max(0, b.h - 2);
+        const name = escapeHtml(b.name);
+        const sub = `${b.count} 次 · ${Math.round((b.count / total) * 100)}%`;
+        const nameW = b.name.length * 11 + 12;
+        const cx = x + w / 2, cy = y + h / 2;
+        let text = '';
+        if (h >= 36 && w >= Math.max(56, nameW, svgTextWidth(sub, 10) + 8)) {
+            text = `<text class="stats-flavor-name" x="${cx}" y="${cy - 2}" text-anchor="middle">${name}</text>
+                <text class="stats-flavor-sub" x="${cx}" y="${cy + 11}" text-anchor="middle">${sub}</text>`;
+        } else if (h >= 20 && w >= nameW) {
+            text = `<text class="stats-flavor-name" x="${cx}" y="${cy + 4}" text-anchor="middle">${name}</text>`;
+        }
+        return `<g><title>${name} ${b.count} 次</title>
+            <rect x="${x}" y="${y}" width="${w}" height="${h}" rx="4" fill="${b.color}"></rect>${text}</g>`;
+    }).join('');
+    const label = `風味類別占比：${items.map(c => `${escapeHtml(c.name)} ${c.count} 次`).join('、')}`;
+    return `${note}<svg class="stats-flavor-map" viewBox="0 0 ${W} ${H}" role="img" aria-label="${label}">${blocks}</svg>`;
+}
+
+function statsChartsMarkup({ tab, mode, distribution, months, rankings, flavorCategories }) {
     // 只有選中的分頁在 Tab 順序裡，分頁之間用方向鍵移動（ARIA tabs 的鍵盤模型）。
     const tabs = STATS_TABS.map(t => `<button type="button" role="tab" class="stats-tab"
         id="stats-tab-${t.id}" data-stats-tab="${t.id}" aria-controls="stats-panel"
         aria-selected="${t.id === tab}" tabindex="${t.id === tab ? 0 : -1}">${t.label}</button>`).join('');
     const panel = tab === 'trend' ? statsTrendMarkup(months)
         : tab === 'rank' ? statsRankMarkup(rankings, mode)
+        : tab === 'flavor' ? statsFlavorMarkup(flavorCategories)
         : statsDistMarkup(distribution);
     return `<div class="card stats-charts">
         <div class="stats-tabs" role="tablist">${tabs}</div>
@@ -856,6 +893,7 @@ function mountStatsCharts(box, records) {
         distribution: scoreDistribution(flat),
         months: monthlyAverages(flat),
         rankings: { avg: rankShops(flat, 'avg'), count: rankShops(flat, 'count') },
+        flavorCategories: flavorCategoryCounts(flat),
     };
     const draw = (focusSelector) => {
         box.innerHTML = statsChartsMarkup(charts);
@@ -2141,6 +2179,65 @@ function rankShops(flat, mode) {
         ? rows.filter(r => r.avgScore !== null).sort((a, b) => byAvg(a, b) || b.total - a.total)
         : rows.sort((a, b) => b.total - a.total || byAvg(a, b));
     return sorted.slice(0, 5);
+}
+
+// 風味輪 8 個大類的勾選次數（issue #25），照 `flavors` 的順序、0 次也回傳。
+// 計數規則同店家頁「常見風味」：每筆取 recordFlavorLeafIds，只算 decodeFlavorMeta 解得出來的 id，
+// 記到 id 裡 `__l1-<slug>` 那一段的大類。
+function flavorCategoryCounts(flat) {
+    const counts = new Map(flavors.map(f => [f.id, 0]));
+    for (const r of flat) {
+        for (const id of recordFlavorLeafIds(r)) {
+            if (!decodeFlavorMeta(id)) continue;
+            const slug = id.slice(id.indexOf('__l1-') + '__l1-'.length).split('__')[0];
+            counts.set(slug, counts.get(slug) + 1);
+        }
+    }
+    return flavors.map(f => ({ id: f.id, name: f.name, color: f.color, count: counts.get(f.id) }));
+}
+
+// Squarified treemap：items 須已濾掉 0 次並由大到小排好，回傳每項加上 { x, y, w, h }，
+// 面積和 count 成比例、剛好鋪滿 width × height。
+function treemapLayout(items, width, height) {
+    const total = items.reduce((n, it) => n + it.count, 0);
+    let rest = items.map(item => ({ item, area: (item.count * width * height) / total }));
+    let x = 0, y = 0, w = width, h = height;
+    const out = [];
+    // 一列沿短邊排開時，最扁那一塊的長寬比（越接近 1 越好）。
+    const worst = (row, side) => {
+        const sum = row.reduce((n, r) => n + r.area, 0);
+        const max = Math.max(...row.map(r => r.area));
+        const min = Math.min(...row.map(r => r.area));
+        return Math.max((side * side * max) / (sum * sum), (sum * sum) / (side * side * min));
+    };
+    while (rest.length) {
+        const side = Math.min(w, h);
+        let n = 1;
+        while (n < rest.length && worst(rest.slice(0, n + 1), side) <= worst(rest.slice(0, n), side)) n++;
+        const row = rest.slice(0, n);
+        rest = rest.slice(n);
+        const sum = row.reduce((s, r) => s + r.area, 0);
+        if (w >= h) {
+            const t = sum / h;
+            let yy = y;
+            for (const r of row) {
+                out.push({ ...r.item, x, y: yy, w: t, h: r.area / t });
+                yy += r.area / t;
+            }
+            x += t;
+            w -= t;
+        } else {
+            const t = sum / w;
+            let xx = x;
+            for (const r of row) {
+                out.push({ ...r.item, x: xx, y, w: r.area / t, h: t });
+                xx += r.area / t;
+            }
+            y += t;
+            h -= t;
+        }
+    }
+    return out;
 }
 
 // Trim a Taiwan postal-code + 縣市 prefix off a free-text address for compact

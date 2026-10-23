@@ -2111,6 +2111,22 @@ hr { border-color: var(--border); opacity: 0.7; }
     color: var(--text-muted);
     font-variant-numeric: tabular-nums;
 }
+.stats-flavor-map {
+    display: block;
+    width: 100%;
+    max-width: 30rem;
+    margin: 0 auto;
+}
+.stats-flavor-name,
+.stats-flavor-sub {
+    fill: #fff;
+    font-weight: 600;
+}
+.stats-flavor-name { font-size: 11px; }
+.stats-flavor-sub {
+    font-size: 10px;
+    font-variant-numeric: tabular-nums;
+}
 
 /* ───── 杯測場次 (session) ─────────────────────────────────────────────── */
 .cup-tabbar {
