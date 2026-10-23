@@ -1858,6 +1858,85 @@ hr { border-color: var(--border); opacity: 0.7; }
 }
 .account-email { word-break: break-all; }
 
+/* ───── 個人數據 (stats) ──────────────────────────────────────────────── */
+.stats-entry-card {
+    max-width: 22rem;
+    margin: 0 auto;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.85rem 1rem;
+    color: var(--text-primary);
+    text-decoration: none;
+}
+.stats-entry-card:hover { background: var(--bg-muted-hover); }
+.stats-entry-card .bi-chevron-right { color: var(--text-dim); }
+.stats-entry-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.6rem;
+}
+.stats-entry-label .bi { color: var(--accent); }
+.stats-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.85rem;
+}
+.stats-back {
+    color: var(--text-secondary);
+    font-size: 1.25rem;
+    line-height: 1;
+    text-decoration: none;
+}
+.stats-back:hover { color: var(--accent); }
+.stats-title {
+    margin: 0;
+    font-size: 1.25rem;
+    font-weight: 700;
+}
+.stats-list {
+    padding: 0.25rem 1rem;
+    margin-bottom: 1rem;
+}
+.stats-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.85rem 0;
+    border-bottom: 1px solid var(--border);
+}
+.stats-row:last-child { border-bottom: 0; }
+.stats-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-width: 0;
+    color: var(--text-secondary);
+}
+.stats-label .bi { color: var(--text-muted); }
+.stats-num {
+    flex-shrink: 0;
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: var(--accent);
+    font-variant-numeric: tabular-nums;
+}
+.stats-num small {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-muted);
+}
+.stats-row-sub {
+    padding: 0.6rem 0 0.6rem 1rem;
+    font-size: 0.9rem;
+}
+.stats-row-sub .stats-num {
+    font-size: 1rem;
+    color: var(--text-primary);
+}
+
 /* ───── 杯測場次 (session) ─────────────────────────────────────────────── */
 .cup-tabbar {
     display: flex;
