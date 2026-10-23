@@ -248,12 +248,17 @@ describe('#/stats charts card', () => {
     };
     const SHOPS = [{ id: 'A', name: '森高砂咖啡館' }, { id: 'B', name: '<b>鳥窩</b>' }];
 
+    // 和 Worker 一樣：沒帶 withEvaluations=1 就不回 evaluations / observation（場次內嵌的杯也是）。
+    const strip = ({ evaluations, observation, ...rest }) => rest;
+    const asWorker = (path, records) => (path.includes('withEvaluations=1') ? records
+        : records.map(r => (r.cups ? { ...strip(r), cups: r.cups.map(strip) } : strip(r))));
+
     async function open(records, { shops = SHOPS } = {}) {
         win.setSessionUser({ id: 'u1' });
         const paths = [];
         win.apiFetch = (path) => {
             paths.push(path);
-            return Promise.resolve(path === '/api/shops' ? shops : records);
+            return Promise.resolve(path === '/api/shops' ? shops : asWorker(path, records));
         };
         win.location.hash = '#/stats';
         await tick();
@@ -301,7 +306,7 @@ describe('#/stats charts card', () => {
         click('[data-stats-tab="dist"]');
         click('[data-stats-tab="rank"]');
         expect(doc.querySelector('[data-stats-mode="count"]').getAttribute('aria-pressed')).toBe('true');
-        expect(paths).toEqual(['/api/records?type=all', '/api/shops']);
+        expect(paths).toEqual(['/api/records?type=all&withEvaluations=1', '/api/shops']);
     });
 
     it('links tabs to the panel and moves between tabs with the arrow keys', async () => {
@@ -406,7 +411,7 @@ describe('#/stats charts card', () => {
             expect(panel()).toContain('風味＋香氣的勾選次數；杯測場次以每一杯計');
             expect(svg().getAttribute('viewBox')).toBe('0 0 320 200');
             expect(svg().querySelectorAll('rect')).toHaveLength(8);
-            expect(paths).toEqual(['/api/records?type=all', '/api/shops']);
+            expect(paths).toEqual(['/api/records?type=all&withEvaluations=1', '/api/shops']);
         });
 
         it('labels blocks by size and gives every block a title and the svg an aria-label', async () => {
@@ -432,6 +437,15 @@ describe('#/stats charts card', () => {
             expect(svg().querySelectorAll('rect')).toHaveLength(1);
             expect(texts(block('花香類'))).toEqual(['花香類', '1 次 · 100%']);
             expect(doc.querySelector('.stats-panel').querySelectorAll('a, button, [tabindex]')).toHaveLength(0);
+        });
+
+        it('counts flavors on session cups loaded from the API', async () => {
+            await open([session('s1', [
+                { evaluations: { flavor: { flavors: ['flavor__l1-herbal__l2-薄荷'] } } },
+                { observation: { aroma: { flavors: ['aroma__l1-herbal__l2-茶感'] } } },
+            ])]);
+            click('[data-stats-tab="flavor"]');
+            expect(block('草本類').querySelector('title').textContent).toBe('草本類 2 次');
         });
 
         it('says no flavors yet when records have none', async () => {

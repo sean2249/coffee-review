@@ -932,7 +932,8 @@ async function viewStats(root) {
     const route = location.hash;
     try {
         // refreshShopsCache 失敗只會 warn：排行照樣顯示，店名留空。
-        const [records] = await Promise.all([api.listRecords({ type: 'all' }), refreshShopsCache()]);
+        // 風味偏好要 evaluations / observation，沒帶旗標 Worker 不回這兩欄。
+        const [records] = await Promise.all([api.listRecords({ type: 'all', withEvaluations: true }), refreshShopsCache()]);
         if (location.hash !== route) return;
         const stats = summarizePersonalStats(records);
         root.innerHTML = statsMarkup(stats) + (stats.total > 0 ? '<div id="stats-charts"></div>' : '');

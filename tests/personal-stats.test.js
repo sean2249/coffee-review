@@ -121,7 +121,7 @@ describe('#/stats route', () => {
         win.location.hash = '#/stats';
         await tick();
         await tick();
-        expect(paths).toEqual(['/api/records?type=all', '/api/shops']);
+        expect(paths).toEqual(['/api/records?type=all&withEvaluations=1', '/api/shops']);
         const html = doc.getElementById('app').innerHTML;
         expect(html).toContain('我的數據');
         expect(html).toContain('86.0');
