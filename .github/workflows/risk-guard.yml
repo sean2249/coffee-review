@@ -1,5 +1,5 @@
 # Caller for the shared risk-guard workflow. Written by issue-workflow-setup.
-# sean2249/skills is the <owner>/<repo> that hosts the reusable workflows.
+# sean2249/skills is the <owner>/<repo> that hosts the reusable workflows; v1 is its latest release tag (v1, v2, …).
 # Required status check name: "risk-guard / check" (caller job id / reusable job id).
 name: risk-guard
 
@@ -21,6 +21,6 @@ permissions:
 
 jobs:
   risk-guard:
-    uses: sean2249/skills/.github/workflows/risk-guard.yml@main
+    uses: sean2249/skills/.github/workflows/risk-guard.yml@v1
     with:
       allowlist: .github/low-risk-paths.txt

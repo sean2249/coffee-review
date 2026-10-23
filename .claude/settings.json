@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "deny": [
+      "Read(**/.env)",
+      "Read(**/.env.*)",
+      "Read(**/.envrc)",
+      "Read(**/.dev.vars)",
+      "Read(**/*.pem)",
+      "Read(**/*.key)",
+      "Read(**/*.p12)",
+      "Read(**/*.pfx)",
+      "Read(**/id_rsa*)",
+      "Read(**/id_ed25519*)",
+      "Read(**/.netrc)",
+      "Read(**/.git-credentials)",
+      "Read(**/secrets/**)",
+      "Bash(gh auth token*)",
+      "Bash(printenv*)"
+    ]
+  }
+}
