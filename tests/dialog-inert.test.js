@@ -62,13 +62,26 @@ describe('openNewRecordPicker', () => {
         expect(doc.activeElement).toBe(opener);
     });
 
-    it('leaves focus alone on close when the opener was removed', () => {
+    it('does not focus the opener on close when it was removed', () => {
         const opener = addOpener();
         win.openNewRecordPicker({ id: 's1', name: '測試咖啡' });
         opener.remove();
+        let focused = 0;
+        opener.focus = () => { focused++; };
         backdrop().querySelector('.modal-close').click();
         expectNoInert();
-        expect(doc.activeElement).not.toBe(opener);
+        expect(focused).toBe(0);
+    });
+
+    it('does not focus the opener when a type is picked (the page navigates away)', () => {
+        const opener = addOpener();
+        win.openNewRecordPicker({ id: 's1', name: '測試咖啡' });
+        let focused = 0;
+        opener.focus = () => { focused++; };
+        backdrop().querySelector('.new-mode-picker-btn').click();
+        expect(backdrop()).toBeNull();
+        expectNoInert();
+        expect(focused).toBe(0);
     });
 });
 

@@ -5272,19 +5272,20 @@ function openNewRecordPicker(shop) {
     const restoreBackground = inertBackground(backdrop);
     backdrop.querySelector('.new-mode-picker-btn')?.focus();
 
-    const close = () => {
+    const close = (restoreFocus = true) => {
         backdrop.remove();
         document.body.classList.remove('modal-open-custom');
         restoreBackground();
-        if (opener?.isConnected) opener.focus?.();
+        if (restoreFocus && opener?.isConnected) opener.focus?.();
     };
-    backdrop.querySelector('.modal-close').addEventListener('click', close);
+    backdrop.querySelector('.modal-close').addEventListener('click', () => close());
     backdrop.addEventListener('click', e => {
         if (e.target === backdrop) close();
     });
     // Anchors navigate via the hash router; close the dialog so it doesn't linger.
+    // 不還焦點：開啟者馬上會被導頁重繪掉。
     backdrop.querySelectorAll('.new-mode-picker-btn').forEach(btn =>
-        btn.addEventListener('click', close));
+        btn.addEventListener('click', () => close(false)));
 }
 
 // ─── View: shop detail ──────────────────────────────────────────────────────
