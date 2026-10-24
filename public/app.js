@@ -428,6 +428,16 @@ function showErrorToast(msg) {
     showToast(msg, 4000, true);
 }
 
+// 對話框開著時把背景設成 inert：Tab、點擊、螢幕閱讀器都進不去。#toastMsg 不設，
+// 對話框開著時跳出的 toast 才念得出來。回傳還原函式；只還原這次設的
+// （疊兩層時外層的 inert 不受影響）。
+function inertBackground(backdrop) {
+    const set = [...document.body.children].filter(el =>
+        el !== backdrop && el.id !== 'toastMsg' && !el.hasAttribute('inert'));
+    set.forEach(el => el.setAttribute('inert', ''));
+    return () => set.forEach(el => el.removeAttribute('inert'));
+}
+
 // 取代原生 confirm()：resolve(true) = 確認。message 以 textContent 塞入，
 // 換行靠 .confirm-dialog-message 的 white-space: pre-line 呈現。
 function confirmDialog({ title = '確認', message = '', confirmText = '確認', cancelText = '取消', danger = false } = {}) {
@@ -456,6 +466,7 @@ function confirmDialog({ title = '確認', message = '', confirmText = '確認',
             document.removeEventListener('keydown', onKey);
             backdrop.remove();
             document.body.classList.remove('modal-open-custom');
+            restoreBackground();
             opener?.focus?.();
             resolve(result);
         };
@@ -466,6 +477,7 @@ function confirmDialog({ title = '確認', message = '', confirmText = '確認',
 
         document.body.appendChild(backdrop);
         document.body.classList.add('modal-open-custom');
+        const restoreBackground = inertBackground(backdrop);
         backdrop.querySelector('[data-confirm="cancel"]').focus();
     });
 }
@@ -1371,6 +1383,7 @@ function openFilterDrawer() {
         <button type="button" class="filter-chip ${t.cssClass} ${f.tiers.includes(t.id) ? 'selected' : ''}"
                 data-tier-id="${t.id}">${t.medal} | ${escapeHtml(t.label)}</button>`).join('');
 
+    const opener = document.activeElement;
     const backdrop = document.createElement('div');
     backdrop.className = 'modal-backdrop-custom filter-drawer-backdrop';
     backdrop.innerHTML = `
@@ -1403,11 +1416,15 @@ function openFilterDrawer() {
 
     document.body.appendChild(backdrop);
     document.body.classList.add('modal-open-custom');
+    const restoreBackground = inertBackground(backdrop);
     requestAnimationFrame(() => backdrop.classList.add('show'));
+    backdrop.querySelector('.modal-close').focus();
 
     const close = () => {
         backdrop.remove();
         document.body.classList.remove('modal-open-custom');
+        restoreBackground();
+        if (opener?.isConnected) opener.focus?.();
     };
     backdrop.addEventListener('click', e => { if (e.target === backdrop) close(); });
     backdrop.querySelector('.modal-close').addEventListener('click', close);
@@ -2739,6 +2756,7 @@ function openShopPicker({ currentId = '', allowEmpty = true, emptyLabel = '— �
         </div>`;
     document.body.appendChild(backdrop);
     document.body.classList.add('modal-open-custom');
+    const restoreBackground = inertBackground(backdrop);
 
     const listEl = backdrop.querySelector('.shop-picker-list');
     const searchEl = backdrop.querySelector('.shop-picker-search');
@@ -2757,6 +2775,7 @@ function openShopPicker({ currentId = '', allowEmpty = true, emptyLabel = '— �
         backdrop.remove();
         document.body.classList.remove('modal-open-custom');
         document.removeEventListener('keydown', onKey);
+        restoreBackground();
         if (opener && typeof opener.focus === 'function') opener.focus();
     }
     // 第二個引數只在「這次新建出來的店家」時才帶，呼叫端靠它區分「找到既有店家」
@@ -5231,6 +5250,8 @@ async function viewShopsList(root) {
 
 // ─── Dialog: pick record type for a shop ────────────────────────────────────
 function openNewRecordPicker(shop) {
+    // 店家列表新增店家後才開的話，開啟者已被重繪移除，關閉時就不還焦點。
+    const opener = document.activeElement;
     const backdrop = document.createElement('div');
     backdrop.className = 'modal-backdrop-custom';
     backdrop.innerHTML = `
@@ -5248,10 +5269,14 @@ function openNewRecordPicker(shop) {
         </div>`;
     document.body.appendChild(backdrop);
     document.body.classList.add('modal-open-custom');
+    const restoreBackground = inertBackground(backdrop);
+    backdrop.querySelector('.new-mode-picker-btn')?.focus();
 
     const close = () => {
         backdrop.remove();
         document.body.classList.remove('modal-open-custom');
+        restoreBackground();
+        if (opener?.isConnected) opener.focus?.();
     };
     backdrop.querySelector('.modal-close').addEventListener('click', close);
     backdrop.addEventListener('click', e => {
