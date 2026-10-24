@@ -4719,6 +4719,8 @@ function formatClockTime(d) {
 
 // 完成評分 / 刪除沒拿到回應：可能其實已寫進去，也可能沒有。伺服器有回應（e.status）或
 // 需要重新登入（session_expired）才確定沒寫；否則標成 'unsure'，下次暫存前先問伺服器。
+// 已知且接受的時間窗：連線斷了但請求還在 Worker 裡跑，GET 先讀到 scoring，之後的暫存
+// 可能在完成評分寫入後才到，把場次退回 ②（要完全擋掉得由伺服器拒絕降級）。
 function closingAfterFailure(e) {
     return e.status || e.message === 'session_expired' ? false : 'unsure';
 }
@@ -4736,6 +4738,8 @@ async function sessionStillScoring(form) {
 function autosaveSession({ keepalive = false } = {}) {
     const form = state.currentForm;
     if (form?.mode !== 'session' || form.stage !== 'scoring' || form.closing === true || !form.saveChain) return;
+    // 'unsure' 時要先 await 一次 GET，背景暫存等不到那時就可能被凍結；留給下次切杯。
+    if (keepalive && form.closing === 'unsure') return;
     syncActiveCup();
     const snap = sessionSnapshot();
     if (snap === form.savedSnapshot || (!keepalive && snap === form.pendingSnapshot)) return;
@@ -4748,6 +4752,7 @@ function autosaveSession({ keepalive = false } = {}) {
         try {
             if (gen !== form.saveGen) return; // 已有更新的一份
             if (form.closing === 'unsure' && !(await sessionStillScoring(form))) return;
+            if (gen !== form.saveGen) return; // 等 GET 時又排進了更新的一份
             await api.saveSession(form.id, session, cups, { keepalive: useKeepalive });
             // 後回來的視為伺服器上最後寫入的版本；比它新的若先回來，下次切杯會再送一次。
             form.savedSnapshot = snap;

@@ -835,6 +835,43 @@ describe('② 自動暫存', () => {
         expect(calls.map(c => c.method)).toEqual(['PUT', 'GET', 'PUT', 'PUT']); // 確認過一次就不再問
     });
 
+    it('結果不明、等 GET 時又切杯 → 只送最新的那一份暫存', async () => {
+        await mount([cupA, cupB], { recordId: 's1' });
+        const check = deferred();
+        record((p, init) => {
+            if (init.method === 'PUT' && init.body.session.stage === 'reveal') return Promise.reject(new TypeError('Failed to fetch'));
+            if (!init.method) return check.promise;
+            return Promise.resolve(null);
+        });
+        await quietly(() => win.submitSessionForm());
+        scoreCupB();
+        clickTab(0); // A：先等 GET
+        await flush();
+        typeInto($('#f-notes'), '等 GET 時改的');
+        clickTab(1); // B：排在 A 後面
+        check.resolve({ stage: 'scoring' });
+        await flush();
+        await flush();
+        const scoring = puts().filter(c => c.body.session.stage === 'scoring');
+        expect(scoring).toHaveLength(1);
+        expect(scoring[0].body.cups[0].notes).toBe('等 GET 時改的');
+    });
+
+    it('結果不明時切到背景 → 不暫存（留給下次切杯先問伺服器）', async () => {
+        await mount([cupA, cupB], { recordId: 's1' });
+        record((p, init) => (init.method === 'PUT' && init.body.session.stage === 'reveal'
+            ? Promise.reject(new TypeError('Failed to fetch'))
+            : Promise.resolve(init.method ? null : { stage: 'scoring' })));
+        await quietly(() => win.submitSessionForm());
+        scoreCupB();
+        hide();
+        await flush();
+        expect(calls.map(c => c.method)).toEqual(['PUT']);
+        clickTab(0);
+        await flush();
+        expect(calls.map(c => c.method)).toEqual(['PUT', 'GET', 'PUT']);
+    });
+
     it('完成評分遇到 session_expired（確定沒寫）→ 不必問伺服器，照樣暫存', async () => {
         await mount([cupA, cupB], { recordId: 's1' });
         record((p, init) => (init.method === 'PUT' && init.body.session.stage === 'reveal'
