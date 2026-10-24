@@ -781,11 +781,11 @@ describe('② 自動暫存', () => {
         expect(puts()[0].body.session.stage).toBe('reveal');
     });
 
-    it('完成評分失敗 → 留在 ②，之後切杯照樣暫存', async () => {
+    it('完成評分被伺服器拒絕 → 留在 ②，之後切杯照樣暫存', async () => {
         await mount([cupA, cupB], { recordId: 's1' });
         let failSubmit = true;
         record((p, init) => (init.method === 'PUT' && init.body.session.stage === 'reveal' && failSubmit
-            ? Promise.reject(new Error('boom'))
+            ? Promise.reject(Object.assign(new Error('boom'), { status: 500 }))
             : Promise.resolve(null)));
         await quietly(() => win.submitSessionForm());
         failSubmit = false;
@@ -793,6 +793,54 @@ describe('② 自動暫存', () => {
         clickTab(0);
         await flush();
         expect(puts().map(c => c.body.session.stage)).toEqual(['reveal', 'scoring']);
+    });
+
+    it.each([
+        ['完成評分', () => win.submitSessionForm(), 'PUT'],
+        ['刪除', () => win.deleteCurrentSession(), 'DELETE'],
+    ])('%s連線中斷（沒拿到回應，可能其實成功了）→ 之後切杯不再暫存', async (_, act, method) => {
+        await mount([cupA, cupB], { recordId: 's1' });
+        record((p, init) => (init.method === method
+            ? Promise.reject(new TypeError('Failed to fetch'))
+            : Promise.resolve(null)));
+        win.confirmDialog = () => Promise.resolve(true);
+        await quietly(act);
+        scoreCupB();
+        clickTab(0);
+        hide();
+        await flush();
+        expect(calls.map(c => c.method)).toEqual([method]);
+    });
+
+    it('暫存還在路上時切到背景 → 不等前一個回來，立刻送出帶 keepalive 的暫存', async () => {
+        await mount([cupA, cupB], { recordId: 's1' });
+        const first = deferred();
+        record((p, init) => (init.method === 'PUT' && puts().length === 1 ? first.promise : Promise.resolve(null)));
+        scoreCupB();
+        clickTab(0);
+        await flush(); // 第一個 PUT 已送出、還沒回來
+        typeInto($('#f-notes'), '鎖螢幕前');
+        hide();
+        await flush();
+        expect(puts().map(c => c.keepalive)).toEqual([false, true]);
+        expect(puts()[1].body.cups[0].notes).toBe('鎖螢幕前');
+        first.resolve(null);
+        await flush();
+    });
+
+    it('暫存還在路上時再切杯（沒改）→ 不重送同一份', async () => {
+        await mount([cupA, cupB], { recordId: 's1' });
+        const first = deferred();
+        record((p, init) => (init.method === 'PUT' ? first.promise : Promise.resolve(null)));
+        scoreCupB();
+        clickTab(0);
+        clickTab(1);
+        clickTab(0);
+        await flush();
+        expect(puts()).toHaveLength(1);
+        first.resolve(null);
+        await flush();
+        expect(puts()).toHaveLength(1);
     });
 
     it('刪除還沒回來時切杯或切到背景 → 不送任何 PUT', async () => {
