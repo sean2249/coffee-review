@@ -72,4 +72,23 @@ describe('confirmDialog', () => {
         backdrop.querySelector('[data-confirm="cancel"]').click();
         await p;
     });
+
+    it('inerts the background (not the toast) while open and restores focus after', async () => {
+        ({ window: win, document: doc } = await loadApp({
+            bodyHtml: '<main id="app"></main><nav class="tabbar"></nav>',
+        }));
+        win.showToast('x');
+        const opener = doc.createElement('button');
+        doc.getElementById('app').appendChild(opener);
+        opener.focus();
+        const { p, backdrop } = openDialog({ message: 'x' });
+        expect(doc.getElementById('app').hasAttribute('inert')).toBe(true);
+        expect(doc.querySelector('.tabbar').hasAttribute('inert')).toBe(true);
+        expect(backdrop.hasAttribute('inert')).toBe(false);
+        expect(doc.getElementById('toastMsg').hasAttribute('inert')).toBe(false);
+        backdrop.querySelector('[data-confirm="cancel"]').click();
+        await p;
+        expect(doc.querySelectorAll('[inert]').length).toBe(0);
+        expect(doc.activeElement).toBe(opener);
+    });
 });

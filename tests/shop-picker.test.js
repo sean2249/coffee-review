@@ -134,4 +134,24 @@ describe('openShopPicker — focus management', () => {
         doc.dispatchEvent(new doc.defaultView.KeyboardEvent('keydown', { key: 'Escape' }));
         expect(doc.activeElement).toBe(opener);
     });
+
+    it('inerts the background (not the toast) while open and clears it on close', async () => {
+        ({ window: win, document: doc, dom } = await loadApp({
+            bodyHtml: '<main id="app"></main><nav class="tabbar"></nav>',
+        }));
+        seedShops(SHOPS);
+        win.showToast('x');
+        const opener = doc.createElement('button');
+        doc.getElementById('app').appendChild(opener);
+        opener.focus();
+        win.openShopPicker({ allowEmpty: false });
+        expect(doc.getElementById('app').hasAttribute('inert')).toBe(true);
+        expect(doc.querySelector('.tabbar').hasAttribute('inert')).toBe(true);
+        expect(backdrop().hasAttribute('inert')).toBe(false);
+        expect(doc.getElementById('toastMsg').hasAttribute('inert')).toBe(false);
+        doc.dispatchEvent(new doc.defaultView.KeyboardEvent('keydown', { key: 'Escape' }));
+        expect(doc.querySelectorAll('[inert]').length).toBe(0);
+        expect(doc.activeElement).toBe(opener);
+    });
 });
+
