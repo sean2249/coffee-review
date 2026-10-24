@@ -83,6 +83,18 @@ describe('openNewRecordPicker', () => {
         expectNoInert();
         expect(focused).toBe(0);
     });
+
+    it('still returns focus when a type is opened in a new tab (modifier click)', () => {
+        const opener = addOpener();
+        win.openNewRecordPicker({ id: 's1', name: '測試咖啡' });
+        const link = backdrop().querySelector('.new-mode-picker-btn');
+        // 只驗焦點；擋掉預設動作，jsdom 才不會真的去改 hash。
+        link.addEventListener('click', e => e.preventDefault());
+        link.dispatchEvent(new win.MouseEvent('click', { bubbles: true, cancelable: true, ctrlKey: true }));
+        expect(backdrop()).toBeNull();
+        expectNoInert();
+        expect(doc.activeElement).toBe(opener);
+    });
 });
 
 describe('inertBackground — stacked dialogs', () => {

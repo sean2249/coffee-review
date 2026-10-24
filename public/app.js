@@ -5283,9 +5283,10 @@ function openNewRecordPicker(shop) {
         if (e.target === backdrop) close();
     });
     // Anchors navigate via the hash router; close the dialog so it doesn't linger.
-    // 不還焦點：開啟者馬上會被導頁重繪掉。
+    // 一般點擊會在本頁導頁、開啟者馬上被重繪掉，就不還焦點；修飾鍵點擊開新分頁，本頁不動，照常還。
     backdrop.querySelectorAll('.new-mode-picker-btn').forEach(btn =>
-        btn.addEventListener('click', () => close(false)));
+        btn.addEventListener('click', e =>
+            close(e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey)));
 }
 
 // ─── View: shop detail ──────────────────────────────────────────────────────
