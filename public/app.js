@@ -431,7 +431,12 @@ function showToast(msg, ms = 2000, isError = false) {
     el.classList.toggle('error', isError);
     el.classList.add('show');
     clearTimeout(el._t);
-    el._t = setTimeout(() => el.classList.remove('show'), ms);
+    clearTimeout(el._tClear);
+    el._t = setTimeout(() => {
+        el.classList.remove('show');
+        // 淡出（0.2s）後清空：opacity 0 不會把文字移出無障礙樹，留著會讓人在 status 區念到過期訊息。
+        el._tClear = setTimeout(() => { el.textContent = ''; }, 200);
+    }, ms);
 }
 
 function showErrorToast(msg) {

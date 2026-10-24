@@ -42,4 +42,24 @@ describe('toast live region', () => {
         expect(el.classList.contains('error')).toBe(true);
         expect(doc.querySelectorAll('#toastMsg')).toHaveLength(1);
     });
+
+    it('clears the text after the toast fades out, so no stale message lingers', async () => {
+        const el = doc.getElementById('toastMsg');
+        win.showToast('✓ 已儲存', 10);
+        expect(el.textContent).toBe('✓ 已儲存');
+        await new Promise(resolve => setTimeout(resolve, 300));
+        expect(el.classList.contains('show')).toBe(false);
+        expect(el.textContent).toBe('');
+        expectLiveRegion(el);
+    });
+
+    it('a new toast during the fade-out is not wiped by the earlier clear', async () => {
+        const el = doc.getElementById('toastMsg');
+        win.showToast('第一則', 10);
+        await new Promise(resolve => setTimeout(resolve, 50));
+        win.showErrorToast('儲存失敗');
+        await new Promise(resolve => setTimeout(resolve, 300));
+        expect(el.textContent).toBe('儲存失敗');
+        expect(el.classList.contains('show')).toBe(true);
+    });
 });
