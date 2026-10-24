@@ -409,14 +409,24 @@ function setupDraftAutosave(mode, recordId, {
     state.currentForm.cancelDraftSave = () => clearTimeout(timer);
 }
 
-function showToast(msg, ms = 2000, isError = false) {
+// 螢幕閱讀器只念「已在 DOM 裡的 live region 內容變了」，所以啟動時就建好空節點，
+// 第一則 toast 才念得出來。錯誤 toast 共用同一節點、同樣 polite（動態換屬性各家表現不一）。
+function ensureToastNode() {
     let el = document.getElementById('toastMsg');
     if (!el) {
         el = document.createElement('div');
         el.id = 'toastMsg';
         el.className = 'toast-msg';
+        el.setAttribute('role', 'status');
+        el.setAttribute('aria-live', 'polite');
+        el.setAttribute('aria-atomic', 'true');
         document.body.appendChild(el);
     }
+    return el;
+}
+
+function showToast(msg, ms = 2000, isError = false) {
+    const el = ensureToastNode();
     el.textContent = msg;
     el.classList.toggle('error', isError);
     el.classList.add('show');
@@ -5559,6 +5569,7 @@ async function viewShopDetail(root, shopId) {
 
 // ─── Init ────────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
+    ensureToastNode();
     if (!location.hash) location.hash = '#/records';
     const root = document.getElementById('app');
     if (root) root.innerHTML = '<div class="empty-state"><i class="bi bi-hourglass-split"></i>載入中…</div>';
