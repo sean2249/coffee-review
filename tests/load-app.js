@@ -34,6 +34,8 @@ export async function loadApp({ bodyHtml = '<main id="app"></main>' } = {}) {
     if (!ctx.CSS) {
         ctx.CSS = { escape: v => String(v).replace(/[^\w-]/gu, c => `\\${c}`) };
     }
+    // jsdom 的 window 也沒有 TextEncoder（自動暫存用它算 keepalive 的 body 大小）；同樣是 harness 缺口。
+    if (!ctx.TextEncoder) ctx.TextEncoder = TextEncoder;
     // initAuth 會打 /api/me；jsdom 沒有 fetch，它會 reject 並被 initAuth 吞掉，
     // 留下 state.user = null（未登入）。只靜音那一則，其餘 console.error 照樣浮出來
     // —— 全部靜音會讓測試裡真正的例外變成看不見。

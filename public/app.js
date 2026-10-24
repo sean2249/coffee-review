@@ -269,146 +269,6 @@ function fmtDate(iso) {
     return d.toLocaleDateString('zh-TW', { year: 'numeric', month: '2-digit', day: '2-digit' });
 }
 
-// ─── Form draft autosave (localStorage) ──────────────────────────────────────
-// 草稿 = 一份 record 形狀的 payload（buildFormPayload 產出、applyRecordToForm 還原）。
-// 讀寫全包 try/catch：隱私模式 / 配額滿時靜默降級，不影響表單運作。
-const DRAFT_PREFIX = 'coffee-review:draft:';
-const DRAFT_SCHEMA = 1;
-const DRAFT_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 天過期保護
-
-function draftKey(mode, recordId) {
-    return DRAFT_PREFIX + (recordId ? `${mode}/${recordId}` : `new/${mode}`);
-}
-
-function writeDraft(key, mode, payload) {
-    try {
-        localStorage.setItem(key, JSON.stringify({
-            schema: DRAFT_SCHEMA,
-            savedAt: Date.now(),
-            mode,
-            payload,
-        }));
-    } catch { /* localStorage 不可用 → 略過 */ }
-}
-
-function readDraft(key) {
-    let raw;
-    try {
-        raw = localStorage.getItem(key);
-    } catch { return null; }
-    if (!raw) return null;
-
-    let obj;
-    try {
-        obj = JSON.parse(raw);
-    } catch {
-        clearDraft(key); // 壞掉的 JSON 直接清掉
-        return null;
-    }
-    if (!obj || obj.schema !== DRAFT_SCHEMA || typeof obj.savedAt !== 'number') {
-        clearDraft(key); // 版本不符 / 結構壞掉
-        return null;
-    }
-    if (Date.now() - obj.savedAt > DRAFT_TTL_MS) {
-        clearDraft(key); // 過期
-        return null;
-    }
-    return obj; // { schema, savedAt, mode, payload }
-}
-
-function clearDraft(key) {
-    try {
-        localStorage.removeItem(key);
-    } catch { /* ignore */ }
-}
-
-function formatDraftAge(savedAt) {
-    const diff = Date.now() - savedAt;
-    const min = Math.floor(diff / 60000);
-    if (min < 1) return '剛剛';
-    if (min < 60) return `${min} 分鐘前`;
-    const hr = Math.floor(min / 60);
-    if (hr < 24) return `${hr} 小時前`;
-    return `${Math.floor(hr / 24)} 天前`;
-}
-
-// 內嵌還原列，插在表單最上方（不用 modal）。onRestore / onDiscard 由呼叫端提供。
-function showDraftBanner(form, draft, onRestore, onDiscard) {
-    form.querySelector('.draft-banner')?.remove();
-    const banner = document.createElement('div');
-    banner.className = 'draft-banner';
-    banner.setAttribute('role', 'status');
-    banner.innerHTML = `
-        <span class="draft-banner-text">
-            <i class="bi bi-clock-history"></i>
-            發現未儲存的草稿（${escapeHtml(formatDraftAge(draft.savedAt))}），要還原嗎？
-        </span>
-        <span class="draft-banner-actions">
-            <button type="button" class="btn btn-sm btn-primary" data-draft="restore">還原</button>
-            <button type="button" class="btn btn-sm btn-outline-secondary" data-draft="discard">刪除草稿</button>
-        </span>`;
-    banner.querySelector('[data-draft="restore"]').addEventListener('click', () => {
-        onRestore();
-        banner.remove();
-        showToast('✓ 已還原草稿');
-    });
-    banner.querySelector('[data-draft="discard"]').addEventListener('click', () => {
-        onDiscard();
-        banner.remove();
-    });
-    form.prepend(banner);
-}
-
-// 掛在 viewForm 尾端：進場偵測草稿 → 顯示 banner；並綁 debounce 自動儲存。
-// build / apply 預設是單筆記錄的 payload；杯測場次傳自己的（場次 + 所有杯）。
-function setupDraftAutosave(mode, recordId, {
-    build = () => buildFormPayload(mode),
-    apply = payload => applyRecordToForm(mode, payload),
-} = {}) {
-    const form = document.querySelector('.record-form');
-    if (!form) return;
-    const key = draftKey(mode, recordId);
-
-    // baseline = 目前乾淨表單的序列化；草稿只在偏離 baseline 後才寫，
-    // 改回原狀則清除，避免把 pristine 表單也存成草稿。
-    // 還原草稿後 baseline 不重拍：還原的內容同樣是「未儲存」，若拿它當 baseline，
-    // 還原鈕的 click 冒泡到下面的 schedule（或改一下又改回來）就會把草稿清掉。
-    const baseline = JSON.stringify(build());
-
-    const existing = readDraft(key);
-    if (existing && existing.payload) {
-        showDraftBanner(form, existing,
-            () => apply(existing.payload),
-            () => clearDraft(key),
-        );
-    }
-
-    let timer = null;
-    const schedule = () => {
-        // 同步在事件當下就把 payload 算好（此時表單仍掛載）；setTimeout 只負責寫入。
-        // 如此即使使用者輸入後立刻離開頁面（表單被卸載、DOM 消失），最後一次輸入
-        // 仍會被存下，也不會因 build 讀不到 #f-shop 而在 timeout 內丟錯。
-        const current = JSON.stringify(build());
-        clearTimeout(timer);
-        timer = setTimeout(() => {
-            if (current === baseline) {
-                clearDraft(key); // 改回原狀 → 不留草稿
-            } else {
-                writeDraft(key, mode, JSON.parse(current));
-            }
-        }, 300);
-    };
-
-    // input/change 抓原生輸入；click 抓 chip / 風味輪 / CoE / 分數等非輸入互動。
-    form.addEventListener('input', schedule);
-    form.addEventListener('change', schedule);
-    form.addEventListener('click', schedule);
-
-    // 供 submit 成功後清草稿 + 取消尚未觸發的 debounce（避免 clear 後又被寫回）。
-    state.currentForm.draftKey = key;
-    state.currentForm.cancelDraftSave = () => clearTimeout(timer);
-}
-
 // 螢幕閱讀器只念「已在 DOM 裡的 live region 內容變了」，所以啟動時就建好空節點，
 // 第一則 toast 才念得出來。錯誤 toast 共用同一節點、同樣 polite（動態換屬性各家表現不一）。
 function ensureToastNode() {
@@ -527,7 +387,7 @@ function clearAuthReloadMark() {
     }
 }
 
-async function apiFetch(path, { method = 'GET', body } = {}) {
+async function apiFetch(path, { method = 'GET', body, keepalive = false } = {}) {
     const hasBody = body !== undefined;
     const res = await fetch(path, {
         method,
@@ -536,6 +396,7 @@ async function apiFetch(path, { method = 'GET', body } = {}) {
             : { accept: 'application/json' },
         body: hasBody ? JSON.stringify(body) : undefined,
         credentials: 'same-origin',   // 帶上 Cloudflare Access 的 CF_Authorization cookie
+        keepalive,                    // app 切到背景時的暫存：頁面被收起也要送完
         // Access 的 session 過期時 /api/* 會 302 到 team domain。預設的 follow 會讓
         // fetch 跟過去，然後因為跨來源沒有 CORS 標頭而 reject 成 TypeError —— 那樣
         // 就偵測不到「該重新登入了」。manual 讓它回一個 type 'opaqueredirect' 的空
@@ -638,8 +499,8 @@ const api = {
     // 新增與編輯共用。場次與杯的 id 都由前端產生，整個請求是可重送的：任何一步
     // 失敗（含「寫入成功但回應遺失」），按儲存重試即可收斂。cups 至少一杯。
     // Worker 端是一個交易，所以失敗不會留下半截場次（舊版的 isNew 補償因此消失）。
-    saveSession(id, session, cups) {
-        return apiFetch(`/api/sessions/${enc(id)}`, { method: 'PUT', body: { session, cups } });
+    saveSession(id, session, cups, { keepalive } = {}) {
+        return apiFetch(`/api/sessions/${enc(id)}`, { method: 'PUT', body: { session, cups }, keepalive });
     },
 
     deleteSession(id) {
@@ -2376,9 +2237,6 @@ async function viewForm(root, { mode, recordId, prefillShopId = null }) {
         document.getElementById('f-save-label').textContent = '儲存';
         document.getElementById('f-delete').hidden = true;
     }
-
-    // baseline 需拍在表單完整初始化／還原之後。
-    setupDraftAutosave(mode, recordId);
 }
 
 function applyShopPrefill(shopId) {
@@ -3843,15 +3701,22 @@ function formShopNoteIsDirty() {
     return JSON.stringify(buildShopNotePayload()) !== formShopNote.baseline;
 }
 
-// 記錄與筆記分屬兩張表：記錄存完才寫筆記。筆記失敗不該讓已存檔的記錄看起來失敗，
-// 但也不能無聲無息 —— toast 只有一個節點，這裡自己跳提示會馬上被 submitForm 的
-// 成功訊息蓋掉，所以只回傳成敗，由 submitForm 決定最後顯示哪一句。
-async function saveFormShopNoteIfDirty() {
-    if (!formShopNote.shopId || !formShopNoteIsDirty()) return true;
-    const payload = buildShopNotePayload();
+// 記錄與筆記分屬兩張表：記錄存完才寫筆記。筆記要在送出記錄「之前」先快照：記錄
+// 回來時使用者可能已離開表單，那時的 DOM 已不是這張表單。沒有要存的筆記 → null。
+function snapshotFormShopNote() {
+    if (!formShopNote.shopId || !formShopNoteIsDirty()) return null;
+    return { shopId: formShopNote.shopId, payload: buildShopNotePayload() };
+}
+
+// 筆記失敗不該讓已存檔的記錄看起來失敗，但也不能無聲無息 —— toast 只有一個節點，
+// 這裡自己跳提示會馬上被 submitForm 的成功訊息蓋掉，所以只回傳成敗，由 submitForm
+// 決定最後顯示哪一句。updateBaseline：表單還在時才重拍 baseline（離開後 formShopNote
+// 可能已屬於別張表單）。
+async function saveShopNoteSnapshot(snapshot, { updateBaseline }) {
+    if (!snapshot) return true;
     try {
-        await api.upsertShopNote(formShopNote.shopId, payload);
-        formShopNote.baseline = JSON.stringify(payload);
+        await api.upsertShopNote(snapshot.shopId, snapshot.payload);
+        if (updateBaseline) formShopNote.baseline = JSON.stringify(snapshot.payload);
         return true;
     } catch (e) {
         console.error(e);
@@ -4071,7 +3936,8 @@ function buildFormPayload(mode) {
 
 async function submitForm() {
     if (!state.currentForm) return;
-    const { mode, recordId } = state.currentForm;
+    const form = state.currentForm;
+    const { mode, recordId } = form;
 
     // Bean type must be validated first — bean-name inputs are now hidden
     // until a type is chosen, so focusing them before that would be confusing.
@@ -4114,24 +3980,25 @@ async function submitForm() {
 
     const saveBtn = document.getElementById('f-save');
     saveBtn.disabled = true;
+    // 存檔期間使用者可能已離開：店家筆記送出前先快照，回來後不管還在不在都用快照存；
+    // 也不把人從別頁拉回記錄頁。
+    const stillHere = () => state.currentForm === form;
+    const noteSnapshot = snapshotFormShopNote();
+    const saveNote = () => saveShopNoteSnapshot(noteSnapshot, { updateBaseline: stillHere() });
     try {
         const payload = buildFormPayload(mode);
         if (recordId) {
             await api.updateRecord(mode, recordId, payload);
-            const noteSaved = await saveFormShopNoteIfDirty();
-            state.currentForm?.cancelDraftSave?.();
-            if (state.currentForm?.draftKey) clearDraft(state.currentForm.draftKey);
+            const noteSaved = await saveNote();
             if (noteSaved) showToast('✓ 已更新');
             else showErrorToast('記錄已更新，但店家筆記沒存起來，請再存一次');
         } else {
             const created = await api.createRecord(mode, payload);
-            const noteSaved = await saveFormShopNoteIfDirty();
-            state.currentForm?.cancelDraftSave?.();
-            if (state.currentForm?.draftKey) clearDraft(state.currentForm.draftKey);
+            const noteSaved = await saveNote();
             // 接著就離開表單：筆記沒存成功的話編輯內容也跟著消失，得說清楚。
             if (noteSaved) showToast('✓ 已儲存');
             else showErrorToast('記錄已儲存，但店家筆記沒存起來，請到店家頁再填一次');
-            navigate(`/${mode}/${created.id}`);
+            if (stillHere()) navigate(`/${mode}/${created.id}`);
             return;
         }
     } catch (e) {
@@ -4166,7 +4033,7 @@ async function deleteCurrentRecord() {
     }
 }
 
-// 把一份 record 形狀物件（來自 api 或草稿）套進目前掛載的表單 DOM。
+// 把一份 record 形狀物件（來自 api）套進目前掛載的表單 DOM。
 function applyRecordToForm(mode, r) {
     // shop — the hidden input holds any id regardless of cache, so a deleted
     // shop's FK is preserved on save; renderShopTriggerLabel shows the fallback.
@@ -4300,7 +4167,7 @@ async function loadRecordIntoForm(mode, recordId) {
 // 三個階段只往前走：setup（日期 + 杯數 + 編號）→ scoring（只評分）→ reveal（全部都能改）。
 // 一場多杯，但 DOM 裡同時只有「目前這一杯」的評分元件（#cup-editor：coeState 單例、accordion
 // 全域 id、initEvaluationAccordion 重複呼叫會疊 listener），其他杯存在 state.currentForm.cups。
-// 杯的 code 由編號格子直接寫進 cups，不經過元件；其餘欄位在切換、存檔、草稿前一律先 syncActiveCup()。
+// 杯的 code 由編號格子直接寫進 cups，不經過元件；其餘欄位在切換、存檔、暫存前一律先 syncActiveCup()。
 // 每杯只有 id + code + readCupFromForm() 的 key，絕不含 created_at / user_id / session_id / position。
 const SESSION_STAGES = {
     setup: { name: '① 設定', save: '開始杯測 ›', next: 'scoring' },
@@ -4379,7 +4246,7 @@ function writeCupToForm(c) {
 }
 
 // 由後往前逐杯 write → sync：補齊 key 集合（批次 upsert 需要每杯 key 一致）並正規化
-// jsonb key 順序（否則「只切分頁」也會被草稿當成修改），最後回到原本那一杯。
+// jsonb key 順序（否則「只切分頁」也會被當成修改，自動暫存會多送一次），最後回到原本那一杯。
 // 呼叫前目前這杯要已經 sync 過（或 cups 是剛換上的整批資料）。
 function normalizeCups() {
     const f = state.currentForm;
@@ -4415,6 +4282,7 @@ function switchCup(i) {
     f.activeIndex = i;
     writeCupToForm(f.cups[i]);
     refreshSessionCups();
+    autosaveSession();
 }
 
 function cupTier(c) {
@@ -4495,8 +4363,6 @@ async function removeCups(ids) {
     }
     if (ids.includes(form.revealOpenId)) form.revealOpenId = null;
     renderSessionCups();
-    // 讓草稿記到這次移除（確認框在表單外，原本那一下 click 當時杯還在）。
-    document.querySelector('.session-form')?.dispatchEvent(new Event('change', { bubbles: true }));
 }
 
 function fillRandomCupCodes() {
@@ -4802,7 +4668,7 @@ function initSessionForm() {
     bindSessionHandlers();
 }
 
-// 把場次（來自 api 或草稿）套進表單。
+// 把場次（來自 api）套進表單。
 function applySessionToForm(s) {
     const f = state.currentForm;
     document.getElementById('f-session-date').value = s.session_date || '';
@@ -4813,6 +4679,11 @@ function applySessionToForm(s) {
     f.activeIndex = 0;
     normalizeCups();
     setSessionStage(s.stage || f.stage);
+    // 存檔鏈與「上次存到伺服器的內容」：載入的就是伺服器上的版本。
+    f.saveChain ??= Promise.resolve();
+    f.savedSnapshot = sessionSnapshot();
+    f.pendingSnapshot = null;
+    f.closing = false;
 }
 
 function buildSessionPayload() {
@@ -4828,11 +4699,81 @@ function buildSessionPayload() {
     };
 }
 
-// 草稿 = 場次欄位 + 所有杯（含 id）。不存場次 id 與 activeIndex：單純切分頁不算修改，
-// 還原時一律開第 1 杯。
-function buildSessionDraft() {
+// ─── ② 評分的自動暫存 ───
+// 暫存 = 帶目前 stage（scoring）的 saveSession：存進伺服器但不換階段。切杯與 app 切到背景時觸發。
+// 暫存、完成評分、刪除排在同一條鏈上：否則晚到的暫存會把場次退回 ②，或把剛刪的場次重建
+// （PUT 是 upsert）。完成評分 / 刪除送出時設 form.closing，之後不再排暫存。
+function sessionSnapshot() {
+    return JSON.stringify({ session: buildSessionPayload(), cups: state.currentForm.cups });
+}
+
+function queueSessionWrite(form, fn) {
+    form.saveChain = form.saveChain.then(fn, fn);
+    return form.saveChain;
+}
+
+function formatClockTime(d) {
+    const pad = n => String(n).padStart(2, '0');
+    return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+// 完成評分 / 刪除沒拿到回應：可能其實已寫進去，也可能沒有。伺服器有回應（e.status）或
+// 需要重新登入（session_expired）才確定沒寫；否則標成 'unsure'，下次暫存前先問伺服器。
+// 已知且接受的時間窗：連線斷了但請求還在 Worker 裡跑，GET 先讀到 scoring，之後的暫存
+// 可能在完成評分寫入後才到，把場次退回 ②（要完全擋掉得由伺服器拒絕降級）。
+function closingAfterFailure(e) {
+    return e.status || e.message === 'session_expired' ? false : 'unsure';
+}
+
+// 'unsure' 時：場次還在 ② 才繼續暫存；已到 ③ 或已刪除 → 之後都不暫存。讀不到就維持 'unsure'。
+async function sessionStillScoring(form) {
+    const s = await api.getSession(form.id);
+    if (form.closing === 'unsure') form.closing = s?.stage === 'scoring' ? false : true;
+    return form.closing === false;
+}
+
+// 失敗只跳錯誤 toast、不擋切杯；比對的是上次「成功」的內容，所以下次切杯會再送。
+// 還在路上的那份也不重送（pendingSnapshot），除非是切到背景：那時要另外送一份帶 keepalive 的。
+// 每份暫存都是整場的完整內容，所以排隊中、還沒送出的舊暫存一旦有更新的一份，就不必送了（saveGen）。
+function autosaveSession({ keepalive = false } = {}) {
+    const form = state.currentForm;
+    if (form?.mode !== 'session' || form.stage !== 'scoring' || form.closing === true || !form.saveChain) return;
+    // 'unsure' 時要先 await 一次 GET，背景暫存等不到那時就可能被凍結；留給下次切杯。
+    if (keepalive && form.closing === 'unsure') return;
     syncActiveCup();
-    return { ...buildSessionPayload(), cups: state.currentForm.cups };
+    const snap = sessionSnapshot();
+    if (snap === form.savedSnapshot || (!keepalive && snap === form.pendingSnapshot)) return;
+    const { session, cups } = JSON.parse(snap);
+    // keepalive 的 body 上限約 64KB；超過就照一般請求送（背景時可能被中斷）。
+    const useKeepalive = keepalive && new TextEncoder().encode(snap).length <= 60000;
+    const gen = form.saveGen = (form.saveGen || 0) + 1;
+    form.pendingSnapshot = snap;
+    const send = async () => {
+        try {
+            if (gen !== form.saveGen) return; // 已有更新的一份
+            if (form.closing === 'unsure' && !(await sessionStillScoring(form))) return;
+            if (gen !== form.saveGen) return; // 等 GET 時又排進了更新的一份
+            await api.saveSession(form.id, session, cups, { keepalive: useKeepalive });
+            // 後回來的視為伺服器上最後寫入的版本；比它新的若先回來，下次切杯會再送一次。
+            form.savedSnapshot = snap;
+            if (state.currentForm === form) {
+                const status = document.getElementById('session-autosave-status');
+                if (status) status.textContent = `已自動暫存 ${formatClockTime(new Date())}`;
+            }
+        } catch (e) {
+            console.error(e);
+            showErrorToast('暫存失敗：' + (e.message || e));
+        } finally {
+            if (form.pendingSnapshot === snap) form.pendingSnapshot = null;
+        }
+    };
+    // 切到背景：頁面隨時會被凍結，不能等前一個請求回來才送，所以立刻送出；
+    // 存檔鏈照樣等它回來，完成評分 / 刪除仍排在它後面。
+    if (keepalive) {
+        const sent = send();
+        return queueSessionWrite(form, () => sent);
+    }
+    return queueSessionWrite(form, send);
 }
 
 function renderSessionNotFound() {
@@ -4880,7 +4821,7 @@ async function viewSessionForm(root, { sessionId = null } = {}) {
             return;
         }
         form.savedCupCount = session.cups.length;
-        form.stage = session.stage || 'reveal'; // 舊草稿沒有 stage 時沿用
+        form.stage = session.stage || 'reveal'; // 沒有 stage 時沿用
     } else {
         // 新場次先不放杯：選杯數才長出編號格子。
         session = { session_date: todayLocalIso(), code_style: 'manual', stage: 'setup', cups: [] };
@@ -4896,16 +4837,6 @@ async function viewSessionForm(root, { sessionId = null } = {}) {
 
     applySessionToForm(session);
     document.getElementById('f-delete').hidden = !sessionId;
-
-    // baseline 需拍在表單完整初始化／還原之後。新場次的草稿還原時換新的杯 id：
-    // 草稿不記場次 id，沿用舊杯 id 會把「上次其實已存進去」的杯搬到這個新場次。
-    setupDraftAutosave('session', sessionId, {
-        build: buildSessionDraft,
-        apply: sessionId ? applySessionToForm : draft => applySessionToForm({
-            ...draft,
-            cups: (draft.cups || []).map(c => ({ ...c, id: crypto.randomUUID() })),
-        }),
-    });
 }
 
 // ① → 存成 scoring、② → 存成 reveal：每次換階段都寫回伺服器，再從伺服器重新載入。
@@ -4936,18 +4867,20 @@ async function submitSessionForm() {
     const stage = form.stage;
     const saveBtn = document.getElementById('f-save');
     saveBtn.disabled = true;
+    // 內容在按下當下就定案：排在暫存後面送出時，畫面可能已經換了杯或離開頁面。
+    const session = { ...buildSessionPayload(), stage: SESSION_STAGES[stage].next };
+    const cups = form.cups.slice();
+    form.closing = true;
     try {
-        await api.saveSession(form.id, { ...buildSessionPayload(), stage: SESSION_STAGES[stage].next }, form.cups);
-        // 用拿在手上的 form：存檔期間就算已離開頁面，草稿也要清掉。
-        form.cancelDraftSave?.();
-        if (form.draftKey) clearDraft(form.draftKey);
+        await queueSessionWrite(form, () => api.saveSession(form.id, session, cups));
         showToast(stage === 'reveal' && form.recordId ? '✓ 已更新' : '✓ 已儲存');
-        // 存檔期間已經離開頁面就別把人硬拉回場次頁（草稿還是要清掉）。
+        // 存檔期間已經離開頁面就別把人硬拉回場次頁。
         if (state.currentForm === form) {
             navigate(stage === 'reveal' ? `/session/${form.id}` : `/session/${form.id}/edit`);
         }
     } catch (e) {
         // 表單與記憶體都原封不動，直接再按一次儲存即可重試。
+        form.closing = closingAfterFailure(e);
         console.error(e);
         showErrorToast('儲存失敗：' + (e.message || e));
     } finally {
@@ -4966,14 +4899,13 @@ async function deleteCurrentSession() {
         danger: true,
     });
     if (!ok || state.currentForm !== form) return;
+    form.closing = true;
     try {
-        await api.deleteSession(form.recordId);
-        // 按刪除那一下 click 也排了一次草稿寫入，要一起取消 / 清掉。
-        form.cancelDraftSave?.();
-        if (form.draftKey) clearDraft(form.draftKey);
+        await queueSessionWrite(form, () => api.deleteSession(form.recordId));
         showToast('✓ 已刪除');
         navigate('/records');
     } catch (e) {
+        form.closing = closingAfterFailure(e);
         showErrorToast('刪除失敗：' + (e.message || e));
     }
 }
@@ -5600,7 +5532,20 @@ async function viewShopDetail(root, shopId) {
 }
 
 // ─── Init ────────────────────────────────────────────────────────────────────
+// 舊版的表單草稿存在 localStorage，功能移除後清掉，不讓舊資料永遠留著。
+function purgeLegacyDrafts() {
+    try {
+        const keys = [];
+        for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            if (key?.startsWith('coffee-review:draft:')) keys.push(key);
+        }
+        keys.forEach(key => localStorage.removeItem(key));
+    } catch { /* localStorage 不可用 → 略過 */ }
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
+    purgeLegacyDrafts();
     ensureToastNode();
     if (!location.hash) location.hash = '#/records';
     const root = document.getElementById('app');
@@ -5611,5 +5556,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     authBootstrapped = true;
     // 在 auth 就緒後才掛 hashchange，避免 bootstrap 期間的 hash 設定觸發一次半成品 render。
     window.addEventListener('hashchange', renderRoute);
+    // iOS 可能直接關掉背景的 PWA：切到背景時先把 ② 評分到一半的內容暫存起來。
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'hidden') autosaveSession({ keepalive: true });
+    });
     renderRoute();
 });

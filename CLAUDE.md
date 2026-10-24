@@ -177,7 +177,7 @@ first paint would be the sign-in prompt.
 **杯測場次 form** (`#tpl-session-form`, `viewSessionForm`) is separate from `#tpl-form`. It
 reuses the same CoE card / accordion ids, but only **one cup's widgets are in the DOM at a
 time**. The other cups live in `state.currentForm.cups`; call `syncActiveCup()` before
-reading `cups` (switch / save / draft / overview). `writeCupToForm` must *reset* every
+reading `cups` (switch / save / overview). `writeCupToForm` must *reset* every
 widget (`applyEvaluationsToForm` resets missing keys to defaults). Every cup holds exactly
 `id` + `readCupFromForm()` keys: never `created_at`, `user_id`, `session_id` or `position`.
 The bulk upsert needs identical key sets. `initEvaluationAccordion` runs once per mount
@@ -215,7 +215,7 @@ swaps structurally impossible to collide; it also subsumes the old `.not('id','i
 cleanup of half-finished saves. Surviving cups keep their original `created_at`.
 PUTting a session id that belongs to someone else is rejected as 404 before the batch.
 `viewSessionForm` loads data before mounting the template, so nothing can be saved
-half-loaded. Restoring a *new*-session draft gives the cups fresh ids.
+half-loaded.
 Cups reference sessions through the composite FK `(session_id, user_id)` with cascade.
 
 **Google Places** is proxied through `/api/places/*`; the key is a Worker secret and
