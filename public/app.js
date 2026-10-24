@@ -4717,22 +4717,39 @@ function formatClockTime(d) {
     return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+// 完成評分 / 刪除沒拿到回應：可能其實已寫進去，也可能沒有。伺服器有回應（e.status）或
+// 需要重新登入（session_expired）才確定沒寫；否則標成 'unsure'，下次暫存前先問伺服器。
+function closingAfterFailure(e) {
+    return e.status || e.message === 'session_expired' ? false : 'unsure';
+}
+
+// 'unsure' 時：場次還在 ② 才繼續暫存；已到 ③ 或已刪除 → 之後都不暫存。讀不到就維持 'unsure'。
+async function sessionStillScoring(form) {
+    const s = await api.getSession(form.id);
+    if (form.closing === 'unsure') form.closing = s?.stage === 'scoring' ? false : true;
+    return form.closing === false;
+}
+
 // 失敗只跳錯誤 toast、不擋切杯；比對的是上次「成功」的內容，所以下次切杯會再送。
 // 還在路上的那份也不重送（pendingSnapshot），除非是切到背景：那時要另外送一份帶 keepalive 的。
+// 每份暫存都是整場的完整內容，所以排隊中、還沒送出的舊暫存一旦有更新的一份，就不必送了（saveGen）。
 function autosaveSession({ keepalive = false } = {}) {
     const form = state.currentForm;
-    if (form?.mode !== 'session' || form.stage !== 'scoring' || form.closing || !form.saveChain) return;
+    if (form?.mode !== 'session' || form.stage !== 'scoring' || form.closing === true || !form.saveChain) return;
     syncActiveCup();
     const snap = sessionSnapshot();
     if (snap === form.savedSnapshot || (!keepalive && snap === form.pendingSnapshot)) return;
     const { session, cups } = JSON.parse(snap);
     // keepalive 的 body 上限約 64KB；超過就照一般請求送（背景時可能被中斷）。
     const useKeepalive = keepalive && new TextEncoder().encode(snap).length <= 60000;
+    const gen = form.saveGen = (form.saveGen || 0) + 1;
     form.pendingSnapshot = snap;
     const send = async () => {
         try {
+            if (gen !== form.saveGen) return; // 已有更新的一份
+            if (form.closing === 'unsure' && !(await sessionStillScoring(form))) return;
             await api.saveSession(form.id, session, cups, { keepalive: useKeepalive });
-            // 後回來的才是伺服器上最後寫入的版本
+            // 後回來的視為伺服器上最後寫入的版本；比它新的若先回來，下次切杯會再送一次。
             form.savedSnapshot = snap;
             if (state.currentForm === form) {
                 const status = document.getElementById('session-autosave-status');
@@ -4857,9 +4874,8 @@ async function submitSessionForm() {
             navigate(stage === 'reveal' ? `/session/${form.id}` : `/session/${form.id}/edit`);
         }
     } catch (e) {
-        // 表單與記憶體都原封不動，直接再按一次儲存即可重試。伺服器有回應（e.status）才確定
-        // 沒寫進去；連線中斷時可能其實已存成下一階段，繼續擋暫存，免得把場次退回 ②。
-        if (e.status) form.closing = false;
+        // 表單與記憶體都原封不動，直接再按一次儲存即可重試。
+        form.closing = closingAfterFailure(e);
         console.error(e);
         showErrorToast('儲存失敗：' + (e.message || e));
     } finally {
@@ -4884,8 +4900,7 @@ async function deleteCurrentSession() {
         showToast('✓ 已刪除');
         navigate('/records');
     } catch (e) {
-        // 連線中斷時可能其實已刪掉：繼續擋暫存，免得 upsert 把場次重建。
-        if (e.status) form.closing = false;
+        form.closing = closingAfterFailure(e);
         showErrorToast('刪除失敗：' + (e.message || e));
     }
 }

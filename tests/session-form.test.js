@@ -796,20 +796,74 @@ describe('② 自動暫存', () => {
     });
 
     it.each([
-        ['完成評分', () => win.submitSessionForm(), 'PUT'],
-        ['刪除', () => win.deleteCurrentSession(), 'DELETE'],
-    ])('%s連線中斷（沒拿到回應，可能其實成功了）→ 之後切杯不再暫存', async (_, act, method) => {
+        ['完成評分', () => win.submitSessionForm(), 'PUT', { stage: 'reveal' }],
+        ['刪除', () => win.deleteCurrentSession(), 'DELETE', null],
+    ])('%s連線中斷、其實已寫進去 → 下次切杯先問伺服器，不再暫存', async (_, act, method, server) => {
         await mount([cupA, cupB], { recordId: 's1' });
-        record((p, init) => (init.method === method
-            ? Promise.reject(new TypeError('Failed to fetch'))
-            : Promise.resolve(null)));
+        let first = true;
+        record((p, init) => {
+            if (init.method === method && first) {
+                first = false;
+                return Promise.reject(new TypeError('Failed to fetch'));
+            }
+            return Promise.resolve(init.method ? null : server);
+        });
         win.confirmDialog = () => Promise.resolve(true);
         await quietly(act);
         scoreCupB();
         clickTab(0);
         hide();
         await flush();
-        expect(calls.map(c => c.method)).toEqual([method]);
+        expect(calls.map(c => c.method)).toEqual([method, 'GET']);
+    });
+
+    it('完成評分連線中斷、其實沒寫進去 → 問過伺服器（仍在 ②）就照樣暫存', async () => {
+        await mount([cupA, cupB], { recordId: 's1' });
+        record((p, init) => (init.method === 'PUT' && init.body.session.stage === 'reveal'
+            ? Promise.reject(new TypeError('Failed to fetch'))
+            : Promise.resolve(init.method ? null : { stage: 'scoring' })));
+        await quietly(() => win.submitSessionForm());
+        scoreCupB();
+        clickTab(0);
+        await flush();
+        expect(calls.map(c => c.method)).toEqual(['PUT', 'GET', 'PUT']);
+        expect(puts()[1].body.session.stage).toBe('scoring');
+        clickTab(1);
+        typeInto($('#f-notes'), '再改');
+        clickTab(0);
+        await flush();
+        expect(calls.map(c => c.method)).toEqual(['PUT', 'GET', 'PUT', 'PUT']); // 確認過一次就不再問
+    });
+
+    it('完成評分遇到 session_expired（確定沒寫）→ 不必問伺服器，照樣暫存', async () => {
+        await mount([cupA, cupB], { recordId: 's1' });
+        record((p, init) => (init.method === 'PUT' && init.body.session.stage === 'reveal'
+            ? Promise.reject(new Error('session_expired'))
+            : Promise.resolve(null)));
+        await quietly(() => win.submitSessionForm());
+        scoreCupB();
+        clickTab(0);
+        await flush();
+        expect(calls.map(c => c.method)).toEqual(['PUT', 'PUT']);
+    });
+
+    it('切到背景的暫存先送出後，排隊中較舊的暫存不再送（不會蓋掉較新的內容）', async () => {
+        await mount([cupA, cupB], { recordId: 's1' });
+        const first = deferred();
+        record((p, init) => (init.method === 'PUT' && puts().length === 1 ? first.promise : Promise.resolve(null)));
+        scoreCupB();
+        clickTab(0);
+        await flush(); // X 已送出、還沒回來
+        typeInto($('#f-notes'), '排隊中');
+        clickTab(1); // A 排在 X 後面
+        typeInto($('#f-notes'), '最新');
+        hide(); // B 立刻送出
+        await flush();
+        first.resolve(null);
+        await flush();
+        await flush();
+        expect(puts().map(c => c.keepalive)).toEqual([false, true]);
+        expect(puts()[1].body.cups[1].notes).toBe('最新');
     });
 
     it('暫存還在路上時切到背景 → 不等前一個回來，立刻送出帶 keepalive 的暫存', async () => {
