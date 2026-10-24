@@ -116,4 +116,13 @@ describe('apiFetch 的回應處理', () => {
         expect(calls[1].init.headers['content-type']).toBe('application/json');
         expect(calls[1].init.body).toBe('{"name":"x"}');
     });
+
+    it('keepalive 預設關閉；saveSession 指定時原樣交給 fetch', async () => {
+        const calls = stubFetch(jsonResponse(200, null));
+        await win.apiFetch('/api/x');
+        await win.eval('api').saveSession('s1', { stage: 'scoring' }, [], { keepalive: true });
+        expect(calls[0].init.keepalive).toBe(false);
+        expect(calls[1].path).toBe('/api/sessions/s1');
+        expect(calls[1].init.keepalive).toBe(true);
+    });
 });

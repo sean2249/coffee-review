@@ -11,7 +11,8 @@ import { loadApp } from './load-app.js';
 // - ③ 的杯卡：依分數排名、點開才出現可編輯的元件、編輯中不重新排序
 // - 未評分（coe_total null）的語意與「清除分數」
 // - 非送出按鈕不會送出整場、編號欄 Enter 不送出
-// - 每杯 key 集合一致（upsert 需要）、草稿只在真的修改時才寫
+// - 每杯 key 集合一致（upsert 需要）
+// - ② 切杯 / 切到背景時自動暫存（只在真的修改時才送），和完成評分、刪除排在同一條存檔鏈
 // 表單本體直接取自 index.html 的 #tpl-session-form，避免測試複製一份走鐘的 markup。
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -48,6 +49,8 @@ async function mount(cups = [cupA, cupB], { recordId = null, stage = 'scoring', 
         // 掛在 #app 外面：app.js 的首次 renderRoute 會清掉 #app 的內容。
         bodyHtml: `<main id="app"></main>${FORM_MARKUP}`,
     }));
+    // ② 改了東西再切杯會自動暫存；沒 stub 的話會真的送出請求、跳錯誤 toast。
+    win.apiFetch = () => Promise.resolve(null);
     win.eval(`state.currentForm = { mode: 'session', recordId: ${JSON.stringify(recordId)}, id: 's1',
         cups: [], activeIndex: 0, savedCupCount: ${cups.length}, stage: 'setup' };`);
     win.initSessionForm();
@@ -564,13 +567,14 @@ describe('存檔：每次換階段都寫回伺服器', () => {
         expect(doc.activeElement).toBe(gridInputs()[1]);
     });
 
-    it('存檔期間離開頁面：草稿照清，但不把人拉回場次頁', async () => {
+    it('存檔期間離開頁面：不把人拉回場次頁', async () => {
         await mount([cupA, cupB], { recordId: 's1' });
         stub();
         let release;
         win.eval('api').saveSession = () => new Promise(r => { release = r; });
         const pending = win.submitSessionForm();
         win.eval('state.currentForm = null'); // 模擬 renderRoute 換頁
+        await new Promise(r => setTimeout(r, 0)); // 排在存檔鏈上，下一輪才送出
         release();
         await pending;
         expect(navs).toEqual([]);
@@ -594,76 +598,219 @@ describe('每杯 key 集合', () => {
     });
 });
 
-describe('草稿', () => {
-    const KEY = 'coffee-review:draft:session/s1';
-    const wait = () => new Promise(r => setTimeout(r, 350));
-    const bindDraft = () => {
-        win.localStorage.clear();
-        win.setupDraftAutosave('session', 's1', { build: win.buildSessionDraft, apply: win.applySessionToForm });
+describe('② 自動暫存', () => {
+    let calls;
+    // handler 決定每個請求怎麼回；calls 記下所有請求（含 keepalive）。
+    const record = (handler = () => Promise.resolve(null)) => {
+        calls = [];
+        win.apiFetch = (p, init = {}) => {
+            calls.push({ path: p, method: init.method || 'GET', body: init.body, keepalive: init.keepalive });
+            return handler(p, init);
+        };
     };
-
-    it('只切分頁不產生草稿', async () => {
-        await mount([cupA, cupB], { recordId: 's1' });
-        bindDraft();
-        clickTab(1);
-        clickTab(0);
-        await wait();
-        expect(win.localStorage.getItem(KEY)).toBeNull();
-    });
-
-    it('③ 只開關杯卡與收合區塊也不產生草稿', async () => {
-        await mount([cupA, cupB], { recordId: 's1', stage: 'reveal' });
-        bindDraft();
-        openCard('B');
-        $('#cup-score-toggle').click();
-        openCard('A');
-        $('#session-info-toggle').click();
-        await wait();
-        expect(win.localStorage.getItem(KEY)).toBeNull();
-    });
-
-    it('有修改才寫草稿，每杯帶著 id，也記下階段', async () => {
-        await mount([cupA, cupB], { recordId: 's1' });
-        bindDraft();
+    const puts = () => calls.filter(c => c.method === 'PUT');
+    const flush = () => new Promise(r => setTimeout(r, 0));
+    const deferred = () => {
+        let resolve;
+        const promise = new Promise(r => { resolve = r; });
+        return { promise, resolve };
+    };
+    const status = () => $('#session-autosave-status');
+    const toast = () => doc.getElementById('toastMsg');
+    // 在 B 杯（未評分）打 82 分：還沒切杯，所以還沒暫存。
+    const scoreCupB = () => {
         clickTab(1);
         $('.score-chip[data-score="82"]').click();
-        await wait();
-        const draft = JSON.parse(win.localStorage.getItem(KEY));
-        expect(draft.payload.cups.map(c => c.id)).toEqual(['k1', 'k2']);
-        expect(draft.payload.cups[1].coe_total).toBe(82);
-        expect(draft.payload.title).toBe('日曬比較');
-        expect(draft.payload.stage).toBe('scoring');
+    };
+    const hide = () => {
+        Object.defineProperty(doc, 'visibilityState', { value: 'hidden', configurable: true });
+        doc.dispatchEvent(new win.Event('visibilitychange'));
+    };
+    const quietly = async fn => {
+        const realError = win.console.error;
+        win.console.error = () => {};
+        try { await fn(); } finally { win.console.error = realError; }
+    };
+
+    it('② 顯示「切到別杯時會自動暫存」；①、③ 不顯示', async () => {
+        await mount([cupA, cupB], { recordId: 's1' });
+        expect(status().textContent).toBe('切到別杯時會自動暫存');
+        expect(visible(status())).toBe(true);
+        win.setSessionStage('reveal');
+        expect(visible(status())).toBe(false);
+        win.setSessionStage('setup');
+        expect(visible(status())).toBe(false);
     });
 
-    it('刪除整場後草稿被清掉', async () => {
+    it('改了分數再切杯 → 送一次 PUT（stage 仍是 scoring），狀態文字換成暫存時間', async () => {
+        await mount([cupA, cupB], { recordId: 's1' });
+        record();
+        scoreCupB();
+        expect(puts()).toHaveLength(0);
+        clickTab(0);
+        await flush();
+        expect(puts()).toHaveLength(1);
+        expect(puts()[0].path).toBe('/api/sessions/s1');
+        expect(puts()[0].body.session.stage).toBe('scoring');
+        expect(puts()[0].body.cups[1].coe_total).toBe(82);
+        expect(puts()[0].keepalive).toBe(false);
+        expect(status().textContent).toMatch(/^已自動暫存 \d{2}:\d{2}$/);
+    });
+
+    it('只切杯沒改 → 不送請求、狀態文字不變；存過之後再來回切也不送', async () => {
+        await mount([cupA, cupB], { recordId: 's1' });
+        record();
+        clickTab(1);
+        clickTab(0);
+        await flush();
+        expect(calls).toHaveLength(0);
+        expect(status().textContent).toBe('切到別杯時會自動暫存');
+
+        scoreCupB();
+        clickTab(0);
+        await flush();
+        clickTab(1);
+        clickTab(0);
+        await flush();
+        expect(puts()).toHaveLength(1);
+    });
+
+    it('暫存失敗 → 杯照樣切換、跳「暫存失敗：」；下次切杯再送', async () => {
+        await mount([cupA, cupB], { recordId: 's1' });
+        let offline = true;
+        record((p, init) => (init.method === 'PUT' && offline
+            ? Promise.reject(new Error('Failed to fetch'))
+            : Promise.resolve(null)));
+        await quietly(async () => {
+            scoreCupB();
+            clickTab(0);
+            await flush();
+        });
+        expect(form().activeIndex).toBe(0);
+        expect(toast().textContent).toBe('暫存失敗：Failed to fetch');
+        expect(toast().classList.contains('error')).toBe(true);
+        expect(status().textContent).toBe('切到別杯時會自動暫存');
+
+        offline = false;
+        clickTab(1);
+        await flush();
+        expect(puts()).toHaveLength(2);
+        expect(puts()[1].body.cups[1].coe_total).toBe(82);
+        expect(status().textContent).toMatch(/^已自動暫存 /);
+    });
+
+    it('② 切到背景 → 不必切杯就暫存，帶 keepalive', async () => {
+        await mount([cupA, cupB], { recordId: 's1' });
+        record();
+        scoreCupB();
+        hide();
+        await flush();
+        expect(puts()).toHaveLength(1);
+        expect(puts()[0].keepalive).toBe(true);
+        expect(puts()[0].body.cups[1].coe_total).toBe(82);
+    });
+
+    it('切到背景但內容超過 keepalive 上限 → 照樣送，不帶 keepalive', async () => {
+        await mount([cupA, cupB], { recordId: 's1' });
+        record();
+        typeInto($('#f-notes'), '香'.repeat(25000)); // 75,000 bytes（中文一字 3 bytes）
+        hide();
+        await flush();
+        expect(puts()).toHaveLength(1);
+        expect(puts()[0].keepalive).toBe(false);
+    });
+
+    it('不在 ② 時切到背景 → 不暫存', async () => {
         await mount([cupA, cupB], { recordId: 's1', stage: 'reveal' });
-        bindDraft();
+        record();
         openCard('A');
         typeInto($('#f-cup-bean'), '改過');
-        await wait();
-        expect(win.localStorage.getItem(KEY)).not.toBeNull();
-
-        win.confirmDialog = () => Promise.resolve(true);
-        win.eval('api').deleteSession = () => Promise.resolve();
-        $('#f-delete').click();
-        await new Promise(r => setTimeout(r, 0));
-        await wait();
-        expect(win.localStorage.getItem(KEY)).toBeNull();
+        hide();
+        await flush();
+        expect(calls).toHaveLength(0);
     });
 
-    // 還原列在 <form> 裡面，那次點擊會冒泡到自動儲存；還原的內容算「未儲存」，
-    // 不能被當成新 baseline，否則按了還原沒再動就離開時草稿會被清掉。
-    it('按還原後沒再改就離開 → 草稿仍在', async () => {
-        await mount([cupA, cupB], { recordId: 's1', stage: 'reveal' });
-        win.localStorage.clear();
-        win.writeDraft(KEY, 'session', { ...win.buildSessionDraft(), title: '沒存完的場次' });
-        win.setupDraftAutosave('session', 's1', { build: win.buildSessionDraft, apply: win.applySessionToForm });
+    it('暫存還沒回來就按「完成評分 ›」→ 等暫存回來才送，最後的 stage 是 reveal', async () => {
+        await mount([cupA, cupB], { recordId: 's1' });
+        const first = deferred();
+        record((p, init) => (init.method === 'PUT' && puts().length === 1 ? first.promise : Promise.resolve(null)));
+        win.navigate = () => {};
+        scoreCupB();
+        clickTab(0);
+        const pending = win.submitSessionForm();
+        await flush();
+        expect(puts()).toHaveLength(1);
+        first.resolve(null);
+        await pending;
+        expect(puts()).toHaveLength(2);
+        expect(puts()[1].body.session.stage).toBe('reveal');
+    });
 
-        doc.querySelector('.draft-banner [data-draft="restore"]').click();
-        expect($('#f-session-title').value).toBe('沒存完的場次');
-        await wait();
+    it('暫存還沒回來就刪除 → 等暫存回來才送 DELETE', async () => {
+        await mount([cupA, cupB], { recordId: 's1' });
+        const first = deferred();
+        record((p, init) => (init.method === 'PUT' ? first.promise : Promise.resolve(null)));
+        win.confirmDialog = () => Promise.resolve(true);
+        win.navigate = () => {};
+        scoreCupB();
+        clickTab(0);
+        const pending = win.deleteCurrentSession();
+        await flush();
+        expect(calls.map(c => c.method)).toEqual(['PUT']);
+        first.resolve(null);
+        await pending;
+        expect(calls.map(c => c.method)).toEqual(['PUT', 'DELETE']);
+    });
 
-        expect(win.readDraft(KEY)?.payload.title).toBe('沒存完的場次');
+    it('「完成評分 ›」還沒回來時切杯或切到背景 → 不再送 stage: scoring 的暫存', async () => {
+        await mount([cupA, cupB], { recordId: 's1' });
+        const done = deferred();
+        record((p, init) => (init.method === 'PUT' ? done.promise : Promise.resolve(null)));
+        win.navigate = () => {};
+        scoreCupB();
+        const pending = win.submitSessionForm();
+        await flush();
+        typeInto($('#f-notes'), '送出後才改');
+        clickTab(0);
+        hide();
+        await flush();
+        done.resolve(null);
+        await pending;
+        await flush();
+        expect(puts()).toHaveLength(1);
+        expect(puts()[0].body.session.stage).toBe('reveal');
+    });
+
+    it('完成評分失敗 → 留在 ②，之後切杯照樣暫存', async () => {
+        await mount([cupA, cupB], { recordId: 's1' });
+        let failSubmit = true;
+        record((p, init) => (init.method === 'PUT' && init.body.session.stage === 'reveal' && failSubmit
+            ? Promise.reject(new Error('boom'))
+            : Promise.resolve(null)));
+        await quietly(() => win.submitSessionForm());
+        failSubmit = false;
+        scoreCupB();
+        clickTab(0);
+        await flush();
+        expect(puts().map(c => c.body.session.stage)).toEqual(['reveal', 'scoring']);
+    });
+
+    it('刪除還沒回來時切杯或切到背景 → 不送任何 PUT', async () => {
+        await mount([cupA, cupB], { recordId: 's1' });
+        const done = deferred();
+        record((p, init) => (init.method === 'DELETE' ? done.promise : Promise.resolve(null)));
+        win.confirmDialog = () => Promise.resolve(true);
+        win.navigate = () => {};
+        scoreCupB();
+        const pending = win.deleteCurrentSession();
+        await flush();
+        clickTab(0);
+        hide();
+        await flush();
+        done.resolve(null);
+        await pending;
+        await flush();
+        expect(calls.map(c => c.method)).toEqual(['DELETE']);
     });
 });
 
@@ -687,23 +834,6 @@ describe('viewSessionForm', () => {
         release(null);
         await expect(pending).resolves.toBeUndefined();
         expect(doc.getElementById('f-save')).toBeNull();
-    });
-
-    it('新場次還原草稿時換新的杯 id（不會把上次已存的杯搬進新場次）', async () => {
-        await boot();
-        win.apiFetch = () => Promise.resolve(null);
-        win.localStorage.setItem('coffee-review:draft:new/session', JSON.stringify({
-            schema: 1, savedAt: Date.now(), mode: 'session',
-            payload: { title: '上次沒存完', code_style: 'letter', stage: 'setup', cups: [{ id: 'old-1', code: 'A' }, { id: 'old-2', code: 'B' }] },
-        }));
-        const root = doc.getElementById('app');
-        await win.viewSessionForm(root, {});
-        doc.querySelector('.draft-banner [data-draft="restore"]').click();
-        const cups = win.eval('state.currentForm').cups;
-        expect(cups.map(c => c.code)).toEqual(['A', 'B']);
-        expect(cups.some(c => c.id.startsWith('old-'))).toBe(false);
-        expect(doc.getElementById('f-session-title').value).toBe('上次沒存完');
-        expect(gridInputs().map(i => i.value)).toEqual(['A', 'B']);
     });
 
     it('新場次：① 設定、日期預設今天、還沒有杯、三位數編號', async () => {
