@@ -1428,7 +1428,8 @@ async function viewRecordsList(root, query = {}) {
     // 舊連結 ?shop= 已讀成 q，網址也改寫成 ?q=。
     if (query.shop && !query.q) syncFilterToHash();
 
-    await refreshShopsCache();
+    // 店家和記錄一起抓，不先等店家；每次 loadAndRenderCards 都會等它（見下）。
+    listShopsReady = refreshShopsCache();
 
     // Full-text search (debounce 200ms)
     const qEl = document.getElementById('filter-q');
@@ -1488,6 +1489,9 @@ let listRowsHaveSearch = false;
 let listReqSeq = 0;
 // 在途的那個請求是否帶 withSearch：等它回來時繼續打字，不必再發一次。
 let listPendingSearch = false;
+// 進列表頁時發出的店家請求。卡片的店名與店家關鍵字都要店家清單，所以每次畫卡片前都等它
+// （refreshShopsCache 不會 reject）；掛載那次因此可能比之後的請求晚回，由 listReqSeq 丟掉。
+let listShopsReady = Promise.resolve();
 
 async function loadAndRenderCards() {
     const container = document.getElementById('records-list');
@@ -1499,7 +1503,7 @@ async function loadAndRenderCards() {
     listPendingSearch = withSearch;
     container.innerHTML = '<div class="empty-state"><i class="bi bi-hourglass-split"></i>讀取中…</div>';
     try {
-        const rows = await api.listRecords({ type: state.listFilter.type, withSearch });
+        const [rows] = await Promise.all([api.listRecords({ type: state.listFilter.type, withSearch }), listShopsReady]);
         if (seq !== listReqSeq) return;
         listRows = rows;
         listRowsHaveSearch = withSearch;
@@ -1720,8 +1724,7 @@ async function viewRecordDetail(root, { mode, recordId }) {
     if (renderAccessGate(root)) return;
     root.innerHTML = '<div class="empty-state"><i class="bi bi-hourglass-split"></i>讀取中…</div>';
     try {
-        await refreshShopsCache();
-        const r = await api.getRecord(mode, recordId);
+        const [, r] = await Promise.all([refreshShopsCache(), api.getRecord(mode, recordId)]);
         if (!r) {
             root.innerHTML = `<div class="card"><div class="card-body">
                 <h3 class="card-title"><i class="bi bi-exclamation-circle"></i>找不到記錄</h3>
@@ -4932,8 +4935,8 @@ async function viewSessionForm(root, { sessionId = null } = {}) {
         revealOrder: null,
     };
 
-    await refreshShopsCache();
-    if (state.currentForm !== form) return; // 讀取期間已離開頁面
+    // 店家和場次一起抓；掛表單前（店家下拉要用）才等店家。
+    const shopsReady = refreshShopsCache();
 
     let session;
     if (sessionId) {
@@ -4958,6 +4961,9 @@ async function viewSessionForm(root, { sessionId = null } = {}) {
         // 新場次先不放杯：選杯數才長出編號格子。
         session = { session_date: todayLocalIso(), code_style: 'manual', stage: 'setup', cups: [] };
     }
+
+    await shopsReady;
+    if (state.currentForm !== form) return; // 讀取期間已離開頁面
 
     const tpl = document.getElementById('tpl-session-form');
     root.innerHTML = '';
@@ -5063,8 +5069,7 @@ async function viewSessionDetail(root, sessionId) {
     // 讀取期間使用者可能已經換頁；#app 是共用的，晚回來的結果不能蓋掉新畫面。
     const route = location.hash;
     try {
-        await refreshShopsCache();
-        const s = await api.getSession(sessionId);
+        const [, s] = await Promise.all([refreshShopsCache(), api.getSession(sessionId)]);
         if (location.hash !== route) return;
         root.innerHTML = s ? renderSessionDetail(s) : renderSessionNotFound();
     } catch (e) {
