@@ -223,10 +223,10 @@ const state = {
     shopsLoaded: false, // true after first successful fetch — distinguishes "deleted" from "not loaded yet"
     listFilter: { type: 'all', shopKeyword: '', tiers: [], dateFrom: '', dateTo: '', sort: 'date-desc', group: 'none' },
     currentForm: null,  // { mode, recordId|null }
-    knownOrigins: [],   // distinct origin strings from past cupping records
-    knownOriginsLoaded: false,
-    knownItems: [],     // distinct item_ordered strings from past tasting records
-    knownItemsLoaded: false,
+    // 表單 datalist 的歷史值（GET /api/suggest，已依使用次數排序）。存檔成功後
+    // suggestLoaded 設回 false，下次掛載表單會重抓。
+    suggest: { origins: [], processes: [], methods: [], beans: [], items: [] },
+    suggestLoaded: false,
     user: null,         // 目前登入者（Supabase session user）或 null
 };
 
@@ -2212,17 +2212,14 @@ async function viewForm(root, { mode, recordId, prefillShopId = null }) {
     populateShopSelect(document.getElementById('f-shop'), mode === 'tasting');
     applyShopPrefill(prefillShopId);
 
-    // Origin datalist + process chip row are cupping-only UI elements.
+    // Process chip row is cupping-only; item picker (category row) is tasting-only.
     if (mode === 'cupping') {
         renderProcessChips();
-        loadKnownOrigins().then(populateOriginDatalist);
-        populateOriginDatalist();
     } else {
-        // Item picker (category row) + datalist are tasting-only UI elements.
         renderItemCats();
-        loadKnownItems().then(populateItemDatalist);
-        populateItemDatalist();
     }
+    loadSuggestions().then(populateSuggestDatalists);
+    populateSuggestDatalists();
 
     const initialShopId = document.getElementById('f-shop')?.value || '';
     refreshImportBeanForShop(mode, initialShopId);
@@ -2292,51 +2289,46 @@ function applyBeanTypeVisibility(mode) {
     });
 }
 
-// ─── Origin datalist (country dropdown) ──────────────────────────────────────
-async function loadKnownOrigins() {
-    if (state.knownOriginsLoaded) return;
-    // 去重與去空白都在 Worker 的 SQL 裡做（原本是前端拉 2000 列自己去重）。
+// ─── Suggestion datalists (國家 / 處理法 / 方法 / 豆名 / 品項) ────────────────
+// [datalist id, state.suggest key, 內建常見值]
+const SUGGEST_DATALISTS = [
+    ['origin-options', 'origins', COMMON_COUNTRIES],
+    ['process-options', 'processes', COMMON_PROCESSES],
+    ['method-options', 'methods', []],
+    ['bean-options', 'beans', []],
+    ['item-options', 'items', COMMON_ITEMS],
+];
+
+async function loadSuggestions() {
+    if (state.suggestLoaded) return;
+    // 去重、去空白、依次數排序都在 Worker 的 SQL 裡做。
     try {
-        const res = await apiFetch('/api/suggest/origins');
-        state.knownOrigins = res?.items || [];
-        state.knownOriginsLoaded = true;
+        const res = await apiFetch('/api/suggest');
+        SUGGEST_DATALISTS.forEach(([, key]) => {
+            state.suggest[key] = res?.[key] || [];
+        });
+        state.suggestLoaded = true;
     } catch (e) {
-        console.warn('loadKnownOrigins failed:', e);
+        console.warn('loadSuggestions failed:', e);
     }
 }
 
-function populateOriginDatalist() {
-    const dl = document.getElementById('origin-options');
-    if (!dl) return;
-    const all = new Set([...COMMON_COUNTRIES, ...state.knownOrigins]);
-    dl.innerHTML = '';
-    all.forEach(v => {
-        const opt = document.createElement('option');
-        opt.value = v;
-        dl.appendChild(opt);
-    });
+// 歷史值（已依頻率）在前，內建值中歷史沒出現過的接在後面；比對不分大小寫。
+function mergeSuggestions(history, builtins) {
+    const seen = new Set(history.map(v => v.toLowerCase()));
+    return [...history, ...builtins.filter(v => !seen.has(v.toLowerCase()))];
 }
 
-async function loadKnownItems() {
-    if (state.knownItemsLoaded) return;
-    try {
-        const res = await apiFetch('/api/suggest/items');
-        state.knownItems = res?.items || [];
-        state.knownItemsLoaded = true;
-    } catch (e) {
-        console.warn('loadKnownItems failed:', e);
-    }
-}
-
-function populateItemDatalist() {
-    const dl = document.getElementById('item-options');
-    if (!dl) return;
-    const all = new Set([...COMMON_ITEMS, ...state.knownItems]);
-    dl.innerHTML = '';
-    all.forEach(v => {
-        const opt = document.createElement('option');
-        opt.value = v;
-        dl.appendChild(opt);
+function populateSuggestDatalists() {
+    SUGGEST_DATALISTS.forEach(([id, key, builtins]) => {
+        const dl = document.getElementById(id);
+        if (!dl) return;
+        dl.innerHTML = '';
+        mergeSuggestions(state.suggest[key], builtins).forEach(v => {
+            const opt = document.createElement('option');
+            opt.value = v;
+            dl.appendChild(opt);
+        });
     });
 }
 
@@ -2546,7 +2538,7 @@ async function applyImportedBean(mode, recordId) {
                 const roastRadio = document.querySelector(`input[name="roast"][value="${CSS.escape(r.roast)}"]`);
                 if (roastRadio) roastRadio.checked = true;
             }
-            populateOriginDatalist();
+            populateSuggestDatalists();
         } else {
             setBeanType('tasting', beanType);
             const beanEl = document.getElementById('f-tasting-bean');
@@ -3989,11 +3981,13 @@ async function submitForm() {
         const payload = buildFormPayload(mode);
         if (recordId) {
             await api.updateRecord(mode, recordId, payload);
+            state.suggestLoaded = false;
             const noteSaved = await saveNote();
             if (noteSaved) showToast('✓ 已更新');
             else showErrorToast('記錄已更新，但店家筆記沒存起來，請再存一次');
         } else {
             const created = await api.createRecord(mode, payload);
+            state.suggestLoaded = false;
             const noteSaved = await saveNote();
             // 接著就離開表單：筆記沒存成功的話編輯內容也跟著消失，得說清楚。
             if (noteSaved) showToast('✓ 已儲存');
@@ -4057,7 +4051,7 @@ function applyRecordToForm(mode, r) {
             });
         setBrewingMethodChip(r.method || '');
         setProcessChip(r.process || '');
-        populateOriginDatalist();
+        populateSuggestDatalists();
         if (r.roast != null) {
             const roastRadio = document.querySelector(`input[name="roast"][value="${CSS.escape(r.roast)}"]`);
             if (roastRadio) roastRadio.checked = true;
@@ -4832,8 +4826,8 @@ async function viewSessionForm(root, { sessionId = null } = {}) {
     root.appendChild(tpl.content.cloneNode(true));
     initSessionForm();
     populateShopSelect(document.getElementById('f-shop'), false);
-    loadKnownOrigins().then(populateOriginDatalist);
-    populateOriginDatalist();
+    loadSuggestions().then(populateSuggestDatalists);
+    populateSuggestDatalists();
 
     applySessionToForm(session);
     document.getElementById('f-delete').hidden = !sessionId;
@@ -4873,6 +4867,8 @@ async function submitSessionForm() {
     form.closing = true;
     try {
         await queueSessionWrite(form, () => api.saveSession(form.id, session, cups));
+        // 只有正式存檔才刷新建議；自動暫存（autosaveSession）不動它。
+        state.suggestLoaded = false;
         showToast(stage === 'reveal' && form.recordId ? '✓ 已更新' : '✓ 已儲存');
         // 存檔期間已經離開頁面就別把人硬拉回場次頁。
         if (state.currentForm === form) {
