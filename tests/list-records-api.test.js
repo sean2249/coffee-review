@@ -40,6 +40,12 @@ describe('api.listRecords 查詢字串', () => {
         expect(seen).toEqual(['/api/records?type=session&withEvaluations=1']);
     });
 
+    it('withSearch 會帶上旗標', async () => {
+        const seen = stubApi({ '/api/records': [] });
+        await api.listRecords({ type: 'all', withSearch: true });
+        expect(seen).toEqual(['/api/records?type=all&withSearch=1']);
+    });
+
     it('原樣回傳 Worker 合併好的陣列', async () => {
         const rows = [{ id: 'a', _type: 'tasting' }, { id: 'b', _type: 'cupping' }];
         stubApi({ '/api/records': rows });
