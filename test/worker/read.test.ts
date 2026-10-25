@@ -1,5 +1,7 @@
 import { env } from 'cloudflare:test';
 import { beforeEach, describe, expect, it } from 'vitest';
+import worker from '../../src/worker/index';
+import type { Env } from '../../src/worker/env';
 import { OTHER_ID, OWNER_ID, api, getJson, seedCup, seedRecord, seedSession, seedShop, resetDb } from './helpers';
 
 type Rec = Record<string, unknown>;
@@ -222,21 +224,102 @@ describe('GET /api/shops/:id/beans', () => {
     });
 });
 
-describe('GET /api/suggest/*', () => {
-    it('去重、去空白、排序，且只看自己的資料', async () => {
-        await seedRecord('cupping_records', { id: 'c1', extra: { origin: '衣索比亞' } });
-        await seedRecord('cupping_records', { id: 'c2', extra: { origin: ' 衣索比亞 ' } });
-        await seedRecord('cupping_records', { id: 'c3', extra: { origin: '  ' } });
-        await seedRecord('cupping_records', { id: 'c4', extra: { origin: '哥倫比亞' } });
-        await seedRecord('cupping_records', { id: 'c5', userId: OTHER_ID, extra: { origin: '別人的' } });
+describe('GET /api/suggest', () => {
+    type Suggest = Record<'origins' | 'processes' | 'methods' | 'beans' | 'items', string[]>;
 
-        expect(await getJson('/api/suggest/origins')).toEqual({ items: ['哥倫比亞', '衣索比亞'] });
+    it('沒有資料時五個清單都是空陣列', async () => {
+        expect(await getJson<Suggest>('/api/suggest')).toEqual({
+            origins: [],
+            processes: [],
+            methods: [],
+            beans: [],
+            items: [],
+        });
     });
 
-    it('品項來自 tasting_records', async () => {
+    it('依次數排序、去空白、不分大小寫去重，且排除 null / 空白', async () => {
+        await seedRecord('cupping_records', { id: 'c1', extra: { origin: '哥倫比亞' } });
+        await seedRecord('cupping_records', { id: 'c2', extra: { origin: '衣索比亞' } });
+        await seedRecord('cupping_records', { id: 'c3', extra: { origin: ' 衣索比亞 ' } });
+        await seedRecord('cupping_records', { id: 'c4', extra: { origin: '  ' } });
+        await seedRecord('cupping_records', { id: 'c5', extra: { origin: null } });
+        await seedRecord('cupping_records', { id: 'c6', extra: { origin: 'Kenya' } });
+        await seedRecord('cupping_records', { id: 'c7', extra: { origin: 'kenya' } });
+        await seedRecord('cupping_records', { id: 'c8', extra: { origin: 'KENYA' } });
+
+        const { origins } = await getJson<Suggest>('/api/suggest');
+        expect(origins).toHaveLength(3);
+        expect(origins[0].toLowerCase()).toBe('kenya');
+        expect(origins.slice(1)).toEqual(['衣索比亞', '哥倫比亞']);
+    });
+
+    it('同次數依值排序', async () => {
+        await seedRecord('cupping_records', { id: 'c1', extra: { method: 'V60' } });
+        await seedRecord('cupping_records', { id: 'c2', extra: { method: 'Kalita' } });
+        expect((await getJson<Suggest>('/api/suggest')).methods).toEqual(['Kalita', 'V60']);
+    });
+
+    it('跨表合併：沖煮 / 品鑑 / 杯測各杯', async () => {
         await seedShop('s1');
-        await seedRecord('tasting_records', { id: 't1', shopId: 's1', extra: { item_ordered: '手沖' } });
-        expect(await getJson('/api/suggest/items')).toEqual({ items: ['手沖'] });
+        await seedRecord('cupping_records', {
+            id: 'c1',
+            extra: { bean_name: '耶加雪菲 A', origin: '肯亞', process: '水洗', method: '手沖' },
+        });
+        await seedRecord('tasting_records', {
+            id: 't1',
+            shopId: 's1',
+            extra: { bean_name: '耶加雪菲 B', item_ordered: '手沖' },
+        });
+        await seedSession('g1');
+        await seedCup('cup1', 'g1', 'A', 0, OWNER_ID, { bean_name: '耶加雪菲 C', origin: '衣索比亞', process: '日曬' });
+        await seedCup('cup2', 'g1', 'B', 1, OWNER_ID, { bean_name: '耶加雪菲 A', origin: '衣索比亞', process: '日曬' });
+
+        expect(await getJson<Suggest>('/api/suggest')).toEqual({
+            origins: ['衣索比亞', '肯亞'],
+            processes: ['日曬', '水洗'],
+            methods: ['手沖'],
+            beans: ['耶加雪菲 A', '耶加雪菲 B', '耶加雪菲 C'],
+            items: ['手沖'],
+        });
+    });
+
+    it('別人的資料不會出現在任何清單', async () => {
+        await seedShop('s1');
+        await seedRecord('cupping_records', {
+            id: 'c1',
+            userId: OTHER_ID,
+            extra: { bean_name: '別人的豆', origin: '別人的國', process: '別人的處理', method: '別人的方法' },
+        });
+        await seedRecord('tasting_records', {
+            id: 't1',
+            shopId: 's1',
+            userId: OTHER_ID,
+            extra: { bean_name: '別人的豆2', item_ordered: '別人的品項' },
+        });
+        await seedSession('g1', OTHER_ID);
+        await seedCup('cup1', 'g1', 'A', 0, OTHER_ID, { bean_name: '別人的豆3', origin: '別人的國2', process: '別人的處理2' });
+
+        expect(await getJson<Suggest>('/api/suggest')).toEqual({
+            origins: [],
+            processes: [],
+            methods: [],
+            beans: [],
+            items: [],
+        });
+    });
+
+    it('舊的 /api/suggest/origins、/items 已移除', async () => {
+        expect((await api('/api/suggest/origins')).status).toBe(404);
+        expect((await api('/api/suggest/items')).status).toBe(404);
+    });
+
+    it('設了 Access 但沒帶 token 時回 401', async () => {
+        const res = await worker.fetch(
+            new Request('http://app.test/api/suggest'),
+            { ...env, ACCESS_AUD: 'aud', ACCESS_TEAM_DOMAIN: 'team.cloudflareaccess.com' } as Env,
+            {} as ExecutionContext,
+        );
+        expect(res.status).toBe(401);
     });
 });
 

@@ -129,7 +129,8 @@
                             <label class="form-label">處理法</label>
                             <div class="process-chip-row" role="group" aria-label="處理法"></div>
                             <input type="text" class="form-control mt-2" id="f-process"
-                                   placeholder="或自行輸入">
+                                   list="process-options" placeholder="或自行輸入">
+                            <datalist id="process-options"></datalist>
                         </div>
                         <div class="col-12" data-bean-type-only="cupping:blend">
                             <label for="f-blend_composition" class="form-label">配方組成</label>
@@ -142,7 +143,9 @@
                                 <span data-bean-type-text="cupping:blend">配方名稱 *</span>
                             </label>
                             <input type="text" class="form-control" id="f-cupping-bean"
-                                   placeholder="例：衣索比亞 耶加雪菲 G1">
+                                   list="bean-options" placeholder="例：衣索比亞 耶加雪菲 G1">
+                            <!-- 沖煮 / 品鑑的豆名共用這個清單（同一個 template）。 -->
+                            <datalist id="bean-options"></datalist>
                         </div>
                         <div class="col-12" data-bean-type-only="cupping:any">
                             <label class="form-label d-block">烘焙度</label>
@@ -198,7 +201,8 @@
                                     </button>
                                 </div>
                                 <input type="text" class="form-control mt-2" id="f-method"
-                                       placeholder="或自行輸入（V60、義式、冰滴⋯）">
+                                       list="method-options" placeholder="或自行輸入（V60、義式、冰滴⋯）">
+                                <datalist id="method-options"></datalist>
                             </div>
                             <div class="col-md-4 col-6">
                                 <label for="f-grind" class="form-label">研磨度</label>
@@ -267,7 +271,7 @@
                         <div class="col-md-6 col-12" data-bean-type-only="tasting:any">
                             <label for="f-tasting-bean" class="form-label">品項豆子名</label>
                             <input type="text" class="form-control" id="f-tasting-bean"
-                                   placeholder="例：衣索比亞 耶加雪菲">
+                                   list="bean-options" placeholder="例：衣索比亞 耶加雪菲">
                         </div>
                     </div>
                 </div>
@@ -404,7 +408,8 @@
                             <div class="col-12">
                                 <label for="f-cup-bean" class="form-label">咖啡名稱 / 豆名</label>
                                 <input type="text" class="form-control" id="f-cup-bean"
-                                       placeholder="例：衣索比亞 耶加雪菲 G1">
+                                       list="bean-options" placeholder="例：衣索比亞 耶加雪菲 G1">
+                                <datalist id="bean-options"></datalist>
                             </div>
                             <div class="col-12">
                                 <label class="form-label">豆子類型</label>
@@ -430,7 +435,8 @@
                                 <label class="form-label">處理法</label>
                                 <div class="process-chip-row" role="group" aria-label="處理法"></div>
                                 <input type="text" class="form-control mt-2" id="f-process"
-                                       placeholder="或自行輸入">
+                                       list="process-options" placeholder="或自行輸入">
+                                <datalist id="process-options"></datalist>
                             </div>
                             <div class="col-12" data-bean-type-only="session:blend">
                                 <label for="f-blend_composition" class="form-label">配方組成</label>
