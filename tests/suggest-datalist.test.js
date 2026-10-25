@@ -138,17 +138,35 @@ describe('沖煮 / 品鑑表單', () => {
         expect(api.suggestCalls()).toBe(2);
     });
 
-    it('請求期間存檔：舊快照不會把 suggestLoaded 設回 true，下次進表單仍重抓', async () => {
-        let release;
-        const api = makeApi({ suggest: () => new Promise(resolve => { release = () => resolve(SUGGEST); }) });
+    it('請求期間存檔：舊快照整份丟掉、不蓋過較新的結果，下次進表單仍重抓', async () => {
+        const STALE = { ...SUGGEST, origins: ['舊快照國家'] };
+        const pending = [];
+        const api = makeApi({ suggest: () => new Promise(resolve => { pending.push(resolve); }) });
         await boot('#/new/cupping', api);
         expect(api.suggestCalls()).toBe(1);
 
         win.invalidateSuggestions(); // 模擬 /api/suggest 還沒回來時存檔成功
+        await go('#/records');
+        await go('#/new/cupping');
+        expect(api.suggestCalls()).toBe(2);
+
+        pending[1](SUGGEST); // 較新的請求先回來
+        await settle();
+        pending[0](STALE);   // 存檔前發出的請求最後才回來
+        await settle();
+        expect(win.eval('state.suggestLoaded')).toBe(true);
+        expect(win.eval('state.suggest.origins')).toEqual(SUGGEST.origins);
+        expect(options('origin-options').slice(0, 3)).toEqual(SUGGEST.origins);
+    });
+
+    it('請求期間存檔且沒有再發請求：suggestLoaded 維持 false，下次進表單重抓', async () => {
+        let release;
+        const api = makeApi({ suggest: () => new Promise(resolve => { release = () => resolve(SUGGEST); }) });
+        await boot('#/new/cupping', api);
+        win.invalidateSuggestions();
         release();
         await settle();
         expect(win.eval('state.suggestLoaded')).toBe(false);
-        expect(options('origin-options').slice(0, 3)).toEqual(SUGGEST.origins);
 
         await go('#/records');
         await go('#/new/cupping');

@@ -2306,11 +2306,13 @@ async function loadSuggestions() {
     // 去重、去空白、依次數排序都在 Worker 的 SQL 裡做。
     try {
         const res = await apiFetch('/api/suggest');
+        // 請求期間有存檔（invalidateSuggestions）的話這份是存檔前的快照：整份丟掉，
+        // 免得蓋過較新的請求結果；下次掛載會重抓。
+        if (gen !== state.suggestGen) return;
         SUGGEST_DATALISTS.forEach(([, key]) => {
             state.suggest[key] = res?.[key] || [];
         });
-        // 請求期間有存檔（invalidateSuggestions）的話這份是存檔前的快照，下次掛載要重抓。
-        if (gen === state.suggestGen) state.suggestLoaded = true;
+        state.suggestLoaded = true;
     } catch (e) {
         console.warn('loadSuggestions failed:', e);
     }
