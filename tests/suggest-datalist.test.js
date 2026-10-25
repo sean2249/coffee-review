@@ -137,6 +137,23 @@ describe('沖煮 / 品鑑表單', () => {
         await go('#/new/cupping');
         expect(api.suggestCalls()).toBe(2);
     });
+
+    it('請求期間存檔：舊快照不會把 suggestLoaded 設回 true，下次進表單仍重抓', async () => {
+        let release;
+        const api = makeApi({ suggest: () => new Promise(resolve => { release = () => resolve(SUGGEST); }) });
+        await boot('#/new/cupping', api);
+        expect(api.suggestCalls()).toBe(1);
+
+        win.invalidateSuggestions(); // 模擬 /api/suggest 還沒回來時存檔成功
+        release();
+        await settle();
+        expect(win.eval('state.suggestLoaded')).toBe(false);
+        expect(options('origin-options').slice(0, 3)).toEqual(SUGGEST.origins);
+
+        await go('#/records');
+        await go('#/new/cupping');
+        expect(api.suggestCalls()).toBe(2);
+    });
 });
 
 describe('杯測表單', () => {

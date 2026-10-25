@@ -227,6 +227,7 @@ const state = {
     // suggestLoaded 設回 false，下次掛載表單會重抓。
     suggest: { origins: [], processes: [], methods: [], beans: [], items: [] },
     suggestLoaded: false,
+    suggestGen: 0,      // 每次失效 +1；請求期間被失效就不把 suggestLoaded 設回 true
     user: null,         // 目前登入者（Supabase session user）或 null
 };
 
@@ -2301,16 +2302,24 @@ const SUGGEST_DATALISTS = [
 
 async function loadSuggestions() {
     if (state.suggestLoaded) return;
+    const gen = state.suggestGen;
     // 去重、去空白、依次數排序都在 Worker 的 SQL 裡做。
     try {
         const res = await apiFetch('/api/suggest');
         SUGGEST_DATALISTS.forEach(([, key]) => {
             state.suggest[key] = res?.[key] || [];
         });
-        state.suggestLoaded = true;
+        // 請求期間有存檔（invalidateSuggestions）的話這份是存檔前的快照，下次掛載要重抓。
+        if (gen === state.suggestGen) state.suggestLoaded = true;
     } catch (e) {
         console.warn('loadSuggestions failed:', e);
     }
+}
+
+// 存檔成功後呼叫：下次掛載表單會重抓 /api/suggest。
+function invalidateSuggestions() {
+    state.suggestLoaded = false;
+    state.suggestGen++;
 }
 
 // 歷史值（已依頻率）在前，內建值中歷史沒出現過的接在後面；比對不分大小寫。
@@ -3981,13 +3990,13 @@ async function submitForm() {
         const payload = buildFormPayload(mode);
         if (recordId) {
             await api.updateRecord(mode, recordId, payload);
-            state.suggestLoaded = false;
+            invalidateSuggestions();
             const noteSaved = await saveNote();
             if (noteSaved) showToast('✓ 已更新');
             else showErrorToast('記錄已更新，但店家筆記沒存起來，請再存一次');
         } else {
             const created = await api.createRecord(mode, payload);
-            state.suggestLoaded = false;
+            invalidateSuggestions();
             const noteSaved = await saveNote();
             // 接著就離開表單：筆記沒存成功的話編輯內容也跟著消失，得說清楚。
             if (noteSaved) showToast('✓ 已儲存');
@@ -4868,7 +4877,7 @@ async function submitSessionForm() {
     try {
         await queueSessionWrite(form, () => api.saveSession(form.id, session, cups));
         // 只有正式存檔才刷新建議；自動暫存（autosaveSession）不動它。
-        state.suggestLoaded = false;
+        invalidateSuggestions();
         showToast(stage === 'reveal' && form.recordId ? '✓ 已更新' : '✓ 已儲存');
         // 存檔期間已經離開頁面就別把人硬拉回場次頁。
         if (state.currentForm === form) {
