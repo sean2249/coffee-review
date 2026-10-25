@@ -301,6 +301,7 @@ describe('列表頁', () => {
 
         doc.getElementById('records-clear-search').click();
         expect(doc.getElementById('filter-q').value).toBe('');
+        expect(doc.activeElement).toBe(doc.getElementById('filter-q'));
         expect(win.location.hash).toBe('#/records?type=cupping&tier=recommend&sort=score-asc');
         expect(doc.querySelector('.empty-state').textContent).toContain('找不到符合條件的記錄');
     });

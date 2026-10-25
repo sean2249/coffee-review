@@ -1543,6 +1543,7 @@ function renderCards() {
             if (qEl) qEl.value = '';
             syncFilterToHash();
             renderCards();
+            if (qEl) qEl.focus();
         });
         return;
     }
