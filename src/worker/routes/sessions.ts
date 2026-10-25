@@ -16,16 +16,15 @@ routes.use('/api/sessions/*', requireAccess, withUser);
 routes.get('/api/sessions/:id', async (c) => {
     const id = c.req.param('id');
     const userId = c.get('userId');
-    const session = await c.env.DB.prepare('select * from cupping_sessions where id = ?1 and user_id = ?2')
-        .bind(id, userId)
-        .first<Row>();
+    const db = c.env.DB;
+    // 場次與杯一次 batch 送出（杯的查詢只用 id + user_id），省一次 Worker → D1 往返。
+    const [sessions, cups] = await db.batch<Row>([
+        db.prepare('select * from cupping_sessions where id = ?1 and user_id = ?2').bind(id, userId),
+        db.prepare('select * from cupping_session_cups where session_id = ?1 and user_id = ?2 order by position')
+            .bind(id, userId),
+    ]);
+    const session = sessions.results[0];
     if (!session) return c.json(null);
-
-    const cups = await c.env.DB.prepare(
-        'select * from cupping_session_cups where session_id = ?1 and user_id = ?2 order by position',
-    )
-        .bind(id, userId)
-        .all<Row>();
     return c.json({ ...session, cups: rowsToDto('cupping_session_cups', cups.results) });
 });
 

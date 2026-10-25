@@ -95,22 +95,22 @@ async function listSessionsWithCups(
     withSearch: boolean,
 ): Promise<Row[]> {
     const cupSearch = withSearch ? ', origin, process, blend_composition, roast, notes, defects' : '';
-    const sessions = await db
-        .prepare(
-            `select id, title, session_date, created_at${withSearch ? ', notes' : ''} from cupping_sessions
-             where user_id = ?1 order by created_at desc`,
-        )
-        .bind(userId)
-        .all<Row>();
+    // 杯的查詢不依賴場次的結果（只用 user_id），一次 batch 送出，省一次 Worker → D1 往返。
+    const [sessions, cups] = await db.batch<Row>([
+        db
+            .prepare(
+                `select id, title, session_date, created_at${withSearch ? ', notes' : ''} from cupping_sessions
+                 where user_id = ?1 order by created_at desc`,
+            )
+            .bind(userId),
+        db
+            .prepare(
+                `select session_id, id, code, position, shop_id, bean_name, bean_type, coe_total, coe_tier_id${flavour}${cupSearch}
+                 from cupping_session_cups where user_id = ?1 order by position`,
+            )
+            .bind(userId),
+    ]);
     if (sessions.results.length === 0) return [];
-
-    const cups = await db
-        .prepare(
-            `select session_id, id, code, position, shop_id, bean_name, bean_type, coe_total, coe_tier_id${flavour}${cupSearch}
-             from cupping_session_cups where user_id = ?1 order by position`,
-        )
-        .bind(userId)
-        .all<Row>();
 
     const bySession = new Map<string, Row[]>();
     for (const raw of cups.results) {
