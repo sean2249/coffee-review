@@ -221,7 +221,7 @@ const legacyTagSections = [
 const state = {
     shops: [],          // [{id, name, location, intro, ...}]
     shopsLoaded: false, // true after first successful fetch — distinguishes "deleted" from "not loaded yet"
-    listFilter: { type: 'all', shopKeyword: '', tiers: [], dateFrom: '', dateTo: '', sort: 'date-desc', group: 'none' },
+    listFilter: { type: 'all', q: '', tiers: [], dateFrom: '', dateTo: '', sort: 'date-desc', group: 'none' },
     currentForm: null,  // { mode, recordId|null }
     knownOrigins: [],   // distinct origin strings from past cupping records
     knownOriginsLoaded: false,
@@ -468,10 +468,12 @@ const api = {
 
     // withEvaluations：多拉 evaluations / observation（體積大），場次內嵌的杯也一起。
     // 只有店家頁的常見風味需要；記錄列表、店家列表不必為了用不到的欄位多下載。
+    // withSearch：記錄列表有搜尋字時才帶，多拉全文搜尋要比對的文字欄位（隱含 withEvaluations）。
     // 三種類型的合併與排序都在 Worker 做。
-    listRecords({ type = 'all', withEvaluations = false } = {}) {
+    listRecords({ type = 'all', withEvaluations = false, withSearch = false } = {}) {
         const qs = new URLSearchParams({ type });
         if (withEvaluations) qs.set('withEvaluations', '1');
+        if (withSearch) qs.set('withSearch', '1');
         return apiFetch(`/api/records?${qs}`);
     },
 
@@ -1049,6 +1051,7 @@ function flattenSessionCups(records) {
         _type: 'session_cup',
         session_id: r.id,
         session_title: r.title,
+        session_notes: r.notes,
         session_date: r.session_date,
         created_at: r.created_at,
     })));
@@ -1072,15 +1075,68 @@ function recordDateStr(r) {
     return (recordDateIso(r) || '').slice(0, 10);
 }
 
+// 全文搜尋：kw 已去頭尾空白並轉小寫，整串當一個子字串比對。回傳第一個命中的
+// { label, value, flavor?, cupCode? } 或 null；欄位依固定順序檢查（「符合：」只列第一個）。
+// 一筆沖煮 / 品鑑 / 杯共用這段；場次與攤平的杯在 searchHit 另外處理。
+function searchHitInRecord(r, kw) {
+    const has = v => v != null && v !== '' && String(v).toLowerCase().includes(kw);
+    const text = (label, v) => (has(v) ? { label, value: String(v) } : null);
+    const flavorName = (label, ids) => {
+        for (const id of Array.isArray(ids) ? ids : []) {
+            const m = decodeFlavorMeta(id);
+            if (m && has(m.name)) return { label, value: m.name, flavor: true };
+        }
+        return null;
+    };
+    // 店家清單尚未成功載入時 shopName() 會回傳空字串，只略過店家這一項。
+    const shop = state.shopsLoaded ? text('店家', shopName(r.shop_id)) : null;
+    const hit = text('標題', r.title) || text('豆名', r.bean_name) || text('品項', r.item_ordered) || shop
+        || text('產地', r.origin) || text('處理法', r.process)
+        || text('配方', r.blend_composition) || text('烘焙度', r.roast);
+    if (hit) return hit;
+    for (const entry of Object.values(r.evaluations || {})) {
+        const m = flavorName('風味', entry?.flavors);
+        if (m) return m;
+    }
+    const aroma = r.observation?.aroma;
+    if (aroma) {
+        const m = flavorName('香氣', aroma.flavors);
+        if (m) return m;
+        for (const subKey of Object.keys(observationOptions.aroma)) {
+            const vals = Array.isArray(aroma[subKey]) ? aroma[subKey] : [aroma[subKey]];
+            const v = vals.find(has);
+            if (v) return { label: '香氣', value: String(v), flavor: true };
+        }
+        const a = text('乾香', aroma.dryAroma) || text('濕香', aroma.wetAroma) || text('香氣備註', aroma.notes);
+        if (a) return a;
+    }
+    return text('備註', r.notes) || text('瑕疵', r.defects);
+}
+
+function searchHit(r, kw) {
+    const text = (label, v) => (v && String(v).toLowerCase().includes(kw) ? { label, value: String(v) } : null);
+    if (r._type === 'session') {
+        // 場次標題 / 備註，或任一杯符合就算（與徽章「任一杯符合」一致）。
+        const own = text('標題', r.title) || text('備註', r.notes);
+        if (own) return own;
+        for (const c of r.cups || []) {
+            const hit = searchHitInRecord(c, kw);
+            if (hit) return { ...hit, cupCode: c.code };
+        }
+        return null;
+    }
+    const hit = searchHitInRecord(r, kw);
+    if (hit || r._type !== 'session_cup') return hit;
+    return text('場次標題', r.session_title) || text('場次備註', r.session_notes);
+}
+
 function applyAdvancedFilters(rows) {
     const f = state.listFilter;
-    // 店家清單尚未成功載入時 shopName() 會回傳空字串，會把所有記錄誤濾掉，
-    // 故 shops 未載入前先略過店家關鍵字篩選。
-    const kw = state.shopsLoaded ? f.shopKeyword.trim().toLowerCase() : '';
+    const kw = f.q.trim().toLowerCase();
     return rows.filter(r => {
-        // 杯測場次沒有自己的店家 / 徽章：任一杯符合就算。
+        // 杯測場次沒有自己的徽章：任一杯符合就算。
         const cups = r._type === 'session' ? (r.cups || []) : [r];
-        if (kw && !cups.some(c => shopName(c.shop_id).toLowerCase().includes(kw))) return false;
+        if (kw && !searchHit(r, kw)) return false;
         if (f.tiers.length && !cups.some(c => f.tiers.includes(c.coe_tier_id))) return false;
         if (f.dateFrom || f.dateTo) {
             const d = recordDateStr(r);
@@ -1185,7 +1241,7 @@ function groupRecords(rows, group, sort) {
     });
 }
 
-function renderRecordGroup(g) {
+function renderRecordGroup(g, kw = '') {
     const avg = g.avgScore === null ? '' : ` · 平均 ${g.avgScore.toFixed(1)}`;
     return `
         <section class="records-group">
@@ -1193,7 +1249,7 @@ function renderRecordGroup(g) {
                 <span class="records-group-title">${escapeHtml(g.label)}</span>
                 <span class="records-group-meta">${g.rows.length} 筆${avg}</span>
             </header>
-            ${g.rows.map(renderRecordCard).join('')}
+            ${g.rows.map(r => renderRecordCard(r, kw)).join('')}
         </section>`;
 }
 
@@ -1208,13 +1264,14 @@ function advancedFilterCount() {
 
 function hasAnyFilter() {
     const f = state.listFilter;
-    return f.type !== 'all' || f.shopKeyword.trim() !== '' || advancedFilterCount() > 0;
+    return f.type !== 'all' || f.q.trim() !== '' || advancedFilterCount() > 0;
 }
 
 function hydrateFilterFromQuery(query) {
     state.listFilter = {
         type: ['cupping', 'tasting', 'session'].includes(query.type) ? query.type : 'all',
-        shopKeyword: query.shop || '',
+        // 舊連結的 ?shop=（只搜店家名稱）當成 ?q= 讀進來。
+        q: query.q || query.shop || '',
         tiers: query.tier ? query.tier.split(',').filter(Boolean) : [],
         dateFrom: query.from || '',
         dateTo: query.to || '',
@@ -1228,7 +1285,7 @@ function syncFilterToHash() {
     const f = state.listFilter;
     const params = new URLSearchParams();
     if (f.type && f.type !== 'all') params.set('type', f.type);
-    if (f.shopKeyword.trim()) params.set('shop', f.shopKeyword.trim());
+    if (f.q.trim()) params.set('q', f.q.trim());
     if (f.tiers.length) params.set('tier', f.tiers.join(','));
     if (f.dateFrom) params.set('from', f.dateFrom);
     if (f.dateTo) params.set('to', f.dateTo);
@@ -1323,12 +1380,13 @@ function openFilterDrawer() {
     toEl.addEventListener('change', () => { state.listFilter.dateTo = toEl.value; onFilterChange(); });
 
     backdrop.querySelector('#filter-clear-all').addEventListener('click', () => {
-        state.listFilter = { type: 'all', shopKeyword: '', tiers: [], dateFrom: '', dateTo: '' };
+        // 排序 / 分組只是呈現方式，不算篩選，保留原值。
+        state.listFilter = { ...state.listFilter, type: 'all', q: '', tiers: [], dateFrom: '', dateTo: '' };
         backdrop.querySelectorAll('[data-tier-id]').forEach(b => b.classList.remove('selected'));
         fromEl.value = '';
         toEl.value = '';
-        const kwEl = document.getElementById('filter-shop-kw');
-        if (kwEl) kwEl.value = '';
+        const qEl = document.getElementById('filter-q');
+        if (qEl) qEl.value = '';
         document.querySelectorAll('.filter-chip[data-filter-type]').forEach(b =>
             b.classList.toggle('selected', b.dataset.filterType === 'all'));
         onFilterChange();
@@ -1349,9 +1407,9 @@ async function viewRecordsList(root, query = {}) {
                 <button type="button" class="filter-chip" data-filter-type="tasting">品鑑</button>
                 <button type="button" class="filter-chip" data-filter-type="session">杯測</button>
             </div>
-            <div class="filter-shop-wrap">
-                <input type="search" class="form-control form-control-sm" id="filter-shop-kw"
-                       placeholder="搜尋店家名稱…" autocomplete="off">
+            <div class="filter-q-wrap">
+                <input type="search" class="form-control form-control-sm" id="filter-q"
+                       placeholder="搜尋豆名、店家、風味、備註…" aria-label="搜尋記錄" autocomplete="off">
             </div>
             <button type="button" class="btn btn-sm btn-outline-secondary filter-adv-btn" id="filter-adv-btn">
                 <i class="bi bi-sliders"></i>進階篩選<span class="filter-adv-badge" id="filter-adv-badge" hidden></span>
@@ -1367,20 +1425,28 @@ async function viewRecordsList(root, query = {}) {
         </div>
         <div id="records-list" class="records-list"></div>`;
 
+    // 舊連結 ?shop= 已讀成 q，網址也改寫成 ?q=。
+    if (query.shop && !query.q) syncFilterToHash();
+
     await refreshShopsCache();
 
-    // Shop keyword search (debounce 200ms)
-    const kwEl = document.getElementById('filter-shop-kw');
-    kwEl.value = state.listFilter.shopKeyword;
-    let kwTimer;
-    kwEl.addEventListener('input', () => {
-        clearTimeout(kwTimer);
-        kwTimer = setTimeout(() => {
+    // Full-text search (debounce 200ms)
+    const qEl = document.getElementById('filter-q');
+    qEl.value = state.listFilter.q;
+    let qTimer;
+    qEl.addEventListener('input', () => {
+        clearTimeout(qTimer);
+        qTimer = setTimeout(() => {
             // 若 debounce 期間已離開 records 視圖（輸入框被移出 DOM），
-            // 就不要再 onFilterChange / replaceState，避免改回 #/records 網址。
-            if (!document.body.contains(kwEl)) return;
-            state.listFilter.shopKeyword = kwEl.value;
-            onFilterChange();
+            // 就不要再重繪 / replaceState，避免改回 #/records 網址。
+            if (!document.body.contains(qEl)) return;
+            state.listFilter.q = qEl.value;
+            syncFilterToHash();
+            updateAdvBadge();
+            // 搜尋欄位只在第一次需要時抓一次；之後改搜尋字只重繪，不重打 API。
+            // listRows 還是 null（請求在途）時 renderCards 不做事，回應回來會用當下的 q 重繪。
+            if (state.listFilter.q.trim() && !listRowsHaveSearch && !listPendingSearch) loadAndRenderCards();
+            else renderCards();
         }, 200);
     });
 
@@ -1416,16 +1482,32 @@ async function viewRecordsList(root, query = {}) {
 // 最近一次抓到、尚未篩選的列表。排序 / 分組只是重排，直接拿它重繪，不再打 API ——
 // 否則較慢的舊請求晚回來，會用舊的排序 / 分組蓋掉新的畫面。
 let listRows = null;
+// listRows 是否含搜尋欄位（withSearch），只由勝出的回應設定。
+let listRowsHaveSearch = false;
+// 每次請求 +1；回來時序號不是最新的就丟掉，免得較早的回應蓋掉新的。
+let listReqSeq = 0;
+// 在途的那個請求是否帶 withSearch：等它回來時繼續打字，不必再發一次。
+let listPendingSearch = false;
 
 async function loadAndRenderCards() {
     const container = document.getElementById('records-list');
     if (!container) return;
+    const seq = ++listReqSeq;
+    const withSearch = state.listFilter.q.trim() !== '';
     listRows = null;
+    listRowsHaveSearch = false;
+    listPendingSearch = withSearch;
     container.innerHTML = '<div class="empty-state"><i class="bi bi-hourglass-split"></i>讀取中…</div>';
     try {
-        listRows = await api.listRecords({ type: state.listFilter.type });
+        const rows = await api.listRecords({ type: state.listFilter.type, withSearch });
+        if (seq !== listReqSeq) return;
+        listRows = rows;
+        listRowsHaveSearch = withSearch;
+        listPendingSearch = false;
         renderCards();
     } catch (e) {
+        if (seq !== listReqSeq) return;
+        listPendingSearch = false;
         console.error(e);
         container.innerHTML = `<div class="empty-state error">
             <i class="bi bi-exclamation-triangle"></i>讀取失敗：${escapeHtml(e.message || String(e))}
@@ -1444,7 +1526,26 @@ function renderCards() {
     const container = document.getElementById('records-list');
     if (!container || !listRows) return;
     const { sort, group } = state.listFilter;
+    const q = state.listFilter.q.trim();
+    const kw = q.toLowerCase();
     const rows = applyAdvancedFilters(group === 'none' ? listRows : rowsForGrouping(listRows));
+    if (rows.length === 0 && q) {
+        container.innerHTML = `<div class="empty-state">
+            <i class="bi bi-search"></i>
+            <p>找不到含「${escapeHtml(q)}」的記錄</p>
+            <p class="empty-state-hint">換個關鍵字，或清除搜尋看看</p>
+            <button type="button" class="btn btn-outline-secondary btn-sm" id="records-clear-search">清除搜尋</button>
+        </div>`;
+        // 只清搜尋字；類型 / 進階篩選 / 排序 / 分組都保留。
+        document.getElementById('records-clear-search').addEventListener('click', () => {
+            state.listFilter.q = '';
+            const qEl = document.getElementById('filter-q');
+            if (qEl) qEl.value = '';
+            syncFilterToHash();
+            renderCards();
+        });
+        return;
+    }
     if (rows.length === 0) {
         container.innerHTML = hasAnyFilter()
             ? `<div class="empty-state">
@@ -1459,8 +1560,8 @@ function renderCards() {
         return;
     }
     container.innerHTML = group === 'none'
-        ? sortRecords(rows, sort).map(renderRecordCard).join('')
-        : groupRecords(rows, group, sort).map(renderRecordGroup).join('');
+        ? sortRecords(rows, sort).map(r => renderRecordCard(r, kw)).join('')
+        : groupRecords(rows, group, sort).map(g => renderRecordGroup(g, kw)).join('');
 }
 
 // 沒取名的場次用建立時間當名字：同一天的好幾場在清單上才分得出來。
@@ -1480,7 +1581,35 @@ function deriveTitle(r) {
     return r.item_ordered || r.bean_name || '(未指定品項)';
 }
 
-function renderRecordCard(r) {
+// 「符合：」提示行的片段，關鍵字以 <mark> 標出。先在原字串上切出「前 / 命中 / 後」
+// 三段再各自 escape —— 先 escape 整串再找位置的話，&amp; 之類的實體會讓索引錯位。
+function renderHitSnippet(value, kw) {
+    const text = String(value).replace(/\r?\n/g, ' ');
+    const lower = text.toLowerCase();
+    // toLowerCase() 改變了長度（極少數字元）時，小寫字串的索引對不上原字串：不標 mark。
+    const at = lower.length === text.length ? lower.indexOf(kw) : -1;
+    if (at < 0) return escapeHtml(text);
+    const end = at + kw.length;
+    const clip = text.length > 20;
+    const from = clip ? Math.max(0, at - 8) : 0;
+    const to = clip ? Math.min(text.length, end + 8) : text.length;
+    return (from > 0 ? '…' : '')
+        + escapeHtml(text.slice(from, at))
+        + `<mark class="search-hit">${escapeHtml(text.slice(at, end))}</mark>`
+        + escapeHtml(text.slice(end, to))
+        + (to < text.length ? '…' : '');
+}
+
+function renderSearchHit(hit, kw) {
+    const cup = hit.cupCode ? `${escapeHtml(hit.cupCode)} · ` : '';
+    const body = hit.flavor
+        ? `${escapeHtml(hit.label)} ${renderHitSnippet(hit.value, kw)}`
+        : `${escapeHtml(hit.label)}「${renderHitSnippet(hit.value, kw)}」`;
+    return `符合：${cup}${body}`;
+}
+
+// kw：記錄列表的搜尋字（已轉小寫），有值且命中時卡片多一行「符合：…」。店家頁不傳。
+function renderRecordCard(r, kw = '') {
     const type = r._type;
     // 場次卡的獎牌 / 分數取最高分那杯；沒有任何杯評過分時顯示「—」。
     const best = type === 'session' ? bestSessionCup(r.cups) : null;
@@ -1490,6 +1619,7 @@ function renderRecordCard(r) {
     const shop = shopName(r.shop_id);
     const date = fmtDate(recordDateIso(r));
     const title = deriveTitle(r);
+    const hit = kw ? searchHit(r, kw) : null;
     let extraMeta = '';
     if (type === 'session') {
         extraMeta = `<span><i class="bi bi-cup"></i>${(r.cups || []).length} 杯</span>`
@@ -1513,6 +1643,7 @@ function renderRecordCard(r) {
                     ${extraMeta}
                     ${date ? `<span><i class="bi bi-calendar3"></i>${escapeHtml(date)}</span>` : ''}
                 </div>
+                ${hit ? `<div class="record-card-hit">${renderSearchHit(hit, kw)}</div>` : ''}
             </div>
             <i class="bi bi-chevron-right record-card-chevron"></i>
         </a>`;
@@ -5483,7 +5614,7 @@ async function viewShopDetail(root, shopId) {
                     <div class="records-list">
                         ${records.length === 0
                             ? `<div class="empty-state"><i class="bi bi-inbox"></i>還沒有相關記錄</div>`
-                            : records.map(renderRecordCard).join('')}
+                            : records.map(r => renderRecordCard(r)).join('')}
                     </div>
                 </div>
             </div>`;

@@ -367,12 +367,12 @@ button.card-title {
     border-color: var(--accent);
     color: #fff;
 }
-.filter-shop-wrap {
+.filter-q-wrap {
     flex: 1 1 8rem;
     min-width: 0;
 }
-.filter-shop-wrap .form-select,
-.filter-shop-wrap .form-control { min-width: 8rem; }
+.filter-q-wrap .form-select,
+.filter-q-wrap .form-control { min-width: 8rem; }
 
 /* 進階篩選按鈕 + 條件數 badge */
 .filter-adv-btn {
@@ -535,6 +535,23 @@ button.card-title {
     font-size: 1rem;
     flex-shrink: 0;
 }
+
+/* ───── Records search hit ──────────────────────────────────────────────── */
+.record-card-hit {
+    margin-top: 0.2rem;
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.search-hit {
+    padding: 0 0.1em;
+    border-radius: 2px;
+    background: var(--accent-soft);
+    color: inherit;
+}
+.empty-state p.empty-state-hint { font-size: 0.82rem; }
 
 /* ───── Empty state ────────────────────────────────────────────────────── */
 .empty-state {
@@ -1740,8 +1757,8 @@ hr { border-color: var(--border); opacity: 0.7; }
     .eval-icon { width: 1.4rem; height: 1.4rem; font-size: 0.82rem; }
     .flavor-row.flavor-row-l2,
     .flavor-row.flavor-row-l3 { margin-left: 1rem; }
-    .filter-shop-wrap { margin-left: 0; width: 100%; }
-    .filter-shop-wrap .form-select { width: 100%; min-width: 0; }
+    .filter-q-wrap { margin-left: 0; width: 100%; }
+    .filter-q-wrap .form-select { width: 100%; min-width: 0; }
     .record-card-medal { width: 48px; height: 48px; }
     .record-card-medal-text { font-size: 0.95rem; }
     .shop-detail-name { font-size: 1.2rem; }
