@@ -14,13 +14,13 @@ beforeEach(async () => {
 describe('hydrateFilterFromQuery → syncFilterToHash', () => {
     it('parses every dimension out of the query object', () => {
         win.hydrateFilterFromQuery({
-            type: 'cupping', shop: '啡藏', tier: 'recommend,godly',
+            type: 'cupping', q: '啡藏', tier: 'recommend,godly',
             from: '2026-06-01', to: '2026-06-30',
         });
         // syncFilterToHash is the observable for the (module-private) state.
         win.syncFilterToHash();
         const hash = decodeURIComponent(win.location.hash);
-        expect(hash).toBe('#/records?type=cupping&shop=啡藏&tier=recommend,godly&from=2026-06-01&to=2026-06-30');
+        expect(hash).toBe('#/records?type=cupping&q=啡藏&tier=recommend,godly&from=2026-06-01&to=2026-06-30');
     });
 
     it('defaults missing keys and ignores an invalid type', () => {
@@ -130,9 +130,9 @@ describe('杯測場次（session）', () => {
             { id: 'shop-a', name: '甲咖啡' },
             { id: 'shop-b', name: '乙烘豆' },
         ]; state.shopsLoaded = true;`);
-        win.hydrateFilterFromQuery({ shop: '乙' });
+        win.hydrateFilterFromQuery({ q: '乙' });
         expect(win.applyAdvancedFilters([session, cupping]).map(r => r.id)).toEqual(['s1']);
-        win.hydrateFilterFromQuery({ shop: '甲' });
+        win.hydrateFilterFromQuery({ q: '甲' });
         expect(win.applyAdvancedFilters([session, cupping]).map(r => r.id)).toEqual(['s1', 'c1']);
     });
 

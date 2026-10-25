@@ -24,24 +24,30 @@ routes.use('/api/records/*', requireAccess, withUser);
 // 取代前端三個平行查詢 + 前端合併。欄位投影必須與舊的 PostgREST select 逐字相同：
 // 列表卡片只認這些鍵，而 evaluations / observation 體積大，只有店家頁的常見風味
 // 需要，所以維持 withEvaluations 旗標。
+// withSearch：記錄列表的全文搜尋在前端比對，需要的文字欄位（標題、處理法、備註…）
+// 只在有搜尋字時才帶；風味 / 觀察在 evaluations / observation 裡，所以它也隱含
+// withEvaluations。沒帶旗標時投影與上面完全相同。
 routes.get('/api/records', async (c) => {
     const type = c.req.query('type') ?? 'all';
     if (!['all', 'cupping', 'tasting', 'session'].includes(type)) {
         throw badRequest(`unknown record type: ${type}`);
     }
-    const withEvaluations = c.req.query('withEvaluations') === '1';
+    const withSearch = c.req.query('withSearch') === '1';
+    const withEvaluations = withSearch || c.req.query('withEvaluations') === '1';
     const userId = c.get('userId');
     const db = c.env.DB;
 
     const flavour = withEvaluations ? ', evaluations, observation' : '';
     const base = `id, shop_id, bean_type, coe_total, coe_tier_id, created_at${flavour}`;
+    const cuppingSearch = withSearch ? ', title, process, blend_composition, roast, notes, defects' : '';
+    const tastingSearch = withSearch ? ', title, notes, defects' : '';
     const tasks: Promise<Row[]>[] = [];
 
     if (type === 'all' || type === 'cupping') {
         tasks.push(
             db
                 .prepare(
-                    `select ${base}, bean_name, origin from cupping_records
+                    `select ${base}, bean_name, origin${cuppingSearch} from cupping_records
                      where user_id = ?1 order by created_at desc`,
                 )
                 .bind(userId)
@@ -53,7 +59,7 @@ routes.get('/api/records', async (c) => {
         tasks.push(
             db
                 .prepare(
-                    `select ${base}, visit_date, item_ordered, bean_name from tasting_records
+                    `select ${base}, visit_date, item_ordered, bean_name${tastingSearch} from tasting_records
                      where user_id = ?1 order by created_at desc`,
                 )
                 .bind(userId)
@@ -62,7 +68,7 @@ routes.get('/api/records', async (c) => {
         );
     }
     if (type === 'all' || type === 'session') {
-        tasks.push(listSessionsWithCups(db, userId, flavour));
+        tasks.push(listSessionsWithCups(db, userId, flavour, withSearch));
     }
 
     const merged = (await Promise.all(tasks)).flat();
@@ -82,23 +88,29 @@ routes.get('/api/records/:type/:id', async (c) => {
 });
 
 // 杯測場次沒有自己的店家 / 分數：卡片、篩選、店家頁都靠內嵌的杯摘要。
-async function listSessionsWithCups(db: D1Database, userId: string, flavour: string): Promise<Row[]> {
-    const sessions = await db
-        .prepare(
-            `select id, title, session_date, created_at from cupping_sessions
-             where user_id = ?1 order by created_at desc`,
-        )
-        .bind(userId)
-        .all<Row>();
+async function listSessionsWithCups(
+    db: D1Database,
+    userId: string,
+    flavour: string,
+    withSearch: boolean,
+): Promise<Row[]> {
+    const cupSearch = withSearch ? ', origin, process, blend_composition, roast, notes, defects' : '';
+    // 杯的查詢不依賴場次的結果（只用 user_id），一次 batch 送出，省一次 Worker → D1 往返。
+    const [sessions, cups] = await db.batch<Row>([
+        db
+            .prepare(
+                `select id, title, session_date, created_at${withSearch ? ', notes' : ''} from cupping_sessions
+                 where user_id = ?1 order by created_at desc`,
+            )
+            .bind(userId),
+        db
+            .prepare(
+                `select session_id, id, code, position, shop_id, bean_name, bean_type, coe_total, coe_tier_id${flavour}${cupSearch}
+                 from cupping_session_cups where user_id = ?1 order by position`,
+            )
+            .bind(userId),
+    ]);
     if (sessions.results.length === 0) return [];
-
-    const cups = await db
-        .prepare(
-            `select session_id, id, code, position, shop_id, bean_name, bean_type, coe_total, coe_tier_id${flavour}
-             from cupping_session_cups where user_id = ?1 order by position`,
-        )
-        .bind(userId)
-        .all<Row>();
 
     const bySession = new Map<string, Row[]>();
     for (const raw of cups.results) {

@@ -88,6 +88,48 @@ describe('GET /api/records', () => {
         expect(rows.map((r) => r.id)).toEqual(['mine']);
     });
 
+    it('withSearch=1 帶回搜尋用的文字欄位（隱含 withEvaluations），不帶旗標時沒有', async () => {
+        const text = { process: '水洗', blend_composition: '50/50', roast: '淺焙', notes: '備註', defects: '澀' };
+        await seedShop('s1');
+        await seedRecord('cupping_records', { id: 'c1', extra: { title: '沖煮標題', origin: '衣索比亞', ...text } });
+        await seedRecord('tasting_records', {
+            id: 't1',
+            shopId: 's1',
+            extra: { title: '品鑑標題', notes: '品鑑備註', defects: '苦' },
+        });
+        await seedSession('g1');
+        await env.DB.prepare(`update cupping_sessions set notes = '場次備註' where id = ?1`).bind('g1').run();
+        await seedCup('cup1', 'g1', 'A', 0, OWNER_ID, { origin: '肯亞', ...text });
+
+        const full = await getJson<Rec[]>('/api/records?type=all&withSearch=1');
+        const byId = Object.fromEntries(full.map((r) => [r.id, r]));
+        expect(byId.c1).toMatchObject({ title: '沖煮標題', origin: '衣索比亞', ...text, evaluations: {}, observation: {} });
+        expect(byId.t1).toMatchObject({ title: '品鑑標題', notes: '品鑑備註', defects: '苦', evaluations: {} });
+        expect(byId.t1).not.toHaveProperty('process');
+        expect(byId.g1).toMatchObject({ title: '場次 g1', notes: '場次備註' });
+        expect((byId.g1.cups as Rec[])[0]).toMatchObject({ origin: '肯亞', ...text, evaluations: {} });
+
+        const lean = await getJson<Rec[]>('/api/records?type=all');
+        const leanById = Object.fromEntries(lean.map((r) => [r.id, r]));
+        for (const key of ['title', 'process', 'notes', 'defects', 'evaluations']) {
+            expect(leanById.c1).not.toHaveProperty(key);
+        }
+        expect(leanById.t1).not.toHaveProperty('notes');
+        expect(leanById.g1).not.toHaveProperty('notes');
+        expect((leanById.g1.cups as Rec[])[0]).not.toHaveProperty('notes');
+        expect((leanById.g1.cups as Rec[])[0]).not.toHaveProperty('origin');
+    });
+
+    it('withSearch=1 也看不到別人的記錄、場次與杯', async () => {
+        await seedRecord('cupping_records', { id: 'mine', extra: { notes: '我的' } });
+        await seedRecord('cupping_records', { id: 'theirs', userId: OTHER_ID, extra: { notes: '別人的' } });
+        await seedSession('their-session', OTHER_ID);
+        await seedCup('their-cup', 'their-session', 'A', 0, OTHER_ID, { notes: '別人的杯' });
+
+        const rows = await getJson<Rec[]>('/api/records?withSearch=1');
+        expect(rows.map((r) => [r.id, r.notes])).toEqual([['mine', '我的']]);
+    });
+
     it('未知的 type 是 400', async () => {
         expect((await api('/api/records?type=bogus')).status).toBe(400);
     });
