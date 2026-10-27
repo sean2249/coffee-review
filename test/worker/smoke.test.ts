@@ -53,6 +53,14 @@ describe('worker 骨架', () => {
         );
         expect(res.status).toBe(401);
     });
+
+    it('設了 Access 但沒帶 token 時，沖煮計劃的列表與單筆都回 401', async () => {
+        const accessEnv = { ...env, ACCESS_AUD: 'aud', ACCESS_TEAM_DOMAIN: 'team.cloudflareaccess.com' } as Env;
+        for (const path of ['/api/brew-plans', '/api/brew-plans/x']) {
+            const res = await worker.fetch(new Request(`http://app.test${path}`), accessEnv, {} as ExecutionContext);
+            expect(`${path} -> ${res.status}`).toBe(`${path} -> 401`);
+        }
+    });
 });
 
 describe('D1 schema', () => {
@@ -62,6 +70,7 @@ describe('D1 schema', () => {
         ).all<{ name: string }>();
         const names = results.map((r) => r.name);
         for (const t of [
+            'brew_plans',
             'cupping_records',
             'cupping_session_cups',
             'cupping_sessions',
