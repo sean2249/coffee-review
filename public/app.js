@@ -910,6 +910,9 @@ async function renderRoute() {
         viewAccount(root);
     } else if (parts[0] === 'stats') {
         await viewStats(root);
+    } else if (parts[0] === 'proto-plans' && window.viewProtoPlans) {
+        // PROTOTYPE #146 — 拋棄式 mockup（public/proto-plans.prototype.js），不要合進 main
+        window.viewProtoPlans(root, parts);
     } else {
         viewNotFound(root);
     }
@@ -923,7 +926,7 @@ function updateTabbarActive() {
     let activeRoute = '/records';
     if (first === 'new') activeRoute = '/new';
     else if (first === 'shops') activeRoute = '/shops';
-    else if (first === 'me' || first === 'stats') activeRoute = '/me';
+    else if (first === 'me' || first === 'stats' || first === 'proto-plans') activeRoute = '/me';
     document.querySelectorAll('.tabbar-btn').forEach(a => {
         const isActive = a.dataset.route === activeRoute;
         a.classList.toggle('active', isActive);
