@@ -3,6 +3,7 @@ import type { AppEnv } from './lib/auth';
 import { requireAccess } from './lib/auth';
 import { withUser } from './lib/users';
 import { onError } from './lib/errors';
+import brewPlanRoutes from './routes/brew-plans';
 import placeRoutes from './routes/places';
 import recordRoutes from './routes/records';
 import sessionRoutes from './routes/sessions';
@@ -25,6 +26,7 @@ app.get('/api/me', requireAccess, withUser, (c) =>
     }),
 );
 
+app.route('/', brewPlanRoutes);
 app.route('/', placeRoutes);
 app.route('/', recordRoutes);
 app.route('/', sessionRoutes);

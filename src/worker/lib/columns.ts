@@ -101,5 +101,17 @@ export const SHOP_NOTE_COLS = [
     'schema_version',
 ] as const;
 
+// 沖煮計劃（#145）。驗證與正規化在 routes/brew-plans.ts 的 normalizePlan，這裡只管白名單。
+export const BREW_PLAN_COLS = [
+    'name',
+    'description',
+    'dripper',
+    'grind',
+    'dose_g',
+    'water_temp',
+    'steps',
+    'schema_version',
+] as const;
+
 export const recordCols = (table: 'cupping_records' | 'tasting_records'): readonly string[] =>
     table === 'tasting_records' ? TASTING_COLS : CUPPING_COLS;

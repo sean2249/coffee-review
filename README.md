@@ -88,7 +88,7 @@ Supabase 的 RLS 換成 **Worker 端強制**：`requireAccess` 驗完 Access JWT
 `src/worker/lib/columns.ts` 的白名單濾掉。
 
 `shops` 仍是共享 registry（任何登入者可讀、可新增、可同步；只有建立者可刪），
-記錄、場次、杯與 `shop_notes` 都是每人隔離。`test/worker/` 對每一張擁有表
+記錄、場次、杯、`shop_notes` 與沖煮計劃 `brew_plans` 都是每人隔離。`test/worker/` 對每一張擁有表
 都有一個「看不到別人的資料」案例。
 
 ### Schema
