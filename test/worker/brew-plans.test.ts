@@ -186,6 +186,10 @@ describe('計劃欄位驗證', () => {
             plan({ name: '名'.repeat(40), dose_g: 100, water_temp: 100, description: '😀'.repeat(500) }),
         );
         expect(res.status).toBe(201);
+        const row = (await res.json()) as Rec;
+        expect(row.dose_g).toBe(100);
+        expect(row.water_temp).toBe(100);
+        expect(row.description).toBe('😀'.repeat(500));
     });
 
     it('選填文字：空字串存成 null', async () => {
@@ -197,6 +201,13 @@ describe('計劃欄位驗證', () => {
 });
 
 describe('steps 形狀', () => {
+    it('缺 steps → 400，DB 沒有新增', async () => {
+        const body = plan();
+        delete body.steps;
+        expect((await post(body)).status).toBe(400);
+        expect(await planCount()).toBe(0);
+    });
+
     it.each([
         ['steps 為空陣列', []],
         ['steps 不是陣列', { type: 'pour' }],
@@ -275,6 +286,7 @@ describe('正規化', () => {
     it('PATCH 送 steps 也照同樣的規則驗，壞的回 400 且沒變', async () => {
         await seedPlan('mine');
         expect((await patch('mine', { steps: [pour(0, 60), pour(45, 50)] })).status).toBe(400);
+        expect((await getJson<Rec>('/api/brew-plans/mine')).steps).toEqual([{ type: 'pour', at_seconds: 0, to_g: 60 }]);
         const ok = await patch('mine', { steps: [pour(0, 60), wait(40, { note: '攪拌' }), pour(45, 120)] });
         expect(ok.status).toBe(200);
         expect(((await ok.json()) as Rec).steps).toHaveLength(3);
