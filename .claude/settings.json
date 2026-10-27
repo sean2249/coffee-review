@@ -15,7 +15,19 @@
       "Read(**/.git-credentials)",
       "Read(**/secrets/**)",
       "Bash(gh auth token*)",
-      "Bash(printenv*)"
+      "Bash(printenv*)",
+      "Read(**/*.jks)",
+      "Read(**/*.keystore)",
+      "Read(**/.pypirc)",
+      "Read(**/*.tfvars)",
+      "Read(**/*.tfstate)",
+      "Read(**/*.tfstate.*)",
+      "Read(**/kubeconfig*)",
+      "Read(**/secrets.yml)",
+      "Read(**/secrets.yaml)",
+      "Read(**/.dev.vars.local)",
+      "Read(**/.dev.vars.production)",
+      "Read(**/.dev.vars.preview)"
     ]
   }
 }
