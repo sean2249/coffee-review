@@ -13,4 +13,4 @@ permissions:
 
 jobs:
   needs-info-reply:
-    uses: sean2249/skills/.github/workflows/needs-info-reply.yml@v3
+    uses: sean2249/skills/.github/workflows/needs-info-reply.yml@v4
