@@ -518,6 +518,27 @@ const api = {
     upsertShopNote(shopId, payload) {
         return apiFetch(`/api/shops/${enc(shopId)}/note`, { method: 'PUT', body: payload });
     },
+
+    // 沖煮計劃（#145）。內建手沖法不在 API，是 BUILTIN_BREW_PLANS。
+    listBrewPlans() {
+        return apiFetch('/api/brew-plans');
+    },
+
+    getBrewPlan(id) {
+        return apiFetch(`/api/brew-plans/${enc(id)}`);
+    },
+
+    createBrewPlan(payload) {
+        return apiFetch('/api/brew-plans', { method: 'POST', body: payload });
+    },
+
+    updateBrewPlan(id, payload) {
+        return apiFetch(`/api/brew-plans/${enc(id)}`, { method: 'PATCH', body: payload });
+    },
+
+    deleteBrewPlan(id) {
+        return apiFetch(`/api/brew-plans/${enc(id)}`, { method: 'DELETE' });
+    },
 };
 
 // ─── Auth (Cloudflare Access) ────────────────────────────────────────────────
@@ -588,6 +609,10 @@ function accountMarkup({ user }) {
     </div></div>
     <a class="card stats-entry-card" href="#/stats">
         <span class="stats-entry-label"><i class="bi bi-bar-chart-line"></i>我的數據</span>
+        <i class="bi bi-chevron-right"></i>
+    </a>
+    <a class="card stats-entry-card" href="#/plans">
+        <span class="stats-entry-label"><i class="bi bi-droplet"></i>沖煮計劃</span>
         <i class="bi bi-chevron-right"></i>
     </a>`;
 }
@@ -842,6 +867,753 @@ async function viewStats(root) {
     }
 }
 
+// ─── 沖煮計劃 (#/plans) ──────────────────────────────────────────────────────
+// 資料形狀見 migrations/0003_brew_plans.sql；詞彙見 GLOSSARY.md「沖煮計劃」。
+// 畫面規格是 #146 的「UI 定案」。
+
+// 每一步在時間軸上的那一點：注水看開始，等待看等到幾秒（docs/adr/0002）。
+function stepTime(s) {
+    return s.type === 'pour' ? s.at_seconds : s.until_seconds;
+}
+
+function formatBrewRatio(total, dose) {
+    if (!dose) return '—';
+    const r = Math.round(total / dose * 10) / 10;
+    return `1:${Number.isInteger(r) ? r : r.toFixed(1)}`;
+}
+
+// 總水量 = 最後一注的累計；總時間 = 最後一步的時間（GLOSSARY）。
+function planSummary(plan) {
+    const steps = plan.steps || [];
+    const pours = steps.filter(s => s.type === 'pour');
+    const total = pours.length ? pours[pours.length - 1].to_g : 0;
+    return {
+        total,
+        ratio: formatBrewRatio(total, plan.dose_g),
+        pourCount: pours.length,
+        endSeconds: steps.length ? stepTime(steps[steps.length - 1]) : 0,
+    };
+}
+
+// 本次 = 這一注的累計 − 前一注的累計；等待是 null。
+function pourIncrements(steps) {
+    let prev = 0;
+    return steps.map(s => {
+        if (s.type !== 'pour') return null;
+        const inc = Math.round((s.to_g - prev) * 10) / 10;
+        prev = s.to_g;
+        return inc;
+    });
+}
+
+// 唯讀頁與時間條共用的分塊。資料上等待是獨立的步驟，但畫面上（#146）：
+// 一注一塊，從它開始到下一個時間點；後面緊接的第一個等待併進這一塊（備註接在後面，
+// 不是悶蒸就加「等待：」）；再接下去的等待各自一塊，從前一塊結束到它的「等到」。
+function planBlocks(steps) {
+    const incs = pourIncrements(steps);
+    const blocks = [];
+    let cum = 0;
+    for (let i = 0; i < steps.length; i++) {
+        const s = steps[i];
+        if (s.type === 'wait') {
+            const start = blocks.length ? blocks[blocks.length - 1].end : 0;
+            blocks.push({ kind: 'wait', start, end: s.until_seconds, cum, note: s.note || '' });
+            continue;
+        }
+        const block = {
+            kind: 'pour', start: s.at_seconds, end: s.at_seconds, inc: incs[i], cum: s.to_g, from: cum,
+            bloom: !!s.bloom, temp: s.water_temp ?? null, note: s.note || '',
+        };
+        cum = s.to_g;
+        const next = steps[i + 1];
+        if (next?.type === 'wait') {
+            block.end = next.until_seconds;
+            if (next.note) {
+                const waitNote = s.bloom ? next.note : `等待：${next.note}`;
+                block.note = [block.note, waitNote].filter(Boolean).join(' · ');
+            }
+            i++;
+        } else if (next) {
+            block.end = next.at_seconds;
+        }
+        blocks.push(block);
+    }
+    return blocks;
+}
+
+// 清單、詳細、編輯的時間條。數字都是秒，畫成百分比由呼叫端做。
+function planBar(steps) {
+    const blocks = planBlocks(steps);
+    const end = planSummary({ steps }).endSeconds;
+    const times = [...new Set([...blocks.map(b => b.start), end])];
+    return {
+        segments: blocks.filter(b => b.end > b.start).map(b => ({ kind: b.kind, start: b.start, end: b.end })),
+        amounts: blocks.filter(b => b.kind === 'pour' && b.end > b.start)
+            .map(b => ({ at: (b.start + b.end) / 2, text: `+${b.inc} g` })),
+        times,
+        end,
+    };
+}
+
+// 清單每一列的「{濾杯} {水溫} 粉 N g 水 N g」。
+function brewPlanMeta(plan) {
+    const fmt = n => String(Number.isInteger(n) ? n : Math.round(n * 10) / 10);
+    return {
+        dripper: plan.dripper || '',
+        temp: plan.water_temp == null ? '' : plan.water_temp >= 100 ? '沸騰' : `${fmt(plan.water_temp)}°C`,
+        dose: fmt(plan.dose_g),
+        water: fmt(planSummary(plan).total),
+    };
+}
+
+// 內建手沖法：寫死、唯讀，形狀和 API 的一列相同（#143 的表格，作者 2026-10-27 確認）。
+// 「複製成我的」以這些值預填新增頁。
+const BUILTIN_BREW_PLANS = [
+    {
+        id: 'builtin-kasuya-4-6', builtin: true, name: '粕谷哲 4:6',
+        description: '前 40%（兩注）調甜度與酸度，後 60%（三注）調濃度。',
+        dripper: 'V60', grind: '粗', dose_g: 20, water_temp: 92,
+        steps: [
+            { type: 'pour', at_seconds: 0, to_g: 60 },
+            { type: 'pour', at_seconds: 45, to_g: 120 },
+            { type: 'pour', at_seconds: 90, to_g: 180 },
+            { type: 'pour', at_seconds: 135, to_g: 240 },
+            { type: 'pour', at_seconds: 180, to_g: 300 },
+        ],
+    },
+    {
+        id: 'builtin-hoffmann-ultimate-v60', builtin: true, name: 'James Hoffmann Ultimate V60（2 杯）',
+        description: '悶蒸後分兩段注水，每段 30 秒內注完；最後攪拌、旋轉讓粉床平整。',
+        dripper: 'V60', grind: '中細', dose_g: 30, water_temp: 100,
+        steps: [
+            { type: 'pour', at_seconds: 0, to_g: 60, bloom: true },
+            { type: 'wait', until_seconds: 45, note: '輕搖，讓粉全部浸濕' },
+            { type: 'pour', at_seconds: 45, to_g: 300 },
+            { type: 'pour', at_seconds: 75, to_g: 500 },
+            { type: 'wait', until_seconds: 105 },
+            { type: 'wait', until_seconds: 210, note: '湯匙順、逆時針各輕攪一下，再輕轉濾杯，等待滴完' },
+        ],
+    },
+    {
+        id: 'builtin-hoffmann-1-cup', builtin: true, name: 'James Hoffmann 1 杯 V60',
+        description: '1 杯量；悶蒸後分 4 次小注。',
+        dripper: 'V60', grind: '中細', dose_g: 15, water_temp: 100,
+        steps: [
+            { type: 'pour', at_seconds: 0, to_g: 50, bloom: true },
+            { type: 'wait', until_seconds: 45, note: '輕搖' },
+            { type: 'pour', at_seconds: 45, to_g: 100 },
+            { type: 'pour', at_seconds: 70, to_g: 150 },
+            { type: 'pour', at_seconds: 90, to_g: 200 },
+            { type: 'pour', at_seconds: 110, to_g: 250 },
+            { type: 'wait', until_seconds: 180, note: '輕轉濾杯，等待滴完' },
+        ],
+    },
+    {
+        id: 'builtin-scott-rao-v60', builtin: true, name: 'Scott Rao V60',
+        description: '悶蒸後用力旋轉；第二段等滴落約 70% 才注；最後旋轉讓粉床平整。',
+        dripper: 'V60', grind: '中細', dose_g: 20, water_temp: 96,
+        steps: [
+            { type: 'pour', at_seconds: 0, to_g: 60, bloom: true },
+            { type: 'wait', until_seconds: 40, note: '用力旋轉濾杯' },
+            { type: 'pour', at_seconds: 40, to_g: 200 },
+            { type: 'wait', until_seconds: 90, note: '等到滴落約 70%' },
+            { type: 'pour', at_seconds: 90, to_g: 330 },
+            { type: 'wait', until_seconds: 255, note: '輕轉濾杯，等待滴完' },
+        ],
+    },
+];
+
+// 編輯頁的草稿：注水列存本次（inc），存檔時才換成累計。copy：「複製成我的」。
+function brewPlanDraft(plan, { copy = false } = {}) {
+    if (!plan) {
+        return {
+            name: '', description: '', dripper: '', grind: '', dose_g: 15, water_temp: 93,
+            rows: [{ type: 'pour', at_seconds: 0, inc: 45 }],
+        };
+    }
+    const incs = pourIncrements(plan.steps);
+    return {
+        name: copy ? `${plan.name}（複製）` : plan.name,
+        description: plan.description || '',
+        dripper: plan.dripper || '',
+        grind: plan.grind || '',
+        dose_g: plan.dose_g,
+        water_temp: plan.water_temp,
+        rows: plan.steps.map(({ to_g: _toG, ...s }, i) => (s.type === 'pour' ? { ...s, inc: incs[i] } : { ...s })),
+    };
+}
+
+const textOrNull = v => (typeof v === 'string' && v.trim() ? v.trim() : null);
+
+// 草稿 → POST / PATCH 的 body。選填鍵只在有值時送（與 Worker 的 normalizeStep 一致）。
+function brewPlanPayload(draft) {
+    const rows = draft.rows.map(r => {
+        const note = textOrNull(r.note);
+        if (r.type === 'wait') return { type: 'wait', until_seconds: r.until_seconds, ...(note ? { note } : {}) };
+        return {
+            type: 'pour', at_seconds: r.at_seconds, inc: r.inc,
+            ...(r.bloom ? { bloom: true } : {}),
+            ...(r.water_temp == null || r.water_temp === '' ? {} : { water_temp: Number(r.water_temp) }),
+            ...(note ? { note } : {}),
+        };
+    });
+    return {
+        name: draft.name.trim(),
+        description: textOrNull(draft.description),
+        dripper: textOrNull(draft.dripper),
+        grind: textOrNull(draft.grind),
+        dose_g: Number(draft.dose_g),
+        water_temp: Number(draft.water_temp),
+        steps: stepsFromIncrements(rows),
+    };
+}
+
+const charCount = s => [...(s || '')].length;
+const isNum = v => v !== null && v !== '' && Number.isFinite(Number(v));
+
+// 和 Worker 的 normalizePlan 同一套規則，先在畫面上擋（field 是欄位 / 步驟的位置）。
+function validateBrewPlanDraft(draft) {
+    const errors = [];
+    const add = (field, message) => errors.push({ field, message });
+    const name = (draft.name || '').trim();
+    if (!name) add('name', '請填名稱');
+    else if (charCount(name) > 40) add('name', '名稱最多 40 字');
+    if (charCount((draft.description || '').trim()) > 500) add('description', '說明最多 500 字');
+    if (!isNum(draft.dose_g) || Number(draft.dose_g) <= 0 || Number(draft.dose_g) > 100) add('dose_g', '粉量要大於 0、最多 100 g');
+    if (!isNum(draft.water_temp) || Number(draft.water_temp) < 0 || Number(draft.water_temp) > 100) add('water_temp', '水溫要在 0–100°C');
+    const rows = draft.rows || [];
+    if (rows[0]?.type !== 'pour') add('rows', '第一步要是注水');
+    if (rows.length > 30) add('rows', '最多 30 步');
+    let lastTime = 0;
+    rows.forEach((r, i) => {
+        const time = stepTime(r);
+        const msgs = [];
+        if (!Number.isInteger(time) || time < 0) msgs.push('時間格式是 m:ss');
+        else if (time < lastTime) msgs.push('時間不能比前一步早');
+        else lastTime = time;
+        if (r.type === 'pour') {
+            if (!isNum(r.inc) || Number(r.inc) <= 0) msgs.push('這注的水量要大於 0');
+            if (isNum(r.water_temp) && (Number(r.water_temp) < 0 || Number(r.water_temp) > 100)) msgs.push('水溫要在 0–100°C');
+        }
+        if (charCount((r.note || '').trim()) > 100) msgs.push('備註最多 100 字');
+        if (msgs.length) add(`rows.${i}`, msgs.join('；'));
+    });
+    return errors;
+}
+
+// 編輯頁的列（注水帶 inc）→ API 的 steps（注水帶累計 to_g，四捨五入到 0.1 g）。
+function stepsFromIncrements(rows) {
+    let total = 0;
+    return rows.map(({ inc, ...step }) => {
+        if (step.type !== 'pour') return step;
+        total = Math.round((total + Number(inc)) * 10) / 10;
+        return { ...step, to_g: total };
+    });
+}
+
+function fmtClock(sec) {
+    return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
+}
+
+// 「1:30」或純秒數「90」→ 秒；看不懂回 NaN。
+function parseClock(text) {
+    const t = String(text ?? '').trim();
+    const m = /^(\d+):([0-5]\d)$/.exec(t);
+    if (m) return Number(m[1]) * 60 + Number(m[2]);
+    return /^\d+$/.test(t) ? Number(t) : NaN;
+}
+
+// 一段多久：N 秒／N 分／N 分 M 秒（不寫 1:30，免得和時間點混淆）。
+function fmtSpan(sec) {
+    if (sec < 60) return `${sec} 秒`;
+    return `${Math.floor(sec / 60)} 分${sec % 60 ? ` ${sec % 60} 秒` : ''}`;
+}
+
+function fmtGrams(n) {
+    return String(Number.isInteger(n) ? n : Math.round(n * 10) / 10);
+}
+
+const BREW_DRIPPERS = ['V60', 'Kalita Wave 185', 'Origami', '聰明濾杯', 'Chemex'];
+const BREW_GRINDS = ['細', '中細', '中', '中粗', '粗'];
+// 粉量滑桿不等距：10–20 g 每格 0.5 g、佔左邊 2/3；20–40 g 每格 2 g（#146）。
+const BREW_DOSES = [
+    ...Array.from({ length: 21 }, (_, i) => 10 + i * 0.5),
+    ...Array.from({ length: 10 }, (_, i) => 22 + i * 2),
+];
+const BREW_MAX_STEPS = 30;
+
+function brewTempLabel(t) {
+    return t >= 100 ? '沸騰' : `${fmtGrams(t)}°C`;
+}
+
+// 時間條。labels：上方標每注 +N g、下方標每個時間點（詳細頁、編輯頁）；清單不標。
+function brewBarMarkup(steps, { labels = false } = {}) {
+    const bar = planBar(steps);
+    const end = bar.end || 1;
+    const pct = t => `${(t / end * 100).toFixed(2)}%`;
+    const shift = t => (t / end < 0.03 ? '0' : t / end > 0.97 ? '-100%' : '-50%');
+    const place = t => `left:${pct(t)};transform:translateX(${shift(t)})`;
+    const segs = bar.segments.map(s => `<span class="bp-bar-seg bp-bar-${s.kind}"
+        style="left:calc(${pct(s.start)} + 1.5px);width:calc(${pct(s.end - s.start)} - 3px)"></span>`).join('');
+    if (!labels) return `<div class="bp-bar" aria-hidden="true">${segs}</div>`;
+    return `<div class="bp-bar-labels bp-bar-amounts" aria-hidden="true">${bar.amounts
+        .map(a => `<span style="${place(a.at)}">${escapeHtml(a.text)}</span>`).join('')}</div>
+        <div class="bp-bar bp-bar-lg" aria-hidden="true">${segs}</div>
+        <div class="bp-bar-labels bp-bar-times" aria-hidden="true">${bar.times
+        .map(t => `<span style="${place(t)}">${fmtClock(t)}</span>`).join('')}</div>`;
+}
+
+function brewBackHeader(href, title, right = '') {
+    return `<div class="stats-header bp-header">
+        <a class="stats-back" href="${href}" aria-label="返回"><i class="bi bi-chevron-left"></i></a>
+        <h2 class="stats-title bp-title">${escapeHtml(title)}</h2>
+        ${right}
+    </div>`;
+}
+
+function brewLoadError(root, e) {
+    console.error(e);
+    root.innerHTML = `<div class="empty-state error">
+        <i class="bi bi-exclamation-triangle"></i>讀取失敗：${escapeHtml(e.message || String(e))}
+        <div><button type="button" class="btn btn-outline-secondary mt-3" id="bp-retry">重新載入</button></div>
+    </div>`;
+    document.getElementById('bp-retry').addEventListener('click', () => renderRoute());
+}
+
+// ─── View: 沖煮計劃清單 (#/plans) ────────────────────────────────────────────
+function brewPlanRowMarkup(p) {
+    const s = planSummary(p);
+    const m = brewPlanMeta(p);
+    const lock = p.builtin ? '<i class="bi bi-lock" role="img" aria-label="內建"></i>' : '';
+    return `<a class="bp-row" href="#/plans/${enc(p.id)}">
+        <span class="bp-row-head">
+            <span class="bp-row-name">${lock}${escapeHtml(p.name)}</span>
+            <span class="bp-ratio">${s.ratio}</span>
+        </span>
+        ${brewBarMarkup(p.steps)}
+        <span class="bp-row-ends"><span>0:00</span><span>${fmtClock(s.endSeconds)}</span></span>
+        <span class="bp-row-meta">
+            <span class="bp-row-dripper">${escapeHtml(m.dripper)}</span><span>${m.temp}</span>
+            <span>粉 ${m.dose} g</span><span>水 ${m.water} g</span>
+        </span>
+    </a>`;
+}
+
+function brewPlansListMarkup(mine) {
+    const mineBody = mine.length
+        ? mine.map(brewPlanRowMarkup).join('')
+        : '<p class="bp-empty">還沒有自己的計劃。可以從下面的內建手沖法「複製成我的」。</p>';
+    return brewBackHeader('#/me', '沖煮計劃',
+        '<a class="btn btn-primary btn-sm bp-new" href="#/plans/new"><i class="bi bi-plus-lg"></i>新增</a>') + `
+        <h3 class="bp-section-title">我的計劃</h3>
+        <div class="card bp-list">${mineBody}</div>
+        <h3 class="bp-section-title">內建手沖法</h3>
+        <div class="card bp-list">${BUILTIN_BREW_PLANS.map(brewPlanRowMarkup).join('')}</div>`;
+}
+
+async function viewBrewPlans(root) {
+    if (renderAccessGate(root)) return;
+    root.innerHTML = '<div class="empty-state"><i class="bi bi-hourglass-split"></i>讀取中…</div>';
+    const route = location.hash;
+    try {
+        const mine = await api.listBrewPlans();
+        if (location.hash !== route) return;
+        root.innerHTML = brewPlansListMarkup(mine || []);
+    } catch (e) {
+        if (location.hash === route) brewLoadError(root, e);
+    }
+}
+
+// 自己的計劃找 API；內建的找常數。找不到回 null。
+async function findBrewPlan(id) {
+    return BUILTIN_BREW_PLANS.find(p => p.id === id) || api.getBrewPlan(id);
+}
+
+// ─── View: 沖煮計劃詳細 (#/plans/<id>) ───────────────────────────────────────
+function brewTimelineMarkup(plan) {
+    const blocks = planBlocks(plan.steps);
+    const s = planSummary(plan);
+    const items = blocks.map((b, k) => {
+        const isPour = b.kind === 'pour';
+        const node = isPour && b.bloom
+            ? '<span class="bp-node bp-node-bloom" role="img" aria-label="悶蒸"><i class="bi bi-cloud-haze2"></i></span>'
+            : isPour ? '<span class="bp-node bp-node-dot"></span>'
+                : '<span class="bp-node bp-node-wait" role="img" aria-label="等待"><i class="bi bi-hourglass-split"></i></span>';
+        const after = blocks[k + 1];
+        const railBelow = after && after.kind === 'wait' ? 'bp-rail-wait' : 'bp-rail-pour';
+        const note = [b.temp != null ? `${fmtGrams(b.temp)}°C` : '', b.note].filter(Boolean).join(' · ');
+        const body = isPour
+            ? `<div class="bp-block bp-block-pour">
+                <div class="bp-block-head"><span class="bp-inc">+${fmtGrams(b.inc)} g</span><span class="bp-dur">${b.end - b.start} 秒</span></div>
+                ${note ? `<div class="bp-block-note">${escapeHtml(note)}</div>` : ''}
+            </div>`
+            : `<div class="bp-block bp-block-wait">
+                <div class="bp-block-head"><span>等待</span><span class="bp-dur">${fmtSpan(b.end - b.start)}</span></div>
+                ${b.note ? `<div class="bp-block-note">${escapeHtml(b.note)}</div>` : ''}
+            </div>`;
+        return `<li class="bp-point">
+            <div class="bp-point-time"><span class="bp-clock">${fmtClock(b.start)}</span><span class="bp-cum">${fmtGrams(isPour ? b.from : b.cum)} g</span></div>
+            <div class="bp-point-rail ${k === 0 ? 'bp-rail-first' : ''} ${railBelow}">${node}</div>
+            <div class="bp-point-body">${body}</div>
+        </li>`;
+    }).join('');
+    return `<ol class="bp-timeline">${items}
+        <li class="bp-point bp-point-end">
+            <div class="bp-point-time"><span class="bp-clock">${fmtClock(s.endSeconds)}</span></div>
+            <div class="bp-point-rail bp-rail-last"><span class="bp-node bp-node-end"></span></div>
+            <div class="bp-point-body bp-end-label">完成 <span class="bp-end-total">${fmtGrams(s.total)} g</span></div>
+        </li>
+    </ol>`;
+}
+
+function brewPlanDetailMarkup(plan) {
+    const s = planSummary(plan);
+    const right = plan.builtin
+        ? '<span class="bp-badge"><i class="bi bi-lock"></i>內建</span>'
+        : `<a class="btn btn-outline-secondary btn-sm" href="#/plans/${enc(plan.id)}/edit"><i class="bi bi-pencil"></i>編輯</a>`;
+    const meta = [['濾杯', plan.dripper || '—'], ['研磨', plan.grind || '—'], ['粉量', `${fmtGrams(plan.dose_g)} g`],
+        ['水溫', plan.water_temp == null ? '—' : brewTempLabel(plan.water_temp)]];
+    return brewBackHeader('#/plans', plan.name, right) + `
+        ${plan.description ? `<p class="bp-desc">${escapeHtml(plan.description)}</p>` : ''}
+        <dl class="bp-meta">${meta.map(([k, v]) => `<div><dt>${k}</dt><dd>${escapeHtml(v)}</dd></div>`).join('')}</dl>
+        <div class="card bp-overview">
+            <div class="bp-overview-head"><span class="bp-overview-title">沖煮總覽</span>
+                <span class="bp-overview-sum">${s.ratio} · ${fmtGrams(s.total)} g 總水量</span></div>
+            ${brewBarMarkup(plan.steps, { labels: true })}
+        </div>
+        ${brewTimelineMarkup(plan)}
+        ${plan.builtin ? `<a class="btn btn-primary bp-copy" href="#/plans/new?from=${enc(plan.id)}">
+            <i class="bi bi-copy"></i>複製成我的</a>` : ''}`;
+}
+
+async function viewBrewPlanDetail(root, id) {
+    if (renderAccessGate(root)) return;
+    const route = location.hash;
+    try {
+        const plan = await findBrewPlan(id);
+        if (location.hash !== route) return;
+        if (!plan) { viewNotFound(root); return; }
+        root.innerHTML = brewPlanDetailMarkup(plan);
+    } catch (e) {
+        if (location.hash === route) brewLoadError(root, e);
+    }
+}
+
+// ─── View: 新增 / 編輯沖煮計劃 ───────────────────────────────────────────────
+// 畫面上一步一列；只有悶蒸那注後面緊接的等待併進同一列（時間框是「悶蒸等到」，#146）。
+function brewEditorRows(rows) {
+    const out = [];
+    for (let i = 0; i < rows.length; i++) {
+        const r = rows[i];
+        if (i === 0 && r.type === 'pour' && r.bloom && rows[1]?.type === 'wait') {
+            out.push({ index: 0, merged: 1 });
+            i++;
+        } else {
+            out.push({ index: i, merged: null });
+        }
+    }
+    return out;
+}
+
+function brewStepper(field, index, value, label, unit = '') {
+    return `<span class="bp-stepper" role="group" aria-label="${label}">
+        <button type="button" class="bp-step-btn" data-act="dec" data-field="${field}" data-index="${index}" aria-label="${label}減少">−</button>
+        <input class="bp-step-input" data-field="${field}" data-index="${index}" value="${escapeHtml(value)}"
+            inputmode="${field === 'inc' ? 'decimal' : 'numeric'}" aria-label="${label}">${unit ? `<span class="bp-unit" aria-hidden="true">${unit}</span>` : ''}
+        <button type="button" class="bp-step-btn" data-act="inc" data-field="${field}" data-index="${index}" aria-label="${label}增加">＋</button>
+    </span>`;
+}
+
+function brewStepRowMarkup(rows, view, cums, open, errors) {
+    const { index: i, merged } = view;
+    const r = rows[i];
+    const isPour = r.type === 'pour';
+    const w = merged != null ? rows[merged] : null;
+    const isOpen = open.has(i);
+    const node = isPour && r.bloom
+        ? '<span class="bp-node bp-node-bloom" role="img" aria-label="悶蒸"><i class="bi bi-cloud-haze2"></i></span>'
+        : isPour ? '<span class="bp-node bp-node-dot"></span>'
+            : '<span class="bp-node bp-node-wait" role="img" aria-label="等待"><i class="bi bi-hourglass-split"></i></span>';
+    let controls;
+    if (isPour) {
+        // 第一注固定 0:00、沒有開始時間框；悶蒸併列時這一格是「悶蒸等到」。
+        const time = w ? brewStepper('time', merged, fmtClock(w.until_seconds), '悶蒸等到')
+            : i === 0 ? '' : brewStepper('time', i, fmtClock(r.at_seconds), '開始時間');
+        controls = `${time}${brewStepper('inc', i, r.inc ?? '', '這注的水量', 'g')}`;
+    } else {
+        const prev = rows[i - 1] ? stepTime(rows[i - 1]) : 0;
+        controls = `<span class="bp-wait-label">等到</span>${brewStepper('time', i, fmtClock(r.until_seconds), '等到')}
+            <span class="bp-wait-dur">等 ${Number.isInteger(r.until_seconds - prev) && r.until_seconds >= prev ? fmtSpan(r.until_seconds - prev) : '—'}</span>`;
+    }
+    const tags = [];
+    if (isPour && r.water_temp != null && r.water_temp !== '') tags.push(`<span class="bp-tag bp-tag-temp">水溫 ${escapeHtml(r.water_temp)}°</span>`);
+    [r.note, w?.note].filter(n => n && n.trim()).forEach(n => tags.push(`<span class="bp-tag">${escapeHtml(n)}</span>`));
+    const panel = !isOpen ? '' : `<div class="bp-step-panel">
+        ${i === 0 && isPour ? `<label class="bp-check"><input type="checkbox" data-field="bloom" data-index="0" ${r.bloom ? 'checked' : ''}>悶蒸</label>` : ''}
+        ${isPour ? `<label class="bp-temp"><i class="bi bi-thermometer-half" aria-hidden="true"></i>
+            <input data-field="water_temp" data-index="${i}" value="${escapeHtml(r.water_temp ?? '')}" inputmode="decimal" placeholder="—" aria-label="這注的水溫（°C）">°C</label>` : ''}
+        <input class="bp-note" data-field="note" data-index="${i}" value="${escapeHtml(r.note || '')}" placeholder="備註（例：繞圈）" aria-label="備註">
+        ${w ? `<input class="bp-note" data-field="note" data-index="${merged}" value="${escapeHtml(w.note || '')}" placeholder="悶蒸時要做的事（例：輕搖）" aria-label="悶蒸等待的備註">
+            <button type="button" class="btn btn-link btn-sm" data-act="remove" data-index="${merged}">移除悶蒸等待</button>` : ''}
+    </div>`;
+    const err = errors.filter(e => e.field === `rows.${i}` || (merged != null && e.field === `rows.${merged}`));
+    return `<li class="bp-step ${isPour ? 'bp-step-pour' : 'bp-step-wait'} ${err.length ? 'bp-step-error' : ''}">
+        <div class="bp-point-time"><span class="bp-clock">${fmtClock(isPour ? r.at_seconds : r.until_seconds)}</span>
+            ${isPour ? `<span class="bp-cum">${fmtGrams(cums[i])} g</span>` : ''}</div>
+        <div class="bp-point-rail ${i === 0 ? 'bp-rail-first' : ''} ${isPour ? 'bp-rail-pour' : 'bp-rail-wait'}">${node}</div>
+        <div class="bp-step-body">
+            <div class="bp-step-main">${controls}<span class="bp-grow"></span>
+                <button type="button" class="bp-icon-btn ${isOpen ? 'active' : ''}" data-act="gear" data-index="${i}" aria-label="這一步的設定" aria-expanded="${isOpen}"><i class="bi bi-sliders"></i></button>
+                ${i === 0 ? '' : `<button type="button" class="bp-icon-btn" data-act="remove" data-index="${i}" aria-label="刪除這步"><i class="bi bi-x-lg"></i></button>`}
+            </div>
+            ${!isOpen && tags.length ? `<div class="bp-tags">${tags.join('')}</div>` : ''}
+            ${panel}
+            ${err.map(e => `<div class="bp-error">${escapeHtml(e.message)}</div>`).join('')}
+        </div>
+    </li>`;
+}
+
+function brewChips(name, options, value, { blocks = false } = {}) {
+    return options.map(o => `<button type="button" class="${blocks ? 'bp-seg' : 'chip'} ${o === value ? 'active' : ''}"
+        data-chip="${name}" data-value="${escapeHtml(o)}" aria-pressed="${o === value}">${escapeHtml(o)}</button>`).join('');
+}
+
+function brewFormMarkup(draft, { isNew }) {
+    const right = isNew ? '' : `<button type="button" class="bp-icon-btn bp-danger" id="bp-delete" aria-label="刪除計劃"><i class="bi bi-trash"></i></button>`;
+    const doseIdx = BREW_DOSES.reduce((best, g, k) => (Math.abs(g - draft.dose_g) < Math.abs(BREW_DOSES[best] - draft.dose_g) ? k : best), 0);
+    const otherDripper = draft.dripper && !BREW_DRIPPERS.includes(draft.dripper);
+    return brewBackHeader(isNew ? '#/plans' : location.hash.replace(/\/edit$/, ''), isNew ? '新增計劃' : '編輯計劃', right) + `
+    <form id="bp-form" novalidate>
+        <div class="card bp-card">
+            <label class="bp-label" for="bp-name">名稱 *</label>
+            <input class="form-control bp-name" id="bp-name" value="${escapeHtml(draft.name)}" maxlength="40" required>
+            <div class="bp-error" data-error="name"></div>
+            <label class="bp-label" for="bp-desc">說明</label>
+            <textarea class="form-control" id="bp-desc" rows="2" maxlength="500">${escapeHtml(draft.description)}</textarea>
+            <div class="bp-error" data-error="description"></div>
+        </div>
+        <div class="card bp-card">
+            <button type="button" class="bp-fold" id="bp-gear-toggle" aria-expanded="false" aria-controls="bp-gear">
+                <span class="bp-fold-title">器材與參數</span><span class="bp-fold-sum" id="bp-gear-sum"></span>
+                <i class="bi bi-chevron-down"></i></button>
+            <div id="bp-gear" hidden>
+                <div class="bp-label">濾杯</div>
+                <div class="bp-chips">${brewChips('dripper', [...BREW_DRIPPERS, '其他'], otherDripper ? '其他' : draft.dripper)}</div>
+                <label class="bp-other" ${otherDripper ? '' : 'hidden'}>其他濾杯
+                    <input class="form-control" id="bp-dripper-other" value="${escapeHtml(otherDripper ? draft.dripper : '')}" placeholder="輸入濾杯名稱"></label>
+                <div class="bp-label" id="bp-grind-label">研磨度</div>
+                <div class="bp-segs" role="group" aria-labelledby="bp-grind-label">${brewChips('grind', BREW_GRINDS, draft.grind, { blocks: true })}</div>
+                <label class="bp-slider"><span class="bp-slider-head"><span class="bp-label">粉量 *</span><span class="bp-slider-val" id="bp-dose-val"></span></span>
+                    <input type="range" id="bp-dose" min="0" max="${BREW_DOSES.length - 1}" step="1" value="${doseIdx}" aria-label="粉量">
+                    <span class="bp-ticks" aria-hidden="true"><span style="left:0">10</span><span style="left:33.3%">15</span><span style="left:66.7%">20</span><span style="left:83.3%">30</span><span style="left:100%">40 g</span></span></label>
+                <div class="bp-error" data-error="dose_g"></div>
+                <label class="bp-slider"><span class="bp-slider-head"><span class="bp-label">水溫 *<small>每注可另設</small></span><span class="bp-slider-val bp-temp-val" id="bp-temp-val"></span></span>
+                    <input type="range" id="bp-temp" min="80" max="100" step="1" value="${Math.min(100, Math.max(80, draft.water_temp))}" aria-label="水溫">
+                    <span class="bp-ticks" aria-hidden="true"><span style="left:0">80</span><span style="left:25%">85</span><span style="left:50%">90</span><span style="left:75%">95</span><span style="left:100%">沸騰</span></span></label>
+                <div class="bp-error" data-error="water_temp"></div>
+            </div>
+        </div>
+        <div class="card bp-card">
+            <button type="button" class="bp-fold" id="bp-steps-toggle" aria-expanded="false" aria-controls="bp-steps">
+                <span class="bp-fold-title">沖煮總覽</span><span class="bp-overview-sum" id="bp-overview-sum"></span>
+                <i class="bi bi-chevron-down"></i></button>
+            <div id="bp-overview-bar"></div>
+            <div id="bp-steps" hidden></div>
+            <div class="bp-error" data-error="rows"></div>
+        </div>
+        <button type="submit" class="btn btn-primary bp-save" id="bp-save">儲存</button>
+    </form>`;
+}
+
+async function viewBrewPlanForm(root, { planId = null, fromId = null } = {}) {
+    if (renderAccessGate(root)) return;
+    const route = location.hash;
+    let plan = null;
+    try {
+        if (planId) plan = await api.getBrewPlan(planId);
+        else if (fromId) plan = await findBrewPlan(fromId);
+    } catch (e) {
+        if (location.hash === route) brewLoadError(root, e);
+        return;
+    }
+    if (location.hash !== route) return;
+    if ((planId || fromId) && !plan) { viewNotFound(root); return; }
+    mountBrewPlanForm(root, { planId, draft: brewPlanDraft(plan, { copy: !!fromId }) });
+}
+
+function mountBrewPlanForm(root, { planId, draft }) {
+    const isNew = !planId;
+    const open = new Set();
+    let errors = [];
+    root.innerHTML = brewFormMarkup(draft, { isNew });
+    const $ = id => document.getElementById(id);
+    const form = $('bp-form');
+
+    const gearSummary = () => [draft.dripper, draft.grind, `${fmtGrams(draft.dose_g)} g`, brewTempLabel(draft.water_temp)]
+        .filter(Boolean).join(' · ');
+    // 本次 → 累計（只給畫面看；不合法的格子先當 0）。
+    const cums = () => {
+        let t = 0;
+        return draft.rows.map(r => (r.type === 'pour' ? (t = Math.round((t + (Number(r.inc) || 0)) * 10) / 10) : null));
+    };
+    const previewSteps = () => stepsFromIncrements(draft.rows.map(r => (r.type === 'pour' ? { ...r, inc: Number(r.inc) || 0 } : r)));
+
+    function renderSummaries() {
+        $('bp-gear-sum').textContent = gearSummary();
+        $('bp-dose-val').textContent = `${fmtGrams(draft.dose_g)} g`;
+        $('bp-temp-val').textContent = brewTempLabel(draft.water_temp);
+        const steps = previewSteps();
+        const s = planSummary({ dose_g: draft.dose_g, steps });
+        $('bp-overview-sum').textContent = `${s.ratio} · ${fmtGrams(s.total)} g 總水量`;
+        $('bp-overview-bar').innerHTML = brewBarMarkup(steps, { labels: true });
+    }
+
+    function renderSteps() {
+        const c = cums();
+        const s = planSummary({ dose_g: draft.dose_g, steps: previewSteps() });
+        const full = draft.rows.length >= BREW_MAX_STEPS;
+        $('bp-steps').innerHTML = `<ol class="bp-timeline bp-edit-steps">
+            ${brewEditorRows(draft.rows).map(v => brewStepRowMarkup(draft.rows, v, c, open, errors)).join('')}
+        </ol>
+        <div class="bp-add">
+            <button type="button" class="btn btn-outline-primary btn-sm" data-act="add-pour" ${full ? 'disabled' : ''}><i class="bi bi-droplet-fill"></i>注水</button>
+            <button type="button" class="btn btn-outline-secondary btn-sm" data-act="add-wait" ${full ? 'disabled' : ''}><i class="bi bi-hourglass-split"></i>等待</button>
+        </div>
+        <ol class="bp-timeline"><li class="bp-point bp-point-end">
+            <div class="bp-point-time"><span class="bp-clock">${fmtClock(s.endSeconds)}</span></div>
+            <div class="bp-point-rail bp-rail-last"><span class="bp-node bp-node-end"></span></div>
+            <div class="bp-point-body bp-end-label">完成 <span class="bp-end-total">${fmtGrams(s.total)} g</span></div>
+        </li></ol>`;
+    }
+
+    function renderErrors() {
+        form.querySelectorAll('[data-error]').forEach(el => {
+            el.textContent = errors.filter(e => e.field === el.dataset.error).map(e => e.message).join('；');
+        });
+    }
+
+    function toggleFold(btn, panel, show = panel.hidden) {
+        panel.hidden = !show;
+        btn.setAttribute('aria-expanded', String(show));
+        btn.classList.toggle('open', show);
+    }
+
+    renderSummaries();
+    renderSteps();
+
+    $('bp-gear-toggle').addEventListener('click', () => toggleFold($('bp-gear-toggle'), $('bp-gear')));
+    $('bp-steps-toggle').addEventListener('click', () => toggleFold($('bp-steps-toggle'), $('bp-steps')));
+    $('bp-name').addEventListener('input', e => { draft.name = e.target.value; });
+    $('bp-desc').addEventListener('input', e => { draft.description = e.target.value; });
+    $('bp-dose').addEventListener('input', e => { draft.dose_g = BREW_DOSES[Number(e.target.value)]; renderSummaries(); });
+    $('bp-temp').addEventListener('input', e => { draft.water_temp = Number(e.target.value); renderSummaries(); });
+    $('bp-dripper-other').addEventListener('input', e => { draft.dripper = e.target.value; renderSummaries(); });
+
+    form.addEventListener('click', e => {
+        const chip = e.target.closest('[data-chip]');
+        if (chip) {
+            const group = chip.dataset.chip;
+            const value = chip.dataset.value;
+            form.querySelectorAll(`[data-chip="${group}"]`).forEach(b => {
+                const on = b === chip && !(group === 'grind' && draft.grind === value);
+                b.classList.toggle('active', on);
+                b.setAttribute('aria-pressed', String(on));
+            });
+            if (group === 'grind') draft.grind = draft.grind === value ? '' : value;
+            if (group === 'dripper') {
+                const other = value === '其他';
+                form.querySelector('.bp-other').hidden = !other;
+                draft.dripper = other ? $('bp-dripper-other').value : value;
+            }
+            renderSummaries();
+            return;
+        }
+        const btn = e.target.closest('[data-act]');
+        if (!btn || !$('bp-steps').contains(btn)) return;
+        const i = Number(btn.dataset.index);
+        const rows = draft.rows;
+        const last = rows[rows.length - 1];
+        switch (btn.dataset.act) {
+        case 'gear': if (!open.delete(i)) open.add(i); break;
+        case 'remove': rows.splice(i, 1); open.clear(); break;
+        case 'add-pour': rows.push({ type: 'pour', at_seconds: stepTime(last) + 30, inc: 50 }); break;
+        case 'add-wait': rows.push({ type: 'wait', until_seconds: stepTime(last) + 30 }); break;
+        case 'dec':
+        case 'inc': {
+            const d = btn.dataset.act === 'inc' ? 1 : -1;
+            const r = rows[i];
+            if (btn.dataset.field === 'inc') r.inc = Math.max(5, Math.round(((Number(r.inc) || 0) + d * 5) * 10) / 10);
+            else if (r.type === 'pour') r.at_seconds = Math.max(0, r.at_seconds + d * 5);
+            else r.until_seconds = Math.max(0, r.until_seconds + d * 5);
+            break;
+        }
+        default: return;
+        }
+        renderSteps();
+        renderSummaries();
+    });
+
+    // 打字時只更新數字與時間條，不重畫列（重畫會讓輸入框失焦）。
+    $('bp-steps').addEventListener('input', e => {
+        const el = e.target;
+        const i = Number(el.dataset.index);
+        const r = draft.rows[i];
+        if (!r) return;
+        if (el.dataset.field === 'inc') r.inc = el.value.trim() === '' ? '' : Number(el.value);
+        else if (el.dataset.field === 'time') {
+            const t = parseClock(el.value);
+            if (r.type === 'pour') r.at_seconds = t; else r.until_seconds = t;
+        } else if (el.dataset.field === 'note') r.note = el.value;
+        else if (el.dataset.field === 'water_temp') r.water_temp = el.value.trim() === '' ? null : Number(el.value);
+        else if (el.dataset.field === 'bloom') { r.bloom = el.checked; renderSteps(); }
+        renderSummaries();
+    });
+    $('bp-steps').addEventListener('change', e => { if (e.target.dataset.field !== 'bloom') renderSteps(); });
+
+    $('bp-delete')?.addEventListener('click', async () => {
+        const ok = await confirmDialog({ title: '刪除計劃', message: `確定要刪除「${draft.name}」嗎？`, confirmText: '刪除', danger: true });
+        if (!ok) return;
+        try {
+            await api.deleteBrewPlan(planId);
+            showToast('已刪除');
+            navigate('/plans');
+        } catch (e) {
+            console.error(e);
+            showErrorToast(`刪除失敗：${e.message || e}`);
+        }
+    });
+
+    form.addEventListener('submit', async e => {
+        e.preventDefault();
+        errors = validateBrewPlanDraft(draft);
+        renderErrors();
+        renderSteps();
+        if (errors.length) {
+            if (errors.some(x => x.field.startsWith('rows'))) toggleFold($('bp-steps-toggle'), $('bp-steps'), true);
+            if (errors.some(x => x.field === 'dose_g' || x.field === 'water_temp')) toggleFold($('bp-gear-toggle'), $('bp-gear'), true);
+            return;
+        }
+        const save = $('bp-save');
+        save.disabled = true;
+        try {
+            const body = brewPlanPayload(draft);
+            const saved = isNew ? await api.createBrewPlan(body) : await api.updateBrewPlan(planId, body);
+            showToast('已儲存');
+            navigate(`/plans/${saved?.id || planId}`);
+        } catch (err) {
+            if (err.code === '23505' || err.status === 409) {
+                errors = [{ field: 'name', message: '已有同名計劃' }];
+                renderErrors();
+            } else {
+                console.error(err);
+                showErrorToast(`儲存失敗：${err.message || err}`);
+            }
+        } finally {
+            save.disabled = false;
+        }
+    });
+}
+
 async function refreshShopsCache() {
     try {
         state.shops = await api.listShops();
@@ -910,6 +1682,14 @@ async function renderRoute() {
         viewAccount(root);
     } else if (parts[0] === 'stats') {
         await viewStats(root);
+    } else if (parts[0] === 'plans' && !parts[1]) {
+        await viewBrewPlans(root);
+    } else if (parts[0] === 'plans' && parts[1] === 'new') {
+        await viewBrewPlanForm(root, { fromId: query.from || null });
+    } else if (parts[0] === 'plans' && parts[2] === 'edit') {
+        await viewBrewPlanForm(root, { planId: parts[1] });
+    } else if (parts[0] === 'plans') {
+        await viewBrewPlanDetail(root, parts[1]);
     } else {
         viewNotFound(root);
     }
@@ -923,7 +1703,7 @@ function updateTabbarActive() {
     let activeRoute = '/records';
     if (first === 'new') activeRoute = '/new';
     else if (first === 'shops') activeRoute = '/shops';
-    else if (first === 'me' || first === 'stats') activeRoute = '/me';
+    else if (first === 'me' || first === 'stats' || first === 'plans') activeRoute = '/me';
     document.querySelectorAll('.tabbar-btn').forEach(a => {
         const isActive = a.dataset.route === activeRoute;
         a.classList.toggle('active', isActive);
