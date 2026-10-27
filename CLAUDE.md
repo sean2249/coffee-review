@@ -162,6 +162,8 @@ purpose.md, 口感.md design notes (Chinese)
 | `#/session/<id>` / `#/session/<id>/edit` | 杯測場次 detail (ranking + per-cup) / edit form |
 | `#/shops` / `#/shops/<id>` | Shop registry + per-shop records + 我的店家筆記 |
 | `#/me` | Google sign-in / sign-out |
+| `#/plans` / `#/plans/<id>` | 沖煮計劃 list (mine + 4 built-in V60) / read-only detail |
+| `#/plans/new[?from=<id>]` / `#/plans/<id>/edit` | Brew plan editor; `from` copies a plan (複製成我的) |
 
 Every data route is gated by `renderAccessGate(root)` — it renders the sign-in prompt
 when `state.user` is null and returns `true`, so the caller bails before issuing any

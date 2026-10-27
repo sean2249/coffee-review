@@ -1359,7 +1359,7 @@ function brewStepRowMarkup(rows, view, cums, open, errors) {
     const err = errors.filter(e => e.field === `rows.${i}` || (merged != null && e.field === `rows.${merged}`));
     return `<li class="bp-step ${isPour ? 'bp-step-pour' : 'bp-step-wait'} ${err.length ? 'bp-step-error' : ''}">
         <div class="bp-point-time"><span class="bp-clock">${fmtClock(isPour ? r.at_seconds : r.until_seconds)}</span>
-            ${isPour ? `<span class="bp-cum">${fmtGrams(cums[i])} g</span>` : ''}</div>
+            ${isPour ? `<span class="bp-cum" data-cum-index="${i}">${fmtGrams(cums[i])} g</span>` : ''}</div>
         <div class="bp-point-rail ${i === 0 ? 'bp-rail-first' : ''} ${isPour ? 'bp-rail-pour' : 'bp-rail-wait'}">${node}</div>
         <div class="bp-step-body">
             <div class="bp-step-main">${controls}<span class="bp-grow"></span>
@@ -1378,11 +1378,12 @@ function brewChips(name, options, value, { blocks = false } = {}) {
         data-chip="${name}" data-value="${escapeHtml(o)}" aria-pressed="${o === value}">${escapeHtml(o)}</button>`).join('');
 }
 
-function brewFormMarkup(draft, { isNew }) {
+function brewFormMarkup(draft, { planId }) {
+    const isNew = !planId;
     const right = isNew ? '' : `<button type="button" class="bp-icon-btn bp-danger" id="bp-delete" aria-label="刪除計劃"><i class="bi bi-trash"></i></button>`;
     const doseIdx = BREW_DOSES.reduce((best, g, k) => (Math.abs(g - draft.dose_g) < Math.abs(BREW_DOSES[best] - draft.dose_g) ? k : best), 0);
     const otherDripper = draft.dripper && !BREW_DRIPPERS.includes(draft.dripper);
-    return brewBackHeader(isNew ? '#/plans' : location.hash.replace(/\/edit$/, ''), isNew ? '新增計劃' : '編輯計劃', right) + `
+    return brewBackHeader(isNew ? '#/plans' : `#/plans/${enc(planId)}`, isNew ? '新增計劃' : '編輯計劃', right) + `
     <form id="bp-form" novalidate>
         <div class="card bp-card">
             <label class="bp-label" for="bp-name">名稱 *</label>
@@ -1445,7 +1446,7 @@ function mountBrewPlanForm(root, { planId, draft }) {
     const isNew = !planId;
     const open = new Set();
     let errors = [];
-    root.innerHTML = brewFormMarkup(draft, { isNew });
+    root.innerHTML = brewFormMarkup(draft, { planId });
     const $ = id => document.getElementById(id);
     const form = $('bp-form');
 
@@ -1484,6 +1485,14 @@ function mountBrewPlanForm(root, { planId, draft }) {
             <div class="bp-point-rail bp-rail-last"><span class="bp-node bp-node-end"></span></div>
             <div class="bp-point-body bp-end-label">完成 <span class="bp-end-total">${fmtGrams(s.total)} g</span></div>
         </li></ol>`;
+    }
+
+    // 打字時就更新左欄的累計（不重畫整列，避免輸入框失焦）。
+    function renderCums() {
+        const c = cums();
+        $('bp-steps').querySelectorAll('[data-cum-index]').forEach(el => {
+            el.textContent = `${fmtGrams(c[Number(el.dataset.cumIndex)])} g`;
+        });
     }
 
     function renderErrors() {
@@ -1567,6 +1576,7 @@ function mountBrewPlanForm(root, { planId, draft }) {
         else if (el.dataset.field === 'water_temp') r.water_temp = el.value.trim() === '' ? null : Number(el.value);
         else if (el.dataset.field === 'bloom') { r.bloom = el.checked; renderSteps(); }
         renderSummaries();
+        renderCums();
     });
     $('bp-steps').addEventListener('change', e => { if (e.target.dataset.field !== 'bloom') renderSteps(); });
 
@@ -1601,7 +1611,7 @@ function mountBrewPlanForm(root, { planId, draft }) {
             showToast('已儲存');
             navigate(`/plans/${saved?.id || planId}`);
         } catch (err) {
-            if (err.code === '23505' || err.status === 409) {
+            if (err.code === '23505') {
                 errors = [{ field: 'name', message: '已有同名計劃' }];
                 renderErrors();
             } else {

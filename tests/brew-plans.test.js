@@ -301,6 +301,28 @@ describe('brew plan routes', () => {
         expect(rows[0].querySelector('input[data-field="time"]').value).toBe('0:35');
     });
 
+    it('updates the left-column 累計 while typing a pour amount', async () => {
+        await go('#/plans/p1/edit');
+        d.getElementById('bp-steps-toggle').click();
+        const input = d.querySelector('input[data-field="inc"][data-index="2"]');
+        input.value = '115';
+        input.dispatchEvent(new w.Event('input', { bubbles: true }));
+        expect(d.querySelector('[data-cum-index="2"]').textContent).toBe('160 g');
+        expect(d.querySelector('[data-cum-index="3"]').textContent).toBe('260 g');
+    });
+
+    it('does not call a non-duplicate 409 a duplicate name', async () => {
+        w.apiFetch = (path, opts = {}) => {
+            if (opts.method === 'PATCH') return Promise.reject(Object.assign(new Error('fk'), { status: 409, code: '23503' }));
+            return Promise.resolve(path === '/api/brew-plans/p1' ? MINE : [MINE]);
+        };
+        w.console.error = () => {};
+        await go('#/plans/p1/edit');
+        d.getElementById('bp-form').requestSubmit();
+        await tick(); await tick();
+        expect(html()).not.toContain('已有同名計劃');
+    });
+
     it('PATCHes my plan and shows 已有同名計劃 on a 409', async () => {
         w.apiFetch = (path, opts = {}) => {
             if (opts.method === 'PATCH') return Promise.reject(Object.assign(new Error('dup'), { status: 409, code: '23505' }));
