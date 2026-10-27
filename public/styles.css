@@ -2587,9 +2587,17 @@ hr { border-color: var(--border); opacity: 0.7; }
     border: 1px solid var(--border-strong);
     border-radius: var(--radius-sm);
     background: var(--bg-card);
-    overflow: hidden;
 }
-.bp-step-btn { width: 24px; height: 100%; border: 0; padding: 0; background: var(--bg-soft); color: var(--text-secondary); }
+/* 看起來 24×30；點擊範圍用 ::after 往外補到 44px 高，往旁邊的空位補寬（和研磨度方塊同一招）。
+   兩個步進器相鄰時中間只有 5px，那一側不往外補，免得兩顆按鈕的點擊範圍重疊。 */
+.bp-step-btn { position: relative; width: 24px; height: 100%; border: 0; padding: 0; background: var(--bg-soft); color: var(--text-secondary); }
+.bp-step-btn:first-child { border-radius: var(--radius-sm) 0 0 var(--radius-sm); }
+.bp-step-btn:last-child { border-radius: 0 var(--radius-sm) var(--radius-sm) 0; }
+.bp-step-btn::after { content: ""; position: absolute; top: -7px; bottom: -7px; left: 0; right: 0; }
+.bp-stepper > .bp-step-btn:first-child::after { left: -10px; }
+.bp-stepper > .bp-step-btn:last-child::after { right: -10px; }
+.bp-stepper + .bp-stepper > .bp-step-btn:first-child::after { left: -2px; }
+.bp-stepper:has(+ .bp-stepper) > .bp-step-btn:last-child::after { right: -2px; }
 .bp-step-input { width: 42px; border: 0; padding: 0; text-align: center; font-family: var(--font-mono); font-size: 0.875rem; background: transparent; }
 .bp-step-input[data-field="inc"] { width: 32px; text-align: right; font-weight: 700; color: var(--brew-pour); }
 .bp-unit { padding: 0 4px 0 2px; font-family: var(--font-mono); font-size: 0.75rem; font-weight: 700; color: var(--brew-pour); }
@@ -2606,7 +2614,12 @@ hr { border-color: var(--border); opacity: 0.7; }
     display: grid;
     place-items: center;
     padding: 0;
+    position: relative;
 }
+/* 36×36 看起來不變，點擊範圍補到 44×44；⚙ 和 ✕ 相鄰時各往外側補，中間不重疊。 */
+.bp-icon-btn::after { content: ""; position: absolute; inset: -4px; }
+.bp-icon-btn:has(+ .bp-icon-btn)::after { left: -8px; right: 0; }
+.bp-icon-btn + .bp-icon-btn::after { left: 0; right: -8px; }
 .bp-icon-btn.active { background: var(--accent-tint); color: var(--accent); }
 .bp-danger { color: var(--brew-error); }
 .bp-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
@@ -2628,6 +2641,7 @@ hr { border-color: var(--border); opacity: 0.7; }
 .bp-note { flex: 1 1 120px; min-width: 0; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); padding: 4px 8px; font-size: 0.875rem; }
 .bp-step-error .bp-step-main { outline: 1px solid var(--brew-error); }
 .bp-add { display: flex; gap: 8px; padding: 6px 0 4px 72px; }
-.bp-add .btn { border-style: dashed; border-radius: 999px; min-height: 36px; }
+.bp-add .btn { position: relative; border-style: dashed; border-radius: 999px; min-height: 36px; }
+.bp-add .btn::after { content: ""; position: absolute; inset: -4px 0; }
 .bp-add .btn .bi { margin-right: 0.25rem; }
 .bp-save { width: 100%; min-height: 44px; font-weight: 700; }
