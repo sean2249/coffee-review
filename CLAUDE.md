@@ -142,7 +142,7 @@ test/worker/       workerd tests (separate directory so the include globs cannot
 wrangler.jsonc     assets + D1 + rate limit + routes + Access vars
 .dev.vars.example  copy → .dev.vars (gitignored)
 .github/workflows  ci.yml + deploy.yml + issue-workflow callers (issue-status,
-                   article-pending, needs-info-reply → sean2249/skills reusable workflows)
+                   needs-info-reply → sean2249/skills reusable workflows)
 .github/           pull_request_template.md + dependabot.yml
 docs/agents/       issue-tracker, triage-labels, domain docs for the agent skills
 .claude/settings.json  permissions.deny for secret files (the only tracked file in .claude/)

@@ -49,9 +49,3 @@ Closes #<!-- issue number; one line per issue, for a spec the spec and each tick
 ```
 <!-- The verify command from CLAUDE.md, plus anything else you ran. -->
 ```
-
-<!--
-If the issue has `article-status: request`, add a `## 文章素材` section here:
-background, the author's own words from the session (decision points), approach,
-pitfalls hit, before/after numbers.
--->
