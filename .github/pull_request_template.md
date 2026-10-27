@@ -1,63 +1,48 @@
-Closes #<!-- issue number -->
+Closes #<!-- issue number; one line per issue, for a spec the spec and each ticket -->
 
-## Behaviour summary
+## Summary
 
-<!-- Read this first to decide whether to let the PR through, before the diff. -->
+<!-- The smallest view that makes the change clear: a diagram, diff sketch, call tree or file tree (the `pr` skill). -->
 
-**Run output**
+## Evidence
 
-```
-<!-- What running the change prints or shows (or link a screenshot). -->
-```
+- **Before:** <!-- screenshot / output / failing test run -->
+  **After:** <!-- screenshot / output / passing test run -->
 
-**What it does**
+## Merge Danger
 
-<!-- One short paragraph. -->
+**Door:** <!-- one-way or two-way: if this is wrong while it's live, can the harm be taken back? -->
 
-**What it deliberately doesn't do**
-
-<!-- One short paragraph. -->
-
-**Mapped to acceptance criteria**
-
-- <criterion> → <the behaviour above that meets it>
-
-**Risks and opportunities**
-
-<!-- One line per Risk in the issue → how its mitigation was handled; one line per "this time" Opportunity → where it's done. "None" if the issue lists none. -->
-- <risk> → <mitigation applied>
+**Blast Radius:** <!-- one word, then what a bad merge would affect -->
 
 ## Acceptance criteria — evidence
 
-<!-- One line per acceptance criterion from the approved issue. Copy the wording. -->
+<!-- One line per acceptance criterion from the brief or ticket, word for word. For a spec, group them by ticket. -->
 - [ ] <criterion> — evidence: <command + output excerpt / screenshot / preview link>
 
 ## Not verified
 
 <!-- Anything you could not check, and why. Write "None" only if everything above has evidence. -->
 
-## Deviations from the approved plan
+## Deviations
 
-<!-- Where the implementation differs from the approved issue, and the reason. "None" if identical. -->
+<!-- Where the work differs from the brief, spec or tickets, and the reason. "None" if it doesn't. -->
 
 ## Risk
 
-<!-- Exactly one risk label goes on the PR. -->
+<!-- Exactly one risk label goes on the PR. It tells the author how closely to read before merging; nothing merges automatically. -->
 - Level: `risk: low` / `risk: medium` / `risk: high`
-- Reason: <!-- low = every changed file is in the low-risk allowlist; high = auth, DB migrations, .github/workflows, secrets, billing -->
+- Reason: <!-- low = two-way door, a clean review, and nothing under .github/, .claude/, CLAUDE.md or the agent docs; high = one-way door or a blast radius across repos; medium = the rest -->
 
 ## Review
 
-<!-- Filled by issue-implement after its fresh-context code and security reviewer subagents (at most 3 rounds each). Every finding has a category and is fixed a category at a time. Round 3 is the last review: if it found only low findings, all are fixed and nothing is sent for another review; if it found any medium+ finding, nothing is patched, the PR becomes a draft and goes back to the author to rethink the approach. Only a fix that needs the author's product decision is handed over, with the reason. -->
-- code-review: <N> round(s)
-- security-review: <N> round(s)
-<!-- If round 3 ran, keep the one line that applies: -->
-- Round 3 findings all fixed; not sent for another review.
-- Round 3 found medium+ findings; sent back to the author to rethink the approach.
+<!-- Filled by issue-ship: a security reviewer (security-audit, guidance mode) and a code reviewer (code-review), fresh subagents each round, at most 3 rounds. On a public repo, security findings appear only as a count. -->
+- Rounds: <N>
+<!-- If round 3 sent the work back, say which direction the author chose. -->
 
 | Review | Severity | Category | Location | Outcome |
 |---|---|---|---|---|
-| code / security | high / medium / low | state / race, error handling, a11y, input validation… | `file:line` | fixed in <sha> / not fixed: <reason> |
+| code / security | high / medium / low | state / race, error handling, input validation… | `file:line` | fixed in <sha> / not fixed: <reason> |
 
 ## Verification commands
 
