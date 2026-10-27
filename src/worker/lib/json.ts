@@ -11,6 +11,7 @@ export type Table =
     | 'cupping_sessions'
     | 'cupping_session_cups'
     | 'shop_notes'
+    | 'brew_plans'
     | 'tags'
     | 'users';
 

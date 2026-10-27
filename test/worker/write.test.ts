@@ -28,6 +28,8 @@ describe('body 不是合法 JSON', () => {
             ['/api/records/cupping', 'POST'],
             ['/api/sessions/g1', 'PUT'],
             ['/api/places/search', 'POST'],
+            ['/api/brew-plans', 'POST'],
+            ['/api/brew-plans/p1', 'PATCH'],
         ] as const) {
             const res = await broken(path, method);
             expect(`${method} ${path} -> ${res.status}`).toBe(`${method} ${path} -> 400`);

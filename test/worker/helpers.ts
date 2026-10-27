@@ -12,6 +12,7 @@ export async function resetDb(): Promise<void> {
         env.DB.prepare('delete from cupping_session_cups'),
         env.DB.prepare('delete from cupping_sessions'),
         env.DB.prepare('delete from shop_notes'),
+        env.DB.prepare('delete from brew_plans'),
         env.DB.prepare('delete from cupping_records'),
         env.DB.prepare('delete from tasting_records'),
         env.DB.prepare('delete from shops'),

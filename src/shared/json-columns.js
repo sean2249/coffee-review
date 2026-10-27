@@ -19,6 +19,7 @@ export const JSON_ARRAY_COLS = {
         'legacy_decor_tags',
         'legacy_service_tags',
     ],
+    brew_plans: ['steps'],
 };
 
 export const JSON_OBJECT_COLS = {
@@ -38,6 +39,7 @@ export const TIMESTAMP_COLS = {
     cupping_sessions: ['created_at'],
     cupping_session_cups: ['created_at'],
     shop_notes: ['created_at', 'updated_at'],
+    brew_plans: ['created_at', 'updated_at'],
     tags: ['created_at'],
 };
 
@@ -51,4 +53,5 @@ export const TABLES = [
     'cupping_sessions',
     'cupping_session_cups',
     'shop_notes',
+    'brew_plans',
 ];
