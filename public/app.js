@@ -979,6 +979,8 @@ const BUILTIN_BREW_PLANS = [
             { type: 'pour', at_seconds: 90, to_g: 180 },
             { type: 'pour', at_seconds: 135, to_g: 240 },
             { type: 'pour', at_seconds: 180, to_g: 300 },
+            // 收尾等待：總時間 3:30，最後一注才有自己的時間範圍（作者 2026-10-28）。
+            { type: 'wait', until_seconds: 210, note: '移開濾杯' },
         ],
     },
     {

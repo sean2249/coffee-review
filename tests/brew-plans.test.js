@@ -93,6 +93,13 @@ describe('BUILTIN_BREW_PLANS', () => {
         ]);
     });
 
+    it('ends 4:6 with a closing wait so its last pour has a block', () => {
+        const k = app('BUILTIN_BREW_PLANS')[0];
+        expect(k.steps[k.steps.length - 1]).toEqual(wait(210, { note: '移開濾杯' }));
+        expect(win.planBlocks(k.steps).pop()).toMatchObject({ kind: 'pour', start: 180, end: 210, inc: 60 });
+        expect(win.planBar(k.steps).segments).toHaveLength(5);
+    });
+
     it('stores the Hoffmann last pour as a pour and two waits', () => {
         const h = app('BUILTIN_BREW_PLANS')[1];
         expect(h.steps.slice(3).map(s => win.stepTime(s))).toEqual([75, 105, 210]);
@@ -280,7 +287,8 @@ describe('brew plan routes', () => {
         await tick(); await tick();
         const post = calls.find(c => c.method === 'POST');
         expect(post.path).toBe('/api/brew-plans');
-        expect(post.body.steps.map(s => s.to_g)).toEqual([60, 120, 180, 240, 300]);
+        expect(post.body.steps.filter(s => s.type === 'pour').map(s => s.to_g)).toEqual([60, 120, 180, 240, 300]);
+        expect(post.body.steps.at(-1)).toEqual(wait(210, { note: '移開濾杯' }));
         expect(post.body).toMatchObject({ water_temp: 92, dose_g: 20 });
         expect(post.body).not.toHaveProperty('tags');
     });
