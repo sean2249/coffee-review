@@ -99,23 +99,16 @@ function normalizeSteps(value: unknown): Row[] {
     if (value.length > 30) throw badRequest('steps must have at most 30 items');
     const steps = value.map((raw: unknown, i) => normalizeStep(raw, i));
 
-    // 第一步一定是從 0:00 開始的注水，所以至少有一注，悶蒸也只會在 steps[0]。
-    if (steps[0].type !== 'pour' || steps[0].at_seconds !== 0) {
-        throw badRequest('steps[0] must be a pour at 0 seconds');
-    }
-    let lastTime = 0;
-    let lastTo = 0;
+    // 第一步一定是注水，所以至少有一注，悶蒸也只會在 steps[0]。
+    // 每一步存自己的秒數與本次水量（docs/adr/0003），沒有順序要比；總水量照舊 ≤ 2000。
+    if (steps[0].type !== 'pour') throw badRequest('steps[0] must be a pour');
+    let total = 0;
     steps.forEach((step, i) => {
-        // 整條時間軸同一個座標（docs/adr/0002）：注水看開始、等待看等到幾秒，不遞減。
-        const time = (step.type === 'pour' ? step.at_seconds : step.until_seconds) as number;
-        if (time < lastTime) throw badRequest(`steps[${i}] must not be earlier than the previous step`);
-        lastTime = time;
         if (step.type !== 'pour') return;
-        // 累計水量跨注水嚴格遞增，中間隔著等待也要比。
-        if ((step.to_g as number) <= lastTo) throw badRequest(`steps[${i}].to_g must be greater than the previous pour`);
-        lastTo = step.to_g as number;
         if (step.bloom && i !== 0) throw badRequest('only the first pour can be a bloom');
+        total += step.water_g as number;
     });
+    if (total > 2000) throw badRequest('total water_g must be at most 2000');
     return steps;
 }
 
@@ -125,20 +118,17 @@ function normalizeStep(raw: unknown, i: number): Row {
     const step = raw as Row;
     const note = optionalText(step.note, `steps[${i}].note`, 100);
     const noteKey = note === null ? {} : { note };
-    if (step.type === 'wait') {
-        if (!isSeconds(step.until_seconds)) throw badRequest(`steps[${i}].until_seconds must be an integer >= 0`);
-        return { type: 'wait', until_seconds: step.until_seconds, ...noteKey };
-    }
-    if (step.type !== 'pour') throw badRequest(`steps[${i}].type must be 'pour' or 'wait'`);
-    if (!isSeconds(step.at_seconds)) throw badRequest(`steps[${i}].at_seconds must be an integer >= 0`);
-    if (!inRange(step.to_g, 0, 2000) || step.to_g === 0) throw badRequest(`steps[${i}].to_g must be in (0, 2000]`);
+    if (step.type !== 'pour' && step.type !== 'wait') throw badRequest(`steps[${i}].type must be 'pour' or 'wait'`);
+    if (!isSeconds(step.seconds)) throw badRequest(`steps[${i}].seconds must be an integer in [1, 600]`);
+    if (step.type === 'wait') return { type: 'wait', seconds: step.seconds, ...noteKey };
+    if (!inRange(step.water_g, 0, 2000) || step.water_g === 0) throw badRequest(`steps[${i}].water_g must be in (0, 2000]`);
     if (step.bloom !== undefined && typeof step.bloom !== 'boolean') throw badRequest(`steps[${i}].bloom must be a boolean`);
     const temp = step.water_temp ?? null;
     if (temp !== null && !inRange(temp, 0, 100)) throw badRequest(`steps[${i}].water_temp must be in [0, 100]`);
     return {
         type: 'pour',
-        at_seconds: step.at_seconds,
-        to_g: step.to_g,
+        seconds: step.seconds,
+        water_g: step.water_g,
         ...(step.bloom === true ? { bloom: true } : {}),
         ...(temp === null ? {} : { water_temp: temp }),
         ...noteKey,
@@ -157,7 +147,7 @@ function optionalText(value: unknown, field: string, max?: number): string | nul
 // 字數用 code point 算，與 SQLite length() 一致：emoji 不會被 UTF-16 算成兩個字。
 const textLength = (s: string): number => [...s].length;
 
-const isSeconds = (v: unknown): v is number => Number.isInteger(v) && (v as number) >= 0;
+const isSeconds = (v: unknown): v is number => Number.isInteger(v) && (v as number) >= 1 && (v as number) <= 600;
 
 const inRange = (v: unknown, min: number, max: number): v is number =>
     typeof v === 'number' && Number.isFinite(v) && v >= min && v <= max;

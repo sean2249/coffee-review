@@ -2599,10 +2599,9 @@ hr { border-color: var(--border); opacity: 0.7; }
 .bp-stepper + .bp-stepper > .bp-step-btn:first-child::after { left: -2px; }
 .bp-stepper:has(+ .bp-stepper) > .bp-step-btn:last-child::after { right: -2px; }
 .bp-step-input { width: 42px; border: 0; padding: 0; text-align: center; font-family: var(--font-mono); font-size: 0.875rem; background: transparent; }
-.bp-step-input[data-field="inc"] { width: 32px; text-align: right; font-weight: 700; color: var(--brew-pour); }
+.bp-step-input[data-field="water_g"] { width: 32px; text-align: right; font-weight: 700; color: var(--brew-pour); }
 .bp-unit { padding: 0 4px 0 2px; font-family: var(--font-mono); font-size: 0.75rem; font-weight: 700; color: var(--brew-pour); }
 .bp-wait-label { font-size: 0.8rem; font-weight: 700; color: var(--text-secondary); white-space: nowrap; }
-.bp-wait-dur { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: 0.75rem; color: var(--text-secondary); white-space: nowrap; }
 .bp-icon-btn {
     flex: none;
     width: 36px;
