@@ -7,30 +7,34 @@ beforeAll(async () => { ({ window: win, dom } = await loadApp()); });
 // 頂層 const 不是 window 的屬性，要在 app.js 的 context 裡讀。
 const app = expr => vm.runInContext(expr, dom.getInternalVMContext());
 
-const pour = (at, to, x = {}) => ({ type: 'pour', at_seconds: at, to_g: to, ...x });
-const wait = (until, x = {}) => ({ type: 'wait', until_seconds: until, ...x });
+// 每一步存自己的秒數，注水存本次水量（docs/adr/0003）。
+const pour = (seconds, water, x = {}) => ({ type: 'pour', seconds, water_g: water, ...x });
+const wait = (seconds, x = {}) => ({ type: 'wait', seconds, ...x });
 
-// James Hoffmann Ultimate V60（2 杯）：#146 的範例，最後一注後面接兩個等待。
+// James Hoffmann Ultimate V60（2 杯）：悶蒸、兩注，最後一個等待收尾。
 const HOFFMANN_STEPS = [
-    pour(0, 60, { bloom: true }), wait(45, { note: '輕搖' }),
-    pour(45, 300), pour(75, 500), wait(105), wait(210, { note: '輕攪，等待滴完' }),
+    pour(45, 60, { bloom: true, note: '輕搖' }), pour(30, 240), pour(30, 200), wait(105, { note: '輕攪，等待滴完' }),
 ];
 
 describe('planSummary', () => {
-    it('totals the last pour, rounds the ratio and ends at the last step', () => {
+    it('sums water and seconds, and rounds the ratio', () => {
         const s = win.planSummary({ dose_g: 30, steps: HOFFMANN_STEPS });
         expect(s).toEqual({ total: 500, ratio: '1:16.7', pourCount: 3, endSeconds: 210 });
     });
 
     it('drops the decimal when the ratio is whole', () => {
-        const steps = [pour(0, 60), pour(45, 120), pour(90, 180), pour(135, 240), pour(180, 300)];
+        const steps = [pour(45, 60), pour(45, 60), pour(45, 60), pour(45, 60), pour(30, 60)];
         expect(win.planSummary({ dose_g: 20, steps }).ratio).toBe('1:15');
+    });
+
+    it('rounds the water total to 0.1 g so floats do not drift', () => {
+        expect(win.planSummary({ dose_g: 1, steps: [pour(10, 0.1), pour(10, 0.2)] }).total).toBe(0.3);
     });
 });
 
-// 唯讀頁的步驟時間軸：注水後面寫的等待併進同一格；接兩個等待時第二個自己一塊（#146）。
+// 一步一塊：開始時間是前面各步的加總，長度是自己的秒數；沒有合併格（#155）。
 describe('planBlocks', () => {
-    it('groups the Hoffmann steps the way the canvas shows them', () => {
+    it('lays out Hoffmann one block per step', () => {
         expect(win.planBlocks(HOFFMANN_STEPS)).toEqual([
             { kind: 'pour', start: 0, end: 45, inc: 60, cum: 60, from: 0, bloom: true, temp: null, note: '輕搖' },
             { kind: 'pour', start: 45, end: 75, inc: 240, cum: 300, from: 60, bloom: false, temp: null, note: '' },
@@ -39,19 +43,16 @@ describe('planBlocks', () => {
         ]);
     });
 
-    it('labels a merged wait note unless the pour is the bloom', () => {
-        const blocks = win.planBlocks([pour(0, 45, { note: '繞圈' }), pour(35, 150), pour(75, 250, { water_temp: 90 }), wait(165, { note: '等待滴完' })]);
+    it('keeps a wait between two pours as its own block', () => {
+        const blocks = win.planBlocks([pour(30, 45, { note: '繞圈' }), wait(20, { note: '攪拌' }), pour(40, 100, { water_temp: 90 })]);
+        expect(blocks.map(b => [b.kind, b.start, b.end])).toEqual([['pour', 0, 30], ['wait', 30, 50], ['pour', 50, 90]]);
         expect(blocks[0].note).toBe('繞圈');
-        expect(blocks[2]).toMatchObject({ start: 75, end: 165, temp: 90, note: '等待：等待滴完' });
-    });
-
-    it('ends a final pour with no wait at its own start', () => {
-        const blocks = win.planBlocks([pour(0, 60), pour(45, 120)]);
-        expect(blocks[1]).toMatchObject({ start: 45, end: 45 });
+        expect(blocks[1]).toMatchObject({ cum: 45, note: '攪拌' });
+        expect(blocks[2]).toMatchObject({ from: 45, cum: 145, temp: 90 });
     });
 });
 
-// 時間條：每一塊是條上的一段；注水上方標 +N g，下方標每個時間點（#146「時間條」）。
+// 時間條：一步一格、寬度依秒數；注水上方標 +N g，下方標每個時間點。
 describe('planBar', () => {
     it('cuts Hoffmann into three pours and one wait', () => {
         const bar = win.planBar(HOFFMANN_STEPS);
@@ -68,14 +69,15 @@ describe('planBar', () => {
         expect(bar.end).toBe(210);
     });
 
-    it('skips zero-length blocks', () => {
-        expect(win.planBar([pour(0, 60), pour(45, 120)]).segments).toEqual([{ kind: 'pour', start: 0, end: 45 }]);
+    it('gives every step a segment as long as its seconds', () => {
+        const steps = [pour(40, 60), wait(5), wait(15), pour(50, 140)];
+        expect(win.planBar(steps).segments.map(s => s.end - s.start)).toEqual([40, 5, 15, 50]);
     });
 });
 
 describe('brewPlanMeta', () => {
     it('reads {濾杯} {水溫} 粉 N g 水 N g', () => {
-        expect(win.brewPlanMeta({ dripper: 'V60', water_temp: 93, dose_g: 15, steps: [pour(0, 45), pour(35, 250)] }))
+        expect(win.brewPlanMeta({ dripper: 'V60', water_temp: 93, dose_g: 15, steps: [pour(35, 45), pour(130, 205)] }))
             .toEqual({ dripper: 'V60', temp: '93°C', dose: '15', water: '250' });
     });
 
@@ -93,91 +95,100 @@ describe('BUILTIN_BREW_PLANS', () => {
         ]);
     });
 
-    it('ends 4:6 with a closing wait so its last pour has a block', () => {
-        const k = app('BUILTIN_BREW_PLANS')[0];
-        expect(k.steps[k.steps.length - 1]).toEqual(wait(210, { note: '移開濾杯' }));
-        expect(win.planBlocks(k.steps).pop()).toMatchObject({ kind: 'pour', start: 180, end: 210, inc: 60 });
-        expect(win.planBar(k.steps).segments).toHaveLength(5);
+    it('matches the totals in #155', () => {
+        const totals = app('BUILTIN_BREW_PLANS').map(p => {
+            const s = win.planSummary(p);
+            return [win.fmtClock(s.endSeconds), s.total];
+        });
+        expect(totals).toEqual([['3:30', 300], ['3:30', 500], ['3:00', 250], ['4:15', 330]]);
     });
 
-    it('stores the Hoffmann last pour as a pour and two waits', () => {
-        const h = app('BUILTIN_BREW_PLANS')[1];
-        expect(h.steps.slice(3).map(s => win.stepTime(s))).toEqual([75, 105, 210]);
-        expect(win.planSummary(h)).toMatchObject({ total: 500, ratio: '1:16.7', endSeconds: 210 });
+    it('gives the 4:6 last pour its own 30 seconds instead of a closing wait', () => {
+        const k = app('BUILTIN_BREW_PLANS')[0];
+        expect(k.steps.at(-1)).toEqual(pour(30, 60, { note: '移開濾杯' }));
+        expect(k.steps.every(s => s.type === 'pour')).toBe(true);
     });
 
     it('obeys the API rules', () => {
+        const KEYS = { pour: ['type', 'seconds', 'water_g', 'bloom', 'water_temp', 'note'], wait: ['type', 'seconds', 'note'] };
         for (const p of app('BUILTIN_BREW_PLANS')) {
             expect(p.builtin).toBe(true);
             expect(p.id).toMatch(/^builtin-/);
             expect(p.water_temp).toBeGreaterThanOrEqual(0);
             expect(p.water_temp).toBeLessThanOrEqual(100);
-            expect(p.steps[0]).toMatchObject({ type: 'pour', at_seconds: 0 });
-            let lastT = 0, lastTo = 0;
+            expect(p.steps[0].type).toBe('pour');
+            expect(win.validateBrewPlanDraft(win.brewPlanDraft(p))).toEqual([]);
             p.steps.forEach((s, i) => {
-                expect(win.stepTime(s)).toBeGreaterThanOrEqual(lastT);
-                lastT = win.stepTime(s);
-                if (s.type === 'pour') { expect(s.to_g).toBeGreaterThan(lastTo); lastTo = s.to_g; }
+                for (const k of Object.keys(s)) expect(KEYS[s.type]).toContain(k);
+                expect(Number.isInteger(s.seconds) && s.seconds >= 1 && s.seconds <= 600).toBe(true);
+                if (s.type === 'pour') expect(s.water_g).toBeGreaterThan(0);
                 if (s.bloom) expect(i).toBe(0);
             });
         }
     });
 });
 
-// 編輯頁的草稿：注水列輸入本次（inc），存檔才換成累計。
+// 編輯頁的草稿就是存檔形狀：每一列是一步（docs/adr/0003）。
 const draftOf = (rows, x = {}) => ({
     name: '日常 15 g', description: '', dripper: 'V60', grind: '中細', dose_g: 15, water_temp: 93, rows, ...x,
 });
-const pr = (at, inc, x = {}) => ({ type: 'pour', at_seconds: at, inc, ...x });
-const wr = (until, x = {}) => ({ type: 'wait', until_seconds: until, ...x });
 
 describe('brewPlanPayload', () => {
-    it('sends cumulative to_g, water_temp and bloom, and nothing about tags', () => {
-        const body = win.brewPlanPayload(draftOf([pr(0, 60, { bloom: true }), pr(45, 60), pr(90, 60)], { dose_g: 20 }));
+    it('sends the rows as steps with schema_version 2, and nothing about tags', () => {
+        const body = win.brewPlanPayload(draftOf([pour(45, 60, { bloom: true }), pour(45, 60), wait(30)], { dose_g: 20 }));
         expect(body).toEqual({
             name: '日常 15 g', description: null, dripper: 'V60', grind: '中細', dose_g: 20, water_temp: 93,
-            steps: [pour(0, 60, { bloom: true }), pour(45, 120), pour(90, 180)],
+            steps: [pour(45, 60, { bloom: true }), pour(45, 60), wait(30)],
+            schema_version: 2,
         });
     });
 
     it('trims text, drops blank notes and per-pour temps, and only keeps a true bloom', () => {
         const body = win.brewPlanPayload(draftOf([
-            pr(0, 45, { bloom: false, note: '  ', water_temp: null }), wr(35, { note: ' 輕搖 ' }), pr(35, 105, { water_temp: 90 }),
+            pour(35, 45, { bloom: false, note: '  ', water_temp: null }), wait(20, { note: ' 輕搖 ' }), pour(40, 105, { water_temp: 90 }),
         ], { name: '  日常  ', description: ' 平日早上 ' }));
         expect(body.name).toBe('日常');
         expect(body.description).toBe('平日早上');
-        expect(body.steps).toEqual([pour(0, 45), wait(35, { note: '輕搖' }), pour(35, 150, { water_temp: 90 })]);
+        expect(body.steps).toEqual([pour(35, 45), wait(20, { note: '輕搖' }), pour(40, 105, { water_temp: 90 })]);
     });
 });
 
 describe('validateBrewPlanDraft', () => {
     const fields = d => win.validateBrewPlanDraft(d).map(e => e.field);
 
-    it('accepts a complete plan, including dose 100', () => {
-        expect(fields(draftOf([pr(0, 60)], { dose_g: 100 }))).toEqual([]);
+    it('accepts a complete plan, including dose 100 and seconds 1 / 600', () => {
+        expect(fields(draftOf([pour(1, 60), wait(600)], { dose_g: 100 }))).toEqual([]);
     });
 
     it('flags what the API would reject', () => {
-        expect(fields(draftOf([pr(0, 60)], { name: ' ' }))).toEqual(['name']);
-        expect(fields(draftOf([pr(0, 60)], { dose_g: 0 }))).toEqual(['dose_g']);
-        expect(fields(draftOf([pr(0, 60)], { dose_g: 100.5 }))).toEqual(['dose_g']);
-        expect(fields(draftOf([pr(0, 60)], { water_temp: null }))).toEqual(['water_temp']);
-        expect(fields(draftOf([pr(0, 60)], { description: 'x'.repeat(501) }))).toEqual(['description']);
-        expect(fields(draftOf([pr(0, 0)]))).toEqual(['rows.0']);
-        expect(fields(draftOf([pr(0, 60), wr(30), pr(20, 60)]))).toEqual(['rows.2']);
-        expect(fields(draftOf([pr(0, 60, { note: 'x'.repeat(101) })]))).toEqual(['rows.0']);
-        expect(fields(draftOf([wr(30)]))).toEqual(['rows']);
+        expect(fields(draftOf([pour(45, 60)], { name: ' ' }))).toEqual(['name']);
+        expect(fields(draftOf([pour(45, 60)], { dose_g: 0 }))).toEqual(['dose_g']);
+        expect(fields(draftOf([pour(45, 60)], { dose_g: 100.5 }))).toEqual(['dose_g']);
+        expect(fields(draftOf([pour(45, 60)], { water_temp: null }))).toEqual(['water_temp']);
+        expect(fields(draftOf([pour(45, 60)], { description: 'x'.repeat(501) }))).toEqual(['description']);
+        expect(fields(draftOf([pour(45, 0)]))).toEqual(['rows.0']);
+        expect(fields(draftOf([pour(45, 2001)]))).toEqual(['rows.0']);
+        expect(fields(draftOf([pour(45, 60), pour(0, 60)]))).toEqual(['rows.1']);
+        expect(fields(draftOf([pour(45, 60), wait(601)]))).toEqual(['rows.1']);
+        expect(fields(draftOf([pour(45, 60), wait(1.5)]))).toEqual(['rows.1']);
+        expect(fields(draftOf([pour(45, 60), wait(NaN)]))).toEqual(['rows.1']);
+        expect(fields(draftOf([pour(45, 60, { note: 'x'.repeat(101) })]))).toEqual(['rows.0']);
+        expect(fields(draftOf([pour(45, 1000), pour(45, 1000.5)]))).toEqual(['rows']);
+        expect(fields(draftOf([wait(30)]))).toEqual(['rows']);
     });
 
     it('allows a wait right after another wait', () => {
-        expect(fields(draftOf([pr(0, 60), wr(30), wr(90)]))).toEqual([]);
+        expect(fields(draftOf([pour(45, 60), wait(30), wait(90)]))).toEqual([]);
     });
 });
 
 describe('brewPlanDraft', () => {
-    it('opens a plan as 本次 rows', () => {
-        const d = win.brewPlanDraft(app('BUILTIN_BREW_PLANS')[1]);
-        expect(d.rows.slice(0, 4).map(r => r.inc ?? r.until_seconds)).toEqual([60, 45, 240, 200]);
+    it('opens a plan as a copy of its steps', () => {
+        const plan = app('BUILTIN_BREW_PLANS')[1];
+        const d = win.brewPlanDraft(plan);
+        expect(d.rows).toEqual(plan.steps);
+        d.rows[0].seconds = 1;
+        expect(plan.steps[0].seconds).toBe(45);
         expect(d.name).toBe('James Hoffmann Ultimate V60（2 杯）');
     });
 
@@ -188,31 +199,9 @@ describe('brewPlanDraft', () => {
         expect(win.brewPlanPayload(d).steps).toEqual(plan.steps);
     });
 
-    it('starts a new plan with one pour at 0:00 and 93°C', () => {
+    it('starts a new plan with one 45-second pour and 93°C', () => {
         const d = win.brewPlanDraft(null);
-        expect(d).toMatchObject({ name: '', water_temp: 93, rows: [{ type: 'pour', at_seconds: 0 }] });
-    });
-});
-
-// 畫面上輸入的是本次，存的是累計（#146「累計／本次」）。
-describe('本次 ↔ 累計', () => {
-    it('reads each pour as this pour minus the previous pour, skipping waits', () => {
-        expect(win.pourIncrements(HOFFMANN_STEPS)).toEqual([60, null, 240, 200, null, null]);
-    });
-
-    it('turns 本次 into cumulative to_g (4:6 is 60 × 5 → 60 … 300)', () => {
-        const rows = [0, 45, 90, 135, 180].map(at => ({ type: 'pour', at_seconds: at, inc: 60 }));
-        expect(win.stepsFromIncrements(rows).map(s => s.to_g)).toEqual([60, 120, 180, 240, 300]);
-    });
-
-    it('rounds the running total to 0.1 g so floats do not drift', () => {
-        const rows = [{ type: 'pour', at_seconds: 0, inc: 0.1 }, { type: 'pour', at_seconds: 30, inc: 0.2 }];
-        expect(win.stepsFromIncrements(rows).map(s => s.to_g)).toEqual([0.1, 0.3]);
-    });
-
-    it('keeps waits as waits and drops the inc key', () => {
-        const rows = [{ type: 'pour', at_seconds: 0, inc: 45, bloom: true }, { type: 'wait', until_seconds: 35, note: '輕搖' }];
-        expect(win.stepsFromIncrements(rows)).toEqual([pour(0, 45, { bloom: true }), wait(35, { note: '輕搖' })]);
+        expect(d).toMatchObject({ name: '', water_temp: 93, rows: [pour(45, 45)] });
     });
 });
 
@@ -226,7 +215,7 @@ describe('brew plan routes', () => {
     const MINE = {
         id: 'p1', name: '日常 15 g', description: '平日早上', dripper: 'Kalita Wave 185', grind: '中細',
         dose_g: 15, water_temp: 93, updated_at: '2026-10-27T00:00:00Z',
-        steps: [pour(0, 45, { bloom: true }), wait(35, { note: '輕搖' }), pour(35, 150), pour(75, 250, { water_temp: 90 }), wait(165, { note: '等待滴完' })],
+        steps: [pour(35, 45, { bloom: true, note: '輕搖' }), pour(40, 105), pour(30, 100, { water_temp: 90 }), wait(60, { note: '等待滴完' })],
     };
     let w, d, calls;
     const go = async hash => { w.location.hash = hash; await tick(); await tick(); };
@@ -280,16 +269,15 @@ describe('brew plan routes', () => {
         expect(html()).not.toContain('複製成我的');
     });
 
-    it('prefills a copy and saves cumulative to_g without tags', async () => {
+    it('prefills a copy and saves its steps as v2 without tags', async () => {
         await go('#/plans/new?from=builtin-kasuya-4-6');
         expect(d.getElementById('bp-name').value).toBe('粕谷哲 4:6（複製）');
         d.getElementById('bp-form').requestSubmit();
         await tick(); await tick();
         const post = calls.find(c => c.method === 'POST');
         expect(post.path).toBe('/api/brew-plans');
-        expect(post.body.steps.filter(s => s.type === 'pour').map(s => s.to_g)).toEqual([60, 120, 180, 240, 300]);
-        expect(post.body.steps.at(-1)).toEqual(wait(210, { note: '移開濾杯' }));
-        expect(post.body).toMatchObject({ water_temp: 92, dose_g: 20 });
+        expect(post.body.steps).toEqual(app('BUILTIN_BREW_PLANS')[0].steps);
+        expect(post.body).toMatchObject({ water_temp: 92, dose_g: 20, schema_version: 2 });
         expect(post.body).not.toHaveProperty('tags');
     });
 
@@ -300,13 +288,35 @@ describe('brew plan routes', () => {
         for (const b of buttons) expect(b.getAttribute('type')).toBe('button');
     });
 
-    it('merges the bloom wait into the first pour row while editing', async () => {
+    it('shows one row per step, the first pour with its own seconds', async () => {
         await go('#/plans/p1/edit');
         d.getElementById('bp-steps-toggle').click();
-        await tick();
         const rows = d.querySelectorAll('.bp-step');
         expect(rows).toHaveLength(4);
-        expect(rows[0].querySelector('input[data-field="time"]').value).toBe('0:35');
+        expect(rows[0].querySelector('input[data-field="seconds"]').value).toBe('35');
+        expect(rows[3].querySelector('input[data-field="seconds"]').value).toBe('60');
+        expect(rows[3].querySelector('input[data-field="water_g"]')).toBeNull();
+    });
+
+    it('shifts the later start times while typing a middle step\'s seconds', async () => {
+        await go('#/plans/p1/edit');
+        d.getElementById('bp-steps-toggle').click();
+        const starts = () => [...d.querySelectorAll('[data-start-index]')].map(el => el.textContent);
+        expect(starts()).toEqual(['0:00', '0:35', '1:15', '1:45']);
+        const input = d.querySelector('input[data-field="seconds"][data-index="1"]');
+        input.value = '50';
+        input.dispatchEvent(new w.Event('input', { bubbles: true }));
+        expect(starts()).toEqual(['0:00', '0:35', '1:25', '1:55']);
+        // 打字時不重畫列，輸入框還是同一個（不會失焦）。
+        expect(d.body.contains(input)).toBe(true);
+    });
+
+    it('steps a pour\'s seconds by 5 with the ＋ button', async () => {
+        await go('#/plans/p1/edit');
+        d.getElementById('bp-steps-toggle').click();
+        d.querySelector('[data-act="inc"][data-field="seconds"][data-index="0"]').click();
+        expect(d.querySelector('input[data-field="seconds"][data-index="0"]').value).toBe('40');
+        expect(d.querySelector('[data-start-index="1"]').textContent).toBe('0:40');
     });
 
     it('puts 刪除這步 inside the ⚙ panel instead of on the row', async () => {
@@ -326,11 +336,11 @@ describe('brew plan routes', () => {
     it('updates the left-column 累計 while typing a pour amount', async () => {
         await go('#/plans/p1/edit');
         d.getElementById('bp-steps-toggle').click();
-        const input = d.querySelector('input[data-field="inc"][data-index="2"]');
+        const input = d.querySelector('input[data-field="water_g"][data-index="1"]');
         input.value = '115';
         input.dispatchEvent(new w.Event('input', { bubbles: true }));
-        expect(d.querySelector('[data-cum-index="2"]').textContent).toBe('160 g');
-        expect(d.querySelector('[data-cum-index="3"]').textContent).toBe('260 g');
+        expect(d.querySelector('[data-cum-index="1"]').textContent).toBe('160 g');
+        expect(d.querySelector('[data-cum-index="2"]').textContent).toBe('260 g');
     });
 
     it('does not call a non-duplicate 409 a duplicate name', async () => {

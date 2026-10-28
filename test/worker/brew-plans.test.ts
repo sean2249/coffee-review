@@ -12,15 +12,17 @@ const send = (method: string, body: unknown): RequestInit => ({
 const post = (body: unknown) => api('/api/brew-plans', send('POST', body));
 const patch = (id: string, body: unknown) => api(`/api/brew-plans/${id}`, send('PATCH', body));
 
-const pour = (at: number, to: number, extra: Rec = {}) => ({ type: 'pour', at_seconds: at, to_g: to, ...extra });
-const wait = (until: number, extra: Rec = {}) => ({ type: 'wait', until_seconds: until, ...extra });
+// 每一步存自己的秒數，注水存本次水量（docs/adr/0003）。
+const pour = (seconds: number, water: number, extra: Rec = {}) => ({ type: 'pour', seconds, water_g: water, ...extra });
+const wait = (seconds: number, extra: Rec = {}) => ({ type: 'wait', seconds, ...extra });
 
 // 最小的合法計劃；各案例只覆寫要測的欄位。
 const plan = (over: Rec = {}): Rec => ({
     name: '家裡的 4:6',
     dose_g: 20,
     water_temp: 92,
-    steps: [pour(0, 60), pour(45, 120)],
+    steps: [pour(45, 60), pour(45, 60)],
+    schema_version: 2,
     ...over,
 });
 
@@ -30,7 +32,7 @@ async function seedPlan(id: string, userId = OWNER_ID, name = `計劃 ${id}`, up
         `insert into brew_plans (id, user_id, name, dose_g, water_temp, steps, updated_at)
          values (?1, ?2, ?3, 20, 92, ?4, ?5)`,
     )
-        .bind(id, userId, name, JSON.stringify([pour(0, 60)]), updatedAt)
+        .bind(id, userId, name, JSON.stringify([pour(45, 60)]), updatedAt)
         .run();
 }
 
@@ -46,7 +48,7 @@ describe('POST /api/brew-plans', () => {
                 tags: ['日常'],
                 target_seconds: 210,
                 description: '  淺焙用  ',
-                steps: [pour(0, 50, { bloom: true }), wait(45, { note: ' 輕搖 ' }), pour(45, 100)],
+                steps: [pour(45, 50, { bloom: true, note: ' 輕搖 ' }), pour(30, 100), wait(60, { note: '等待滴完' })],
             }),
         );
         expect(res.status).toBe(201);
@@ -57,10 +59,11 @@ describe('POST /api/brew-plans', () => {
         expect(row).not.toHaveProperty('tags');
         expect(row).not.toHaveProperty('target_seconds');
         expect(row.description).toBe('淺焙用');
+        expect(row.schema_version).toBe(2);
         expect(row.steps).toEqual([
-            { type: 'pour', at_seconds: 0, to_g: 50, bloom: true },
-            { type: 'wait', until_seconds: 45, note: '輕搖' },
-            { type: 'pour', at_seconds: 45, to_g: 100 },
+            { type: 'pour', seconds: 45, water_g: 50, bloom: true, note: '輕搖' },
+            { type: 'pour', seconds: 30, water_g: 100 },
+            { type: 'wait', seconds: 60, note: '等待滴完' },
         ]);
     });
 });
@@ -72,7 +75,7 @@ describe('GET /api/brew-plans', () => {
         await seedPlan('theirs', OTHER_ID, '別人的', '2026-05-01T00:00:00.000Z');
         const rows = await getJson<Rec[]>('/api/brew-plans');
         expect(rows.map((r) => r.id)).toEqual(['new', 'old']);
-        expect(rows[0].steps).toEqual([{ type: 'pour', at_seconds: 0, to_g: 60 }]);
+        expect(rows[0].steps).toEqual([{ type: 'pour', seconds: 45, water_g: 60 }]);
     });
 
     it('別人的與不存在的 id 都回 200 null', async () => {
@@ -212,64 +215,68 @@ describe('steps 形狀', () => {
         ['steps 為空陣列', []],
         ['steps 不是陣列', { type: 'pour' }],
         ['steps 為 null', null],
-        ['某一步不是物件', [pour(0, 60), 'pour']],
-        ["type 是 'stir'", [pour(0, 60), { type: 'stir', until_seconds: 30 }]],
-        ['缺 type', [pour(0, 60), { until_seconds: 30 }]],
-        ['注水缺 to_g', [pour(0, 60), { type: 'pour', at_seconds: 45 }]],
-        ['注水缺 at_seconds', [pour(0, 60), { type: 'pour', to_g: 120 }]],
-        ['等待缺 until_seconds', [pour(0, 60), { type: 'wait' }]],
-        ['at_seconds 為負數', [pour(0, 60), pour(-5, 120)]],
-        ['at_seconds 為小數', [pour(0, 60), pour(45.5, 120)]],
-        ['until_seconds 為小數', [pour(0, 60), wait(30.5)]],
-        ['to_g 為 0', [pour(0, 0)]],
-        ['to_g 超過 2000', [pour(0, 60), pour(45, 2000.5)]],
-        ['某注 water_temp 為 150', [pour(0, 60), pour(45, 120, { water_temp: 150 })]],
-        ['bloom 不是 boolean', [pour(0, 60, { bloom: 'yes' })]],
-        ['某步 note 101 字', [pour(0, 60), wait(30, { note: '字'.repeat(101) })]],
-        ['31 個步驟', [pour(0, 10), ...Array.from({ length: 30 }, (_, i) => pour(i + 1, 20 + i))]],
+        ['某一步不是物件', [pour(45, 60), 'pour']],
+        ["type 是 'stir'", [pour(45, 60), { type: 'stir', seconds: 30 }]],
+        ['缺 type', [pour(45, 60), { seconds: 30 }]],
+        ['注水缺 water_g', [pour(45, 60), { type: 'pour', seconds: 45 }]],
+        ['注水缺 seconds', [pour(45, 60), { type: 'pour', water_g: 120 }]],
+        ['等待缺 seconds', [pour(45, 60), { type: 'wait' }]],
+        ['只送舊形狀（at_seconds / to_g）', [{ type: 'pour', at_seconds: 0, to_g: 60 }]],
+        ['等待只送舊的 until_seconds', [pour(45, 60), { type: 'wait', until_seconds: 90 }]],
+        ['seconds 為 0', [pour(45, 60), pour(0, 60)]],
+        ['seconds 為 601', [pour(45, 60), wait(601)]],
+        ['seconds 為小數', [pour(45, 60), pour(45.5, 60)]],
+        ['seconds 是字串', [pour('45' as unknown as number, 60)]],
+        ['water_g 為 0', [pour(45, 0)]],
+        ['water_g 超過 2000', [pour(45, 2000.5)]],
+        ['各注加總超過 2000', [pour(45, 1000), wait(30), pour(45, 1000.5)]],
+        ['某注 water_temp 為 150', [pour(45, 60), pour(45, 60, { water_temp: 150 })]],
+        ['bloom 不是 boolean', [pour(45, 60, { bloom: 'yes' })]],
+        ['某步 note 101 字', [pour(45, 60), wait(30, { note: '字'.repeat(101) })]],
+        ['31 個步驟', Array.from({ length: 31 }, () => pour(10, 10))],
     ])('%s → 400，DB 沒有新增', async (_label, steps) => {
         expect((await post(plan({ steps }))).status).toBe(400);
         expect(await planCount()).toBe(0);
     });
 
     it('30 個步驟可以存', async () => {
-        const steps = [pour(0, 10), ...Array.from({ length: 29 }, (_, i) => pour(i + 1, 20 + i))];
+        const steps = Array.from({ length: 30 }, () => pour(10, 10));
         expect((await post(plan({ steps }))).status).toBe(201);
+    });
+
+    it('邊界值都可以存：seconds 1 與 600、單注 2000 g、加總剛好 2000 g', async () => {
+        expect((await post(plan({ name: 'a', steps: [pour(1, 2000), wait(600)] }))).status).toBe(201);
+        expect((await post(plan({ name: 'b', steps: [pour(600, 1000), pour(1, 1000)] }))).status).toBe(201);
     });
 });
 
 describe('steps 順序', () => {
     it.each([
-        ['第一步是等待', [wait(0), pour(0, 60)]],
+        ['第一步是等待', [wait(30), pour(45, 60)]],
         ['只有等待沒有注水', [wait(30)]],
-        ['第一注不是從 0 開始', [pour(5, 60), pour(45, 120)]],
-        ['等待晚於下一注', [pour(0, 60), wait(50), pour(45, 120)]],
-        ['某注時間比前一步早', [pour(0, 60), pour(45, 120), pour(30, 180)]],
-        ['累計沒有大於前一注', [pour(0, 60), pour(45, 60)]],
-        ['隔著等待累計也要遞增', [pour(0, 120), wait(60), pour(90, 100)]],
-        ['第二注標悶蒸', [pour(0, 60), pour(45, 120, { bloom: true })]],
+        ['第二注標悶蒸', [pour(45, 60), pour(45, 60, { bloom: true })]],
     ])('%s → 400，DB 沒有新增', async (_label, steps) => {
         expect((await post(plan({ steps }))).status).toBe(400);
         expect(await planCount()).toBe(0);
     });
 
     it.each([
-        ['時間相同的步驟', [pour(0, 60), wait(0, { note: '攪拌' }), pour(45, 120)]],
-        ['兩個等待連在一起', [pour(0, 60), pour(75, 500), wait(105), wait(210)]],
-        ['悶蒸後面不接等待', [pour(0, 60, { bloom: true }), pour(40, 200)]],
+        ['兩個等待連在一起', [pour(45, 60), pour(30, 440), wait(105), wait(60)]],
+        ['等待夾在兩注之間', [pour(45, 60), wait(30, { note: '攪拌' }), pour(45, 60)]],
+        ['悶蒸後面直接接注水', [pour(45, 60, { bloom: true }), pour(40, 200)]],
     ])('%s → 201', async (_label, steps) => {
         expect((await post(plan({ steps }))).status).toBe(201);
     });
 });
 
 describe('正規化', () => {
-    it('步驟只留該型別的鍵：多送的、另一型別的、舊鍵名 temp_c 都不見；空備註與 bloom: false 不寫', async () => {
+    it('步驟只留該型別的鍵：多送的、另一型別的、v1 的鍵都不見；空備註與 bloom: false 不寫', async () => {
         const res = await post(
             plan({
                 steps: [
-                    pour(0, 60, { bloom: false, note: '  ', extra: 1, until_seconds: 9, temp_c: 90 }),
-                    wait(30, { to_g: 999, note: '輕搖' }),
-                    pour(45, 120, { water_temp: 90, note: null }),
+                    pour(45, 60, { bloom: false, note: '  ', extra: 1, at_seconds: 0, to_g: 60, until_seconds: 9, temp_c: 90 }),
+                    wait(30, { water_g: 999, until_seconds: 75, note: '輕搖' }),
+                    pour(45, 60, { water_temp: 90, note: null }),
                 ],
             }),
         );
@@ -277,18 +284,20 @@ describe('正規化', () => {
         const id = ((await res.json()) as Rec).id as string;
         // 從 GET 讀回，確認存進 D1 的就是正規化後的形狀，不只是回應。
         expect((await getJson<Rec>(`/api/brew-plans/${id}`)).steps).toEqual([
-            { type: 'pour', at_seconds: 0, to_g: 60 },
-            { type: 'wait', until_seconds: 30, note: '輕搖' },
-            { type: 'pour', at_seconds: 45, to_g: 120, water_temp: 90 },
+            { type: 'pour', seconds: 45, water_g: 60 },
+            { type: 'wait', seconds: 30, note: '輕搖' },
+            { type: 'pour', seconds: 45, water_g: 60, water_temp: 90 },
         ]);
     });
 
-    it('PATCH 送 steps 也照同樣的規則驗，壞的回 400 且沒變', async () => {
+    it('PATCH 送 steps 也照同樣的規則驗，壞的回 400 且沒變；好的連同 schema_version 2 一起存', async () => {
         await seedPlan('mine');
-        expect((await patch('mine', { steps: [pour(0, 60), pour(45, 50)] })).status).toBe(400);
-        expect((await getJson<Rec>('/api/brew-plans/mine')).steps).toEqual([{ type: 'pour', at_seconds: 0, to_g: 60 }]);
-        const ok = await patch('mine', { steps: [pour(0, 60), wait(40, { note: '攪拌' }), pour(45, 120)] });
+        expect((await patch('mine', { steps: [pour(45, 60), pour(0, 60)] })).status).toBe(400);
+        expect((await getJson<Rec>('/api/brew-plans/mine')).steps).toEqual([{ type: 'pour', seconds: 45, water_g: 60 }]);
+        const ok = await patch('mine', { steps: [pour(45, 60), wait(40, { note: '攪拌' }), pour(45, 60)], schema_version: 2 });
         expect(ok.status).toBe(200);
-        expect(((await ok.json()) as Rec).steps).toHaveLength(3);
+        const row = (await ok.json()) as Rec;
+        expect(row.steps).toHaveLength(3);
+        expect(row.schema_version).toBe(2);
     });
 });

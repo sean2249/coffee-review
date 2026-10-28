@@ -868,13 +868,8 @@ async function viewStats(root) {
 }
 
 // ─── 沖煮計劃 (#/plans) ──────────────────────────────────────────────────────
-// 資料形狀見 migrations/0003_brew_plans.sql；詞彙見 GLOSSARY.md「沖煮計劃」。
+// 資料形狀見 docs/adr/0003（每一步存自己的秒數與本次水量）；詞彙見 GLOSSARY.md「沖煮計劃」。
 // 畫面規格是 #146 的「UI 定案」。
-
-// 每一步在時間軸上的那一點：注水看開始，等待看等到幾秒（docs/adr/0002）。
-function stepTime(s) {
-    return s.type === 'pour' ? s.at_seconds : s.until_seconds;
-}
 
 function formatBrewRatio(total, dose) {
     if (!dose) return '—';
@@ -882,66 +877,40 @@ function formatBrewRatio(total, dose) {
     return `1:${Number.isInteger(r) ? r : r.toFixed(1)}`;
 }
 
-// 總水量 = 最後一注的累計；總時間 = 最後一步的時間（GLOSSARY）。
+// 總水量 = 各注本次的加總（四捨五入到 0.1 g）；總時間 = 各步秒數的加總（GLOSSARY）。
 function planSummary(plan) {
     const steps = plan.steps || [];
     const pours = steps.filter(s => s.type === 'pour');
-    const total = pours.length ? pours[pours.length - 1].to_g : 0;
+    const total = pours.reduce((t, s) => Math.round((t + s.water_g) * 10) / 10, 0);
     return {
         total,
         ratio: formatBrewRatio(total, plan.dose_g),
         pourCount: pours.length,
-        endSeconds: steps.length ? stepTime(steps[steps.length - 1]) : 0,
+        endSeconds: steps.reduce((t, s) => t + s.seconds, 0),
     };
 }
 
-// 本次 = 這一注的累計 − 前一注的累計；等待是 null。
-function pourIncrements(steps) {
-    let prev = 0;
+// 唯讀頁與時間條共用的分塊：一步一塊，開始 = 前面各步秒數的加總，長度 = 自己的秒數。
+// cum 是這一步結束時的累計水量，from 是注水前的累計。
+function planBlocks(steps) {
+    let start = 0;
+    let cum = 0;
     return steps.map(s => {
-        if (s.type !== 'pour') return null;
-        const inc = Math.round((s.to_g - prev) * 10) / 10;
-        prev = s.to_g;
-        return inc;
+        const end = start + s.seconds;
+        const block = s.type === 'wait'
+            ? { kind: 'wait', start, end, cum, note: s.note || '' }
+            : {
+                kind: 'pour', start, end, inc: s.water_g, cum: Math.round((cum + s.water_g) * 10) / 10, from: cum,
+                bloom: !!s.bloom, temp: s.water_temp ?? null, note: s.note || '',
+            };
+        start = end;
+        cum = block.cum;
+        return block;
     });
 }
 
-// 唯讀頁與時間條共用的分塊。資料上等待是獨立的步驟，但畫面上（#146）：
-// 一注一塊，從它開始到下一個時間點；後面緊接的第一個等待併進這一塊（備註接在後面，
-// 不是悶蒸就加「等待：」）；再接下去的等待各自一塊，從前一塊結束到它的「等到」。
-function planBlocks(steps) {
-    const incs = pourIncrements(steps);
-    const blocks = [];
-    let cum = 0;
-    for (let i = 0; i < steps.length; i++) {
-        const s = steps[i];
-        if (s.type === 'wait') {
-            const start = blocks.length ? blocks[blocks.length - 1].end : 0;
-            blocks.push({ kind: 'wait', start, end: s.until_seconds, cum, note: s.note || '' });
-            continue;
-        }
-        const block = {
-            kind: 'pour', start: s.at_seconds, end: s.at_seconds, inc: incs[i], cum: s.to_g, from: cum,
-            bloom: !!s.bloom, temp: s.water_temp ?? null, note: s.note || '',
-        };
-        cum = s.to_g;
-        const next = steps[i + 1];
-        if (next?.type === 'wait') {
-            block.end = next.until_seconds;
-            if (next.note) {
-                const waitNote = s.bloom ? next.note : `等待：${next.note}`;
-                block.note = [block.note, waitNote].filter(Boolean).join(' · ');
-            }
-            i++;
-        } else if (next) {
-            block.end = next.at_seconds;
-        }
-        blocks.push(block);
-    }
-    return blocks;
-}
-
 // 清單、詳細、編輯的時間條。數字都是秒，畫成百分比由呼叫端做。
+// 每一步至少 1 秒；編輯中還不合法的格子（空白、0）長度不是正數，就不畫。
 function planBar(steps) {
     const blocks = planBlocks(steps);
     const end = planSummary({ steps }).endSeconds;
@@ -974,13 +943,11 @@ const BUILTIN_BREW_PLANS = [
         description: '前 40%（兩注）調甜度與酸度，後 60%（三注）調濃度。',
         dripper: 'V60', grind: '粗', dose_g: 20, water_temp: 92,
         steps: [
-            { type: 'pour', at_seconds: 0, to_g: 60 },
-            { type: 'pour', at_seconds: 45, to_g: 120 },
-            { type: 'pour', at_seconds: 90, to_g: 180 },
-            { type: 'pour', at_seconds: 135, to_g: 240 },
-            { type: 'pour', at_seconds: 180, to_g: 300 },
-            // 收尾等待：總時間 3:30，最後一注才有自己的時間範圍（作者 2026-10-28）。
-            { type: 'wait', until_seconds: 210, note: '移開濾杯' },
+            { type: 'pour', seconds: 45, water_g: 60 },
+            { type: 'pour', seconds: 45, water_g: 60 },
+            { type: 'pour', seconds: 45, water_g: 60 },
+            { type: 'pour', seconds: 45, water_g: 60 },
+            { type: 'pour', seconds: 30, water_g: 60, note: '移開濾杯' },
         ],
     },
     {
@@ -988,12 +955,10 @@ const BUILTIN_BREW_PLANS = [
         description: '悶蒸後分兩段注水，每段 30 秒內注完；最後攪拌、旋轉讓粉床平整。',
         dripper: 'V60', grind: '中細', dose_g: 30, water_temp: 100,
         steps: [
-            { type: 'pour', at_seconds: 0, to_g: 60, bloom: true },
-            { type: 'wait', until_seconds: 45, note: '輕搖，讓粉全部浸濕' },
-            { type: 'pour', at_seconds: 45, to_g: 300 },
-            { type: 'pour', at_seconds: 75, to_g: 500 },
-            { type: 'wait', until_seconds: 105 },
-            { type: 'wait', until_seconds: 210, note: '湯匙順、逆時針各輕攪一下，再輕轉濾杯，等待滴完' },
+            { type: 'pour', seconds: 45, water_g: 60, bloom: true, note: '輕搖，讓粉全部浸濕' },
+            { type: 'pour', seconds: 30, water_g: 240 },
+            { type: 'pour', seconds: 30, water_g: 200 },
+            { type: 'wait', seconds: 105, note: '湯匙順、逆時針各輕攪一下，再輕轉濾杯，等待滴完' },
         ],
     },
     {
@@ -1001,13 +966,12 @@ const BUILTIN_BREW_PLANS = [
         description: '1 杯量；悶蒸後分 4 次小注。',
         dripper: 'V60', grind: '中細', dose_g: 15, water_temp: 100,
         steps: [
-            { type: 'pour', at_seconds: 0, to_g: 50, bloom: true },
-            { type: 'wait', until_seconds: 45, note: '輕搖' },
-            { type: 'pour', at_seconds: 45, to_g: 100 },
-            { type: 'pour', at_seconds: 70, to_g: 150 },
-            { type: 'pour', at_seconds: 90, to_g: 200 },
-            { type: 'pour', at_seconds: 110, to_g: 250 },
-            { type: 'wait', until_seconds: 180, note: '輕轉濾杯，等待滴完' },
+            { type: 'pour', seconds: 45, water_g: 50, bloom: true, note: '輕搖' },
+            { type: 'pour', seconds: 25, water_g: 50 },
+            { type: 'pour', seconds: 20, water_g: 50 },
+            { type: 'pour', seconds: 20, water_g: 50 },
+            { type: 'pour', seconds: 20, water_g: 50 },
+            { type: 'wait', seconds: 50, note: '輕轉濾杯，等待滴完' },
         ],
     },
     {
@@ -1015,25 +979,22 @@ const BUILTIN_BREW_PLANS = [
         description: '悶蒸後用力旋轉；第二段等滴落約 70% 才注；最後旋轉讓粉床平整。',
         dripper: 'V60', grind: '中細', dose_g: 20, water_temp: 96,
         steps: [
-            { type: 'pour', at_seconds: 0, to_g: 60, bloom: true },
-            { type: 'wait', until_seconds: 40, note: '用力旋轉濾杯' },
-            { type: 'pour', at_seconds: 40, to_g: 200 },
-            { type: 'wait', until_seconds: 90, note: '等到滴落約 70%' },
-            { type: 'pour', at_seconds: 90, to_g: 330 },
-            { type: 'wait', until_seconds: 255, note: '輕轉濾杯，等待滴完' },
+            { type: 'pour', seconds: 40, water_g: 60, bloom: true, note: '用力旋轉濾杯' },
+            { type: 'pour', seconds: 50, water_g: 140, note: '等到滴落約 70%' },
+            { type: 'pour', seconds: 30, water_g: 130 },
+            { type: 'wait', seconds: 135, note: '輕轉濾杯，等待滴完' },
         ],
     },
 ];
 
-// 編輯頁的草稿：注水列存本次（inc），存檔時才換成累計。copy：「複製成我的」。
+// 編輯頁的草稿：rows 就是存檔形狀的步驟（複本，改它不會動到內建常數）。copy：「複製成我的」。
 function brewPlanDraft(plan, { copy = false } = {}) {
     if (!plan) {
         return {
             name: '', description: '', dripper: '', grind: '', dose_g: 15, water_temp: 93,
-            rows: [{ type: 'pour', at_seconds: 0, inc: 45 }],
+            rows: [{ type: 'pour', seconds: 45, water_g: 45 }],
         };
     }
-    const incs = pourIncrements(plan.steps);
     return {
         name: copy ? `${plan.name}（複製）` : plan.name,
         description: plan.description || '',
@@ -1041,7 +1002,7 @@ function brewPlanDraft(plan, { copy = false } = {}) {
         grind: plan.grind || '',
         dose_g: plan.dose_g,
         water_temp: plan.water_temp,
-        rows: plan.steps.map(({ to_g: _toG, ...s }, i) => (s.type === 'pour' ? { ...s, inc: incs[i] } : { ...s })),
+        rows: plan.steps.map(s => ({ ...s })),
     };
 }
 
@@ -1049,11 +1010,11 @@ const textOrNull = v => (typeof v === 'string' && v.trim() ? v.trim() : null);
 
 // 草稿 → POST / PATCH 的 body。選填鍵只在有值時送（與 Worker 的 normalizeStep 一致）。
 function brewPlanPayload(draft) {
-    const rows = draft.rows.map(r => {
+    const steps = draft.rows.map(r => {
         const note = textOrNull(r.note);
-        if (r.type === 'wait') return { type: 'wait', until_seconds: r.until_seconds, ...(note ? { note } : {}) };
+        if (r.type === 'wait') return { type: 'wait', seconds: r.seconds, ...(note ? { note } : {}) };
         return {
-            type: 'pour', at_seconds: r.at_seconds, inc: r.inc,
+            type: 'pour', seconds: r.seconds, water_g: Number(r.water_g),
             ...(r.bloom ? { bloom: true } : {}),
             ...(r.water_temp == null || r.water_temp === '' ? {} : { water_temp: Number(r.water_temp) }),
             ...(note ? { note } : {}),
@@ -1066,7 +1027,8 @@ function brewPlanPayload(draft) {
         grind: textOrNull(draft.grind),
         dose_g: Number(draft.dose_g),
         water_temp: Number(draft.water_temp),
-        steps: stepsFromIncrements(rows),
+        steps,
+        schema_version: 2,
     };
 }
 
@@ -1086,31 +1048,20 @@ function validateBrewPlanDraft(draft) {
     const rows = draft.rows || [];
     if (rows[0]?.type !== 'pour') add('rows', '第一步要是注水');
     if (rows.length > 30) add('rows', '最多 30 步');
-    let lastTime = 0;
+    let total = 0;
     rows.forEach((r, i) => {
-        const time = stepTime(r);
         const msgs = [];
-        if (!Number.isInteger(time) || time < 0) msgs.push('時間格式是 m:ss');
-        else if (time < lastTime) msgs.push('時間不能比前一步早');
-        else lastTime = time;
+        if (!Number.isInteger(r.seconds) || r.seconds < 1 || r.seconds > 600) msgs.push('秒數要是 1–600 的整數');
         if (r.type === 'pour') {
-            if (!isNum(r.inc) || Number(r.inc) <= 0) msgs.push('這注的水量要大於 0');
+            if (!isNum(r.water_g) || Number(r.water_g) <= 0 || Number(r.water_g) > 2000) msgs.push('這注的水量要大於 0、最多 2000 g');
+            else total += Number(r.water_g);
             if (isNum(r.water_temp) && (Number(r.water_temp) < 0 || Number(r.water_temp) > 100)) msgs.push('水溫要在 0–100°C');
         }
         if (charCount((r.note || '').trim()) > 100) msgs.push('備註最多 100 字');
         if (msgs.length) add(`rows.${i}`, msgs.join('；'));
     });
+    if (total > 2000) add('rows', '總水量最多 2000 g');
     return errors;
-}
-
-// 編輯頁的列（注水帶 inc）→ API 的 steps（注水帶累計 to_g，四捨五入到 0.1 g）。
-function stepsFromIncrements(rows) {
-    let total = 0;
-    return rows.map(({ inc, ...step }) => {
-        if (step.type !== 'pour') return step;
-        total = Math.round((total + Number(inc)) * 10) / 10;
-        return { ...step, to_g: total };
-    });
 }
 
 function fmtClock(sec) {
@@ -1302,67 +1253,44 @@ async function viewBrewPlanDetail(root, id) {
 }
 
 // ─── View: 新增 / 編輯沖煮計劃 ───────────────────────────────────────────────
-// 畫面上一步一列；只有悶蒸那注後面緊接的等待併進同一列（時間框是「悶蒸等到」，#146）。
-function brewEditorRows(rows) {
-    const out = [];
-    for (let i = 0; i < rows.length; i++) {
-        const r = rows[i];
-        if (i === 0 && r.type === 'pour' && r.bloom && rows[1]?.type === 'wait') {
-            out.push({ index: 0, merged: 1 });
-            i++;
-        } else {
-            out.push({ index: i, merged: null });
-        }
-    }
-    return out;
-}
-
 function brewStepper(field, index, value, label, unit = '') {
     return `<span class="bp-stepper" role="group" aria-label="${label}">
         <button type="button" class="bp-step-btn" data-act="dec" data-field="${field}" data-index="${index}" aria-label="${label}減少">−</button>
         <input class="bp-step-input" data-field="${field}" data-index="${index}" value="${escapeHtml(value)}"
-            inputmode="${field === 'inc' ? 'decimal' : 'numeric'}" aria-label="${label}">${unit ? `<span class="bp-unit" aria-hidden="true">${unit}</span>` : ''}
+            inputmode="${field === 'water_g' ? 'decimal' : 'numeric'}" aria-label="${label}">${unit ? `<span class="bp-unit" aria-hidden="true">${unit}</span>` : ''}
         <button type="button" class="bp-step-btn" data-act="inc" data-field="${field}" data-index="${index}" aria-label="${label}增加">＋</button>
     </span>`;
 }
 
-function brewStepRowMarkup(rows, view, cums, open, errors) {
-    const { index: i, merged } = view;
+// 畫面上一步一列：每一列都有「這一步幾秒」，注水另有「本次 g」（第一注也有，docs/adr/0003）。
+// starts / cums：每一步的開始時間與注完後的累計，由各步加總算出。
+function brewStepRowMarkup(rows, i, starts, cums, open, errors) {
     const r = rows[i];
     const isPour = r.type === 'pour';
-    const w = merged != null ? rows[merged] : null;
     const isOpen = open.has(i);
     const node = isPour && r.bloom
         ? '<span class="bp-node bp-node-bloom" role="img" aria-label="悶蒸"><i class="bi bi-cloud-haze2"></i></span>'
         : isPour ? '<span class="bp-node bp-node-dot"></span>'
             : '<span class="bp-node bp-node-wait" role="img" aria-label="等待"><i class="bi bi-hourglass-split"></i></span>';
-    let controls;
+    const seconds = brewStepper('seconds', i, Number.isNaN(r.seconds) ? '' : r.seconds, '這一步幾秒', '秒');
     // 375px 下列上放不下 ✕：「刪除這步」收在 ⚙ 面板裡（注水、等待都一樣）。
-    if (isPour) {
-        // 第一注固定 0:00、沒有開始時間框；悶蒸併列時這一格是「悶蒸等到」。
-        const time = w ? brewStepper('time', merged, fmtClock(w.until_seconds), '悶蒸等到')
-            : i === 0 ? '' : brewStepper('time', i, fmtClock(r.at_seconds), '開始時間');
-        controls = `${time}${brewStepper('inc', i, r.inc ?? '', '這注的水量', 'g')}`;
-    } else {
-        const prev = rows[i - 1] ? stepTime(rows[i - 1]) : 0;
-        controls = `<span class="bp-wait-label">等到</span>${brewStepper('time', i, fmtClock(r.until_seconds), '等到')}
-            <span class="bp-wait-dur">等 ${Number.isInteger(r.until_seconds - prev) && r.until_seconds >= prev ? fmtSpan(r.until_seconds - prev) : '—'}</span>`;
-    }
+    const controls = isPour
+        ? `${seconds}${brewStepper('water_g', i, r.water_g ?? '', '這注的水量', 'g')}`
+        : `<span class="bp-wait-label">等待</span>${seconds}`;
     const tags = [];
     if (isPour && r.water_temp != null && r.water_temp !== '') tags.push(`<span class="bp-tag bp-tag-temp">水溫 ${escapeHtml(r.water_temp)}°</span>`);
-    [r.note, w?.note].filter(n => n && n.trim()).forEach(n => tags.push(`<span class="bp-tag">${escapeHtml(n)}</span>`));
+    if (r.note && r.note.trim()) tags.push(`<span class="bp-tag">${escapeHtml(r.note)}</span>`);
     const panel = !isOpen ? '' : `<div class="bp-step-panel">
         ${i === 0 && isPour ? `<label class="bp-check"><input type="checkbox" data-field="bloom" data-index="0" ${r.bloom ? 'checked' : ''}>悶蒸</label>` : ''}
         ${isPour ? `<label class="bp-temp"><i class="bi bi-thermometer-half" aria-hidden="true"></i>
             <input data-field="water_temp" data-index="${i}" value="${escapeHtml(r.water_temp ?? '')}" inputmode="decimal" placeholder="—" aria-label="這注的水溫（°C）">°C</label>` : ''}
-        <input class="bp-note" data-field="note" data-index="${i}" value="${escapeHtml(r.note || '')}" placeholder="備註（例：繞圈）" aria-label="備註">
-        ${w ? `<input class="bp-note" data-field="note" data-index="${merged}" value="${escapeHtml(w.note || '')}" placeholder="悶蒸時要做的事（例：輕搖）" aria-label="悶蒸等待的備註">
-            <button type="button" class="btn btn-link btn-sm" data-act="remove" data-index="${merged}">移除悶蒸等待</button>` : ''}
+        <input class="bp-note" data-field="note" data-index="${i}" value="${escapeHtml(r.note || '')}"
+            placeholder="${isPour ? '備註（例：繞圈、輕搖）' : '備註（例：等待滴完）'}" aria-label="備註">
         ${i > 0 ? `<button type="button" class="btn btn-link btn-sm bp-danger" data-act="remove" data-index="${i}">刪除這步</button>` : ''}
     </div>`;
-    const err = errors.filter(e => e.field === `rows.${i}` || (merged != null && e.field === `rows.${merged}`));
+    const err = errors.filter(e => e.field === `rows.${i}`);
     return `<li class="bp-step ${isPour ? 'bp-step-pour' : 'bp-step-wait'} ${err.length ? 'bp-step-error' : ''}">
-        <div class="bp-point-time"><span class="bp-clock">${fmtClock(isPour ? r.at_seconds : r.until_seconds)}</span>
+        <div class="bp-point-time"><span class="bp-clock" data-start-index="${i}">${fmtClock(starts[i])}</span>
             ${isPour ? `<span class="bp-cum" data-cum-index="${i}">${fmtGrams(cums[i])} g</span>` : ''}</div>
         <div class="bp-point-rail ${i === 0 ? 'bp-rail-first' : ''} ${isPour ? 'bp-rail-pour' : 'bp-rail-wait'}">${node}</div>
         <div class="bp-step-body">
@@ -1455,12 +1383,12 @@ function mountBrewPlanForm(root, { planId, draft }) {
 
     const gearSummary = () => [draft.dripper, draft.grind, `${fmtGrams(draft.dose_g)} g`, brewTempLabel(draft.water_temp)]
         .filter(Boolean).join(' · ');
-    // 本次 → 累計（只給畫面看；不合法的格子先當 0）。
-    const cums = () => {
-        let t = 0;
-        return draft.rows.map(r => (r.type === 'pour' ? (t = Math.round((t + (Number(r.inc) || 0)) * 10) / 10) : null));
-    };
-    const previewSteps = () => stepsFromIncrements(draft.rows.map(r => (r.type === 'pour' ? { ...r, inc: Number(r.inc) || 0 } : r)));
+    // 只給畫面看的步驟：還不合法的格子（空白、打到一半）先當 0。
+    const previewSteps = () => draft.rows.map(r => ({
+        ...r,
+        seconds: Number.isInteger(r.seconds) && r.seconds > 0 ? r.seconds : 0,
+        ...(r.type === 'pour' ? { water_g: Number(r.water_g) || 0 } : {}),
+    }));
 
     function renderSummaries() {
         $('bp-gear-sum').textContent = gearSummary();
@@ -1473,11 +1401,14 @@ function mountBrewPlanForm(root, { planId, draft }) {
     }
 
     function renderSteps() {
-        const c = cums();
-        const s = planSummary({ dose_g: draft.dose_g, steps: previewSteps() });
+        const steps = previewSteps();
+        const blocks = planBlocks(steps);
+        const starts = blocks.map(b => b.start);
+        const cums = blocks.map(b => b.cum);
+        const s = planSummary({ dose_g: draft.dose_g, steps });
         const full = draft.rows.length >= BREW_MAX_STEPS;
         $('bp-steps').innerHTML = `<ol class="bp-timeline bp-edit-steps">
-            ${brewEditorRows(draft.rows).map(v => brewStepRowMarkup(draft.rows, v, c, open, errors)).join('')}
+            ${draft.rows.map((_, i) => brewStepRowMarkup(draft.rows, i, starts, cums, open, errors)).join('')}
         </ol>
         <div class="bp-add">
             <button type="button" class="btn btn-outline-primary btn-sm" data-act="add-pour" ${full ? 'disabled' : ''}><i class="bi bi-droplet-fill"></i>注水</button>
@@ -1490,11 +1421,14 @@ function mountBrewPlanForm(root, { planId, draft }) {
         </li></ol>`;
     }
 
-    // 打字時就更新左欄的累計（不重畫整列，避免輸入框失焦）。
-    function renderCums() {
-        const c = cums();
+    // 打字時就更新左欄的開始時間與累計（不重畫整列，避免輸入框失焦）。
+    function renderTimes() {
+        const blocks = planBlocks(previewSteps());
+        $('bp-steps').querySelectorAll('[data-start-index]').forEach(el => {
+            el.textContent = fmtClock(blocks[Number(el.dataset.startIndex)].start);
+        });
         $('bp-steps').querySelectorAll('[data-cum-index]').forEach(el => {
-            el.textContent = `${fmtGrams(c[Number(el.dataset.cumIndex)])} g`;
+            el.textContent = `${fmtGrams(blocks[Number(el.dataset.cumIndex)].cum)} g`;
         });
     }
 
@@ -1544,19 +1478,17 @@ function mountBrewPlanForm(root, { planId, draft }) {
         if (!btn || !$('bp-steps').contains(btn)) return;
         const i = Number(btn.dataset.index);
         const rows = draft.rows;
-        const last = rows[rows.length - 1];
         switch (btn.dataset.act) {
         case 'gear': if (!open.delete(i)) open.add(i); break;
         case 'remove': rows.splice(i, 1); open.clear(); break;
-        case 'add-pour': rows.push({ type: 'pour', at_seconds: stepTime(last) + 30, inc: 50 }); break;
-        case 'add-wait': rows.push({ type: 'wait', until_seconds: stepTime(last) + 30 }); break;
+        case 'add-pour': rows.push({ type: 'pour', seconds: 30, water_g: 50 }); break;
+        case 'add-wait': rows.push({ type: 'wait', seconds: 30 }); break;
         case 'dec':
         case 'inc': {
             const d = btn.dataset.act === 'inc' ? 1 : -1;
             const r = rows[i];
-            if (btn.dataset.field === 'inc') r.inc = Math.max(5, Math.round(((Number(r.inc) || 0) + d * 5) * 10) / 10);
-            else if (r.type === 'pour') r.at_seconds = Math.max(0, r.at_seconds + d * 5);
-            else r.until_seconds = Math.max(0, r.until_seconds + d * 5);
+            if (btn.dataset.field === 'water_g') r.water_g = Math.max(5, Math.round(((Number(r.water_g) || 0) + d * 5) * 10) / 10);
+            else r.seconds = Math.min(600, Math.max(1, (Number.isInteger(r.seconds) ? r.seconds : 0) + d * 5));
             break;
         }
         default: return;
@@ -1571,15 +1503,13 @@ function mountBrewPlanForm(root, { planId, draft }) {
         const i = Number(el.dataset.index);
         const r = draft.rows[i];
         if (!r) return;
-        if (el.dataset.field === 'inc') r.inc = el.value.trim() === '' ? '' : Number(el.value);
-        else if (el.dataset.field === 'time') {
-            const t = parseClock(el.value);
-            if (r.type === 'pour') r.at_seconds = t; else r.until_seconds = t;
-        } else if (el.dataset.field === 'note') r.note = el.value;
+        if (el.dataset.field === 'water_g') r.water_g = el.value.trim() === '' ? '' : Number(el.value);
+        else if (el.dataset.field === 'seconds') r.seconds = parseClock(el.value);
+        else if (el.dataset.field === 'note') r.note = el.value;
         else if (el.dataset.field === 'water_temp') r.water_temp = el.value.trim() === '' ? null : Number(el.value);
         else if (el.dataset.field === 'bloom') { r.bloom = el.checked; renderSteps(); }
         renderSummaries();
-        renderCums();
+        renderTimes();
     });
     $('bp-steps').addEventListener('change', e => { if (e.target.dataset.field !== 'bloom') renderSteps(); });
 
