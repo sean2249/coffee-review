@@ -309,6 +309,20 @@ describe('brew plan routes', () => {
         expect(rows[0].querySelector('input[data-field="time"]').value).toBe('0:35');
     });
 
+    it('puts 刪除這步 inside the ⚙ panel instead of on the row', async () => {
+        await go('#/plans/p1/edit');
+        d.getElementById('bp-steps-toggle').click();
+        const [, pourRow, , waitRow] = d.querySelectorAll('.bp-step');
+        expect(pourRow.querySelector('.bp-step-main [data-act="remove"]')).toBeNull();
+        pourRow.querySelector('[data-act="gear"]').click();
+        const remove = d.querySelectorAll('.bp-step')[1].querySelector('.bp-step-panel [data-act="remove"]');
+        expect(remove.textContent).toContain('刪除這步');
+        expect(remove.getAttribute('type')).toBe('button');
+        expect(waitRow.querySelector('.bp-step-main [data-act="remove"]')).toBeNull();
+        remove.click();
+        expect(d.querySelectorAll('.bp-step')).toHaveLength(3);
+    });
+
     it('updates the left-column 累計 while typing a pour amount', async () => {
         await go('#/plans/p1/edit');
         d.getElementById('bp-steps-toggle').click();

@@ -1337,6 +1337,7 @@ function brewStepRowMarkup(rows, view, cums, open, errors) {
         : isPour ? '<span class="bp-node bp-node-dot"></span>'
             : '<span class="bp-node bp-node-wait" role="img" aria-label="等待"><i class="bi bi-hourglass-split"></i></span>';
     let controls;
+    // 375px 下列上放不下 ✕：「刪除這步」收在 ⚙ 面板裡（注水、等待都一樣）。
     if (isPour) {
         // 第一注固定 0:00、沒有開始時間框；悶蒸併列時這一格是「悶蒸等到」。
         const time = w ? brewStepper('time', merged, fmtClock(w.until_seconds), '悶蒸等到')
@@ -1357,6 +1358,7 @@ function brewStepRowMarkup(rows, view, cums, open, errors) {
         <input class="bp-note" data-field="note" data-index="${i}" value="${escapeHtml(r.note || '')}" placeholder="備註（例：繞圈）" aria-label="備註">
         ${w ? `<input class="bp-note" data-field="note" data-index="${merged}" value="${escapeHtml(w.note || '')}" placeholder="悶蒸時要做的事（例：輕搖）" aria-label="悶蒸等待的備註">
             <button type="button" class="btn btn-link btn-sm" data-act="remove" data-index="${merged}">移除悶蒸等待</button>` : ''}
+        ${i > 0 ? `<button type="button" class="btn btn-link btn-sm bp-danger" data-act="remove" data-index="${i}">刪除這步</button>` : ''}
     </div>`;
     const err = errors.filter(e => e.field === `rows.${i}` || (merged != null && e.field === `rows.${merged}`));
     return `<li class="bp-step ${isPour ? 'bp-step-pour' : 'bp-step-wait'} ${err.length ? 'bp-step-error' : ''}">
@@ -1366,7 +1368,6 @@ function brewStepRowMarkup(rows, view, cums, open, errors) {
         <div class="bp-step-body">
             <div class="bp-step-main">${controls}<span class="bp-grow"></span>
                 <button type="button" class="bp-icon-btn ${isOpen ? 'active' : ''}" data-act="gear" data-index="${i}" aria-label="這一步的設定" aria-expanded="${isOpen}"><i class="bi bi-sliders"></i></button>
-                ${i === 0 ? '' : `<button type="button" class="bp-icon-btn" data-act="remove" data-index="${i}" aria-label="刪除這步"><i class="bi bi-x-lg"></i></button>`}
             </div>
             ${!isOpen && tags.length ? `<div class="bp-tags">${tags.join('')}</div>` : ''}
             ${panel}
