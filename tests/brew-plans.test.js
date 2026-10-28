@@ -311,6 +311,18 @@ describe('brew plan routes', () => {
         expect(d.body.contains(input)).toBe(true);
     });
 
+    it('takes whole seconds only: 1:30 in the 秒 box is an error, not 90', async () => {
+        await go('#/plans/p1/edit');
+        d.getElementById('bp-steps-toggle').click();
+        const input = d.querySelector('input[data-field="seconds"][data-index="1"]');
+        input.value = '1:30';
+        input.dispatchEvent(new w.Event('input', { bubbles: true }));
+        d.getElementById('bp-form').requestSubmit();
+        await tick(); await tick();
+        expect(calls.some(c => c.method === 'PATCH')).toBe(false);
+        expect(html()).toContain('秒數要是 1–600 的整數');
+    });
+
     it('steps a pour\'s seconds by 5 with the ＋ button', async () => {
         await go('#/plans/p1/edit');
         d.getElementById('bp-steps-toggle').click();

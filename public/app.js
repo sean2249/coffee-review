@@ -1068,11 +1068,9 @@ function fmtClock(sec) {
     return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
 }
 
-// 「1:30」或純秒數「90」→ 秒；看不懂回 NaN。
-function parseClock(text) {
+// 秒數框只收整數秒（「90」）；其他（含「1:30」）回 NaN，存檔時擋下。
+function parseSeconds(text) {
     const t = String(text ?? '').trim();
-    const m = /^(\d+):([0-5]\d)$/.exec(t);
-    if (m) return Number(m[1]) * 60 + Number(m[2]);
     return /^\d+$/.test(t) ? Number(t) : NaN;
 }
 
@@ -1504,7 +1502,7 @@ function mountBrewPlanForm(root, { planId, draft }) {
         const r = draft.rows[i];
         if (!r) return;
         if (el.dataset.field === 'water_g') r.water_g = el.value.trim() === '' ? '' : Number(el.value);
-        else if (el.dataset.field === 'seconds') r.seconds = parseClock(el.value);
+        else if (el.dataset.field === 'seconds') r.seconds = parseSeconds(el.value);
         else if (el.dataset.field === 'note') r.note = el.value;
         else if (el.dataset.field === 'water_temp') r.water_temp = el.value.trim() === '' ? null : Number(el.value);
         else if (el.dataset.field === 'bloom') { r.bloom = el.checked; renderSteps(); }
