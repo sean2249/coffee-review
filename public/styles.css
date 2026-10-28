@@ -2494,7 +2494,7 @@ hr { border-color: var(--border); opacity: 0.7; }
 .bp-node-wait { width: 20px; height: 20px; border-radius: var(--radius-sm); background: var(--bg-muted); color: var(--text-secondary); font-size: 0.7rem; }
 .bp-node-end { width: 14px; height: 14px; border-radius: 50%; border: 3px solid var(--text-secondary); background: var(--bg-page); }
 .bp-point-body { min-width: 0; padding: 6px 4px 12px 8px; }
-.bp-step-body { min-width: 0; padding: 6px 0 12px 4px; }
+.bp-step-body { min-width: 0; padding: 0 0 12px 4px; }
 .bp-block { border-radius: var(--radius-lg); padding: 0.5rem 0.65rem; }
 .bp-block-pour { background: var(--brew-pour-bg); }
 .bp-block-wait { border: 1px dashed var(--text-dim); }
@@ -2569,7 +2569,6 @@ hr { border-color: var(--border); opacity: 0.7; }
 .bp-ticks span:first-child { transform: none; }
 .bp-ticks span:last-child { transform: translateX(-100%); }
 .bp-edit-steps { margin-top: 0.5rem; }
-.bp-step-body { padding-top: 0; }
 .bp-step-pour .bp-step-body > .bp-step-main { background: var(--brew-pour-bg); }
 .bp-step-main {
     display: flex;
