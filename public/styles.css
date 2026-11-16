@@ -1865,6 +1865,8 @@ hr { border-color: var(--border); opacity: 0.7; }
         padding: 0.6rem 0.85rem;
         justify-content: center;
         border-radius: var(--radius-md);
+        /* 再寫一次：上面那條 .tabbar-btn.active 比較晚、同樣權重，會把作用中的新增蓋成淺色 */
+        background-color: var(--accent);
         font-weight: 600;
         box-shadow: none;
     }
@@ -2343,7 +2345,7 @@ hr { border-color: var(--border); opacity: 0.7; }
 .session-cup-title { font-weight: 600; flex: 1 1 auto; }
 .session-cup-score { font-family: var(--font-mono); font-weight: 700; }
 
-/* 頂端固定列：階段名稱 + 前進按鈕（底部已經有 tabbar，所以不放下面），② 再加一排杯號 */
+/* 頂端固定列：階段名稱 + 前進按鈕（手機底部是 tabbar，所以不放下面），② 再加一排杯號 */
 .session-stage-bar {
     position: sticky;
     top: 0;
