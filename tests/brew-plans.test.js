@@ -209,7 +209,7 @@ describe('brewPlanDraft', () => {
 describe('brew plan routes', () => {
     const BODY = `<main id="app"></main><nav>
         <a class="tabbar-btn" data-route="/records" href="#/records"></a>
-        <a class="tabbar-btn" data-route="/me" href="#/me"></a>
+        <a class="tabbar-btn" data-route="/plans" href="#/plans"></a>
     </nav>`;
     const tick = () => new Promise(r => setTimeout(r, 0));
     const MINE = {
@@ -234,13 +234,7 @@ describe('brew plan routes', () => {
         };
     });
 
-    it('links 沖煮計劃 from #/me under 我的數據', async () => {
-        await go('#/me');
-        const links = [...d.querySelectorAll('#app a')].map(a => a.getAttribute('href'));
-        expect(links.indexOf('#/plans')).toBeGreaterThan(links.indexOf('#/stats'));
-    });
-
-    it('lists my plans and the four built-ins, lighting up 個人', async () => {
+    it('lists my plans and the four built-ins, lighting up 沖煮計劃', async () => {
         await go('#/plans');
         expect(html()).toContain('我的計劃');
         expect(html()).toContain('內建手沖法');
@@ -249,7 +243,9 @@ describe('brew plan routes', () => {
         expect(html()).toContain('水 250 g');
         expect(html()).toContain('Scott Rao V60');
         expect(html()).not.toContain('#V60');
-        expect(d.querySelector('.tabbar-btn[aria-current="page"]')?.dataset.route).toBe('/me');
+        expect(d.querySelector('.tabbar-btn[aria-current="page"]')?.dataset.route).toBe('/plans');
+        // 沖煮計劃是主要入口，不再掛在個人底下。
+        expect(d.querySelector('#app a[href="#/me"]')).toBeNull();
     });
 
     it('shows a built-in read-only with 複製成我的 and the Hoffmann wait block', async () => {
