@@ -27,6 +27,7 @@
     --accent-hover: #073a3a;
     --accent-soft: #d3e3e3;
     --accent-tint: rgba(14, 77, 77, 0.10);
+    --accent-fg: #ffffff;
 
     /* Shadow */
     --shadow-sm: 0 1px 2px rgba(17, 20, 24, 0.05);
@@ -51,6 +52,8 @@
 
     /* Tabbar height — reserved at bottom of page so content isn't covered */
     --tabbar-height: 64px;
+    /* 電腦版（≥ 992px）左側欄寬度；底部 tabbar 在那時不顯示 */
+    --sidebar-width: 220px;
 
     /* 沖煮計劃（#146）：注水＝低彩度鋼藍、等待＝灰、水溫＝磚紅 */
     --brew-pour: #2f6b8f;
@@ -116,6 +119,43 @@ body {
 .tabbar-btn:hover { color: var(--accent); }
 .tabbar-btn.active { color: var(--accent); font-weight: 700; }
 .tabbar-btn.active .tabbar-btn-pill { background-color: var(--accent-tint); }
+
+/* 新增：手機是正中間凸起的圓鈕，只有圖示（文字留給螢幕閱讀器） */
+.tabbar-btn-new .tabbar-btn-pill,
+.tabbar-btn-new.active .tabbar-btn-pill {
+    width: 3.25rem;
+    height: 3.25rem;
+    padding: 0;
+    margin-top: -1.25rem;
+    border-radius: 50%;
+    background-color: var(--accent);
+    color: var(--accent-fg);
+    box-shadow: var(--shadow-md);
+}
+.tabbar-btn-new .tabbar-btn-pill > span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+}
+.tabbar-btn-new:hover .tabbar-btn-pill { background-color: var(--accent-hover); }
+
+/* 個人：手機在記錄頁右上角（.records-account-link），tabbar 裡只有電腦版顯示 */
+.tabbar-btn-account { display: none; }
+.records-account-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 44px;
+    min-height: 44px;
+    margin: -0.35rem -0.35rem -0.35rem auto;
+    color: var(--text-secondary);
+    font-size: 1.5rem;
+    text-decoration: none;
+}
+.records-account-link:hover { color: var(--accent); }
 
 /* ───── Cards ──────────────────────────────────────────────────────────── */
 .card {
@@ -1753,8 +1793,113 @@ hr { border-color: var(--border); opacity: 0.7; }
     white-space: pre-wrap;
 }
 
+/* ───── Desktop layout (≥ 992px): sidebar, wide list pages, toast ─────── */
+@media (min-width: 992px) {
+    html { font-size: 17px; }
+    body {
+        padding-left: var(--sidebar-width);
+        padding-bottom: 1.5rem;
+    }
+    /* 列表頁放寬、排兩欄；詳細頁和表單維持單欄 820px，太寬的一行字難讀。
+       只認 #app 的直接子元素：店家頁裡的「相關記錄」也是 .records-list，但它是詳細頁。 */
+    #app:has(> .records-list, > .shops-grid, > .bp-list) { max-width: 1100px; }
+    /* 沖煮計劃清單：一張卡片裡的列，改成一列一張卡 */
+    #app > .bp-list {
+        gap: 0.55rem;
+        background: transparent;
+        border: 0;
+        box-shadow: none;
+        overflow: visible;
+    }
+    #app > .bp-list > .bp-empty { grid-column: 1 / -1; }
+    #app > .bp-list > .bp-row {
+        background: var(--bg-card);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+    }
+    #app > .records-list,
+    #app > .records-list > .records-group,
+    #app > .bp-list {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    #app > .records-list > :not(.record-card),
+    #app > .records-list > .records-group > .records-group-header { grid-column: 1 / -1; }
+
+    .tabbar {
+        top: 0;
+        right: auto;
+        width: var(--sidebar-width);
+        height: auto;
+        flex-direction: column;
+        gap: 0.2rem;
+        padding: 1.25rem 0.75rem;
+        border-top: 0;
+        border-right: 1px solid var(--border);
+        box-shadow: none;
+    }
+    .tabbar-btn {
+        flex: 0 0 auto;
+        justify-content: stretch;
+        font-size: 0.95rem;
+    }
+    .tabbar-btn-pill {
+        flex-direction: row;
+        justify-content: flex-start;
+        gap: 0.75rem;
+        width: 100%;
+        padding: 0.6rem 0.85rem;
+        border-radius: var(--radius-md);
+    }
+    .tabbar-btn .bi { font-size: 1.2rem; }
+    .tabbar-btn:hover .tabbar-btn-pill { background-color: var(--bg-muted); }
+    .tabbar-btn.active .tabbar-btn-pill { background-color: var(--accent-tint); }
+
+    /* 新增：側欄最上面的主要按鈕 */
+    .tabbar-btn-new { order: -1; margin-bottom: 0.75rem; }
+    .tabbar-btn-new .tabbar-btn-pill,
+    .tabbar-btn-new.active .tabbar-btn-pill {
+        width: 100%;
+        height: auto;
+        margin-top: 0;
+        padding: 0.6rem 0.85rem;
+        justify-content: center;
+        border-radius: var(--radius-md);
+        /* 再寫一次：上面那條 .tabbar-btn.active 比較晚、同樣權重，會把作用中的新增蓋成淺色 */
+        background-color: var(--accent);
+        font-weight: 600;
+        box-shadow: none;
+    }
+    .tabbar-btn-new:hover .tabbar-btn-pill { background-color: var(--accent-hover); }
+    .tabbar-btn-new .tabbar-btn-pill > span {
+        position: static;
+        width: auto;
+        height: auto;
+        overflow: visible;
+        clip: auto;
+    }
+
+    /* 個人：側欄最底部 */
+    .tabbar-btn-account { display: flex; margin-top: auto; }
+    .records-account-link { display: none; }
+
+    .toast-msg {
+        bottom: 1.5rem;
+        left: calc(50% + var(--sidebar-width) / 2);
+    }
+}
+
 /* ───── Responsive ─────────────────────────────────────────────────────── */
 @media (max-width: 576px) {
+    /* #92：手機一屏要看得到更多，字級、tabbar、列表卡片都收緊 */
+    html { font-size: 15px; }
+    :root { --tabbar-height: 58px; }
+    .records-list,
+    .records-group { gap: 0.4rem; }
+    .record-card { gap: 0.7rem; padding: 0.55rem 0.75rem; }
+    /* 搜尋框在手機換到第二行；帳號圖示留在第一行、類型按鈕的右邊 */
+    .filter-q-wrap,
+    .filter-adv-btn { order: 1; }
     .card-body { padding: 0.95rem; }
     .medal-row { gap: 0.45rem 0.55rem; margin-bottom: 1.25rem; }
     .medal-cell { min-width: 58px; }
@@ -1867,24 +2012,6 @@ hr { border-color: var(--border); opacity: 0.7; }
 .account-email { word-break: break-all; }
 
 /* ───── 個人數據 (stats) ──────────────────────────────────────────────── */
-.stats-entry-card {
-    max-width: 22rem;
-    margin: 0 auto;
-    flex-direction: row;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0.85rem 1rem;
-    color: var(--text-primary);
-    text-decoration: none;
-}
-.stats-entry-card:hover { background: var(--bg-muted-hover); }
-.stats-entry-card .bi-chevron-right { color: var(--text-dim); }
-.stats-entry-label {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.6rem;
-}
-.stats-entry-label .bi { color: var(--accent); }
 .stats-header {
     display: flex;
     align-items: center;
@@ -2218,7 +2345,7 @@ hr { border-color: var(--border); opacity: 0.7; }
 .session-cup-title { font-weight: 600; flex: 1 1 auto; }
 .session-cup-score { font-family: var(--font-mono); font-weight: 700; }
 
-/* 頂端固定列：階段名稱 + 前進按鈕（底部已經有 tabbar，所以不放下面），② 再加一排杯號 */
+/* 頂端固定列：階段名稱 + 前進按鈕（手機底部是 tabbar，所以不放下面），② 再加一排杯號 */
 .session-stage-bar {
     position: sticky;
     top: 0;

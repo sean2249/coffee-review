@@ -4,7 +4,7 @@
 //   • App shell + CDN libs: stale-while-revalidate
 //   • /api/* 與 /cdn-cgi/*: pass-through, always go to network
 
-const VERSION = 'v25';
+const VERSION = 'v26';
 const CACHE = `coffee-review-${VERSION}`;
 
 const APP_SHELL = [

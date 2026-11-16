@@ -19,9 +19,11 @@ describe('accountMarkup', () => {
         expect(html).toContain('a@b.com');
     });
 
-    it('links to #/stats only when signed in', () => {
-        expect(win.accountMarkup({ user: { id: 'u1', email: 'a@b.com' } })).toContain('href="#/stats"');
-        expect(win.accountMarkup({ user: null })).not.toContain('href="#/stats"');
+    // #92：我的數據、沖煮計劃已是主導覽的入口，個人頁只剩帳號。
+    it('no longer links to 我的數據 or 沖煮計劃', () => {
+        const html = win.accountMarkup({ user: { id: 'u1', email: 'a@b.com' } });
+        expect(html).not.toContain('href="#/stats"');
+        expect(html).not.toContain('href="#/plans"');
     });
 
     it('escapes the email', () => {

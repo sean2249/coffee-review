@@ -606,15 +606,7 @@ function accountMarkup({ user }) {
         <button class="btn btn-outline-secondary" id="account-signout">
             <i class="bi bi-box-arrow-right me-2"></i>登出
         </button>
-    </div></div>
-    <a class="card stats-entry-card" href="#/stats">
-        <span class="stats-entry-label"><i class="bi bi-bar-chart-line"></i>我的數據</span>
-        <i class="bi bi-chevron-right"></i>
-    </a>
-    <a class="card stats-entry-card" href="#/plans">
-        <span class="stats-entry-label"><i class="bi bi-droplet"></i>沖煮計劃</span>
-        <i class="bi bi-chevron-right"></i>
-    </a>`;
+    </div></div>`;
 }
 
 function viewAccount(root) {
@@ -636,7 +628,6 @@ function statsMarkup(stats) {
         : '';
     return `
         <div class="stats-header">
-            <a class="stats-back" href="#/me" aria-label="返回個人"><i class="bi bi-chevron-left"></i></a>
             <h2 class="stats-title">我的數據</h2>
         </div>
         <div class="card stats-list">
@@ -1114,9 +1105,10 @@ function brewBarMarkup(steps, { labels = false } = {}) {
         .map(t => `<span style="${place(t)}">${fmtClock(t)}</span>`).join('')}</div>`;
 }
 
+// href 為 null：清單頁是主要入口，沒有上一層可回。
 function brewBackHeader(href, title, right = '') {
     return `<div class="stats-header bp-header">
-        <a class="stats-back" href="${href}" aria-label="返回"><i class="bi bi-chevron-left"></i></a>
+        ${href ? `<a class="stats-back" href="${href}" aria-label="返回"><i class="bi bi-chevron-left"></i></a>` : ''}
         <h2 class="stats-title bp-title">${escapeHtml(title)}</h2>
         ${right}
     </div>`;
@@ -1154,7 +1146,7 @@ function brewPlansListMarkup(mine) {
     const mineBody = mine.length
         ? mine.map(brewPlanRowMarkup).join('')
         : '<p class="bp-empty">還沒有自己的計劃。可以從下面的內建手沖法「複製成我的」。</p>';
-    return brewBackHeader('#/me', '沖煮計劃',
+    return brewBackHeader(null, '沖煮計劃',
         '<a class="btn btn-primary btn-sm bp-new" href="#/plans/new"><i class="bi bi-plus-lg"></i>新增</a>') + `
         <h3 class="bp-section-title">我的計劃</h3>
         <div class="card bp-list">${mineBody}</div>
@@ -1640,12 +1632,11 @@ async function renderRoute() {
 
 function updateTabbarActive() {
     const { parts } = parseHash();
-    const first = parts[0] || 'records';
-    let activeRoute = '/records';
-    if (first === 'new') activeRoute = '/new';
-    else if (first === 'shops') activeRoute = '/shops';
-    else if (first === 'me' || first === 'stats' || first === 'plans') activeRoute = '/me';
-    document.querySelectorAll('.tabbar-btn').forEach(a => {
+    const links = [...document.querySelectorAll('.tabbar-btn')];
+    // 路由第一段就是導覽的 data-route；沒有對應入口的（沖煮、品鑑、杯測的單筆頁）都算在「記錄」底下。
+    const first = `/${parts[0] || 'records'}`;
+    const activeRoute = links.some(a => a.dataset.route === first) ? first : '/records';
+    links.forEach(a => {
         const isActive = a.dataset.route === activeRoute;
         a.classList.toggle('active', isActive);
         if (isActive) a.setAttribute('aria-current', 'page');
@@ -2136,6 +2127,7 @@ async function viewRecordsList(root, query = {}) {
             <button type="button" class="btn btn-sm btn-outline-secondary filter-adv-btn" id="filter-adv-btn">
                 <i class="bi bi-sliders"></i>進階篩選<span class="filter-adv-badge" id="filter-adv-badge" hidden></span>
             </button>
+            <a class="records-account-link" href="#/me" aria-label="個人"><i class="bi bi-person-circle"></i></a>
         </div>
         <div class="list-order-bar">
             <select class="form-select form-select-sm" id="list-sort" aria-label="排序">
