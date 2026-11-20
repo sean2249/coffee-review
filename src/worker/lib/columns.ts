@@ -30,6 +30,8 @@ export const CUPPING_COLS = [
     'ratio',
     'method',
     'extraction_time',
+    'brew_plan_id',
+    'brew_plan_name',
     'defects',
     'defects_tags',
     'notes',

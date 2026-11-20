@@ -139,6 +139,17 @@ describe('記錄寫入', () => {
         expect(stored?.user_id).toBe(OWNER_ID);
     });
 
+    it('沖煮記錄存所依計劃的 id 與名稱（#147）', async () => {
+        const res = await api(
+            '/api/records/cupping',
+            json({ brew_plan_id: 'builtin-kasuya-4-6', brew_plan_name: '粕谷哲 4:6', method: 'V60', ratio: '1:15' }),
+        );
+        expect(res.status).toBe(201);
+        const { id } = (await res.json()) as Rec;
+        const row = await getJson<Rec>(`/api/records/cupping/${id}`);
+        expect(row).toMatchObject({ brew_plan_id: 'builtin-kasuya-4-6', brew_plan_name: '粕谷哲 4:6', method: 'V60' });
+    });
+
     it('更新別人的記錄是 404，而且不會改到它', async () => {
         await seedRecord('cupping_records', { id: 'theirs', userId: OTHER_ID, extra: { bean_name: '原本' } });
         expect((await api('/api/records/cupping/theirs', send('PATCH', { bean_name: '被改了' }))).status).toBe(404);

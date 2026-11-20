@@ -2771,3 +2771,56 @@ hr { border-color: var(--border); opacity: 0.7; }
 .bp-add .btn::after { content: ""; position: absolute; inset: -4px 0; }
 .bp-add .btn .bi { margin-right: 0.25rem; }
 .bp-save { width: 100%; min-height: 44px; font-weight: 700; }
+
+/* ───── 沖煮記錄的所依計劃（#147）────────────────────────────────────── */
+.brew-plan-open { min-height: 44px; font-weight: 700; border-style: dashed; }
+.brew-plan-open .bi { margin-right: 0.35rem; }
+.brew-plan-summary-head { display: flex; align-items: center; gap: 0.4rem; margin-bottom: 0.5rem; }
+.brew-plan-summary-head .btn { min-height: 44px; flex-shrink: 0; }
+.brew-plan-summary-title { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.brew-plan-summary-label { font-size: 0.75rem; color: var(--text-muted); }
+.brew-plan-summary-name {
+    font-weight: 700;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.brew-plan-ref {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-height: 44px;
+    margin: 0 0 0.5rem;
+    color: var(--text-primary);
+    text-decoration: none;
+}
+a.brew-plan-ref .brew-plan-summary-name { color: var(--accent); flex: 1; }
+
+/* 選計劃的面板：手機上貼齊底部，桌機照一般對話框置中。 */
+.brew-plan-sheet-hint { margin: 0 0 0.25rem; font-size: 0.85rem; color: var(--text-muted); }
+.brew-plan-sheet .bp-list { border: 1px solid var(--border); border-radius: var(--radius-md); }
+.brew-plan-option {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    width: 100%;
+    min-height: 56px;
+    padding: 0.5rem 0.8rem;
+    border: 0;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-card);
+    color: var(--text-primary);
+    text-align: left;
+}
+.brew-plan-option:last-child { border-bottom: 0; }
+.brew-plan-option:hover { background: var(--bg-soft); }
+.brew-plan-option-main { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+/* 名稱包在內層 span：flex 容器本身的文字不會出現省略號。 */
+.brew-plan-option-name { display: flex; align-items: center; gap: 0.3rem; min-width: 0; font-weight: 700; }
+.brew-plan-option-name > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.brew-plan-option-name .bi { font-size: 0.75rem; color: var(--text-muted); }
+.brew-plan-option-meta { font-family: var(--font-mono); font-size: 0.75rem; color: var(--text-secondary); }
+@media (max-width: 576px) {
+    .brew-plan-sheet-backdrop { align-items: flex-end; padding: 0; }
+    .brew-plan-sheet { max-width: none; max-height: 85vh; border-radius: var(--radius-lg) var(--radius-lg) 0 0; }
+}
