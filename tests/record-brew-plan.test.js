@@ -162,3 +162,27 @@ describe('沖煮記錄詳細頁：所依計劃', () => {
         expect(doc.getElementById('app').textContent).toContain('中細');
     });
 });
+
+describe('沖煮表單：沒有自己的計劃', () => {
+    const INDEX = fs.readFileSync(path.join(here, '..', 'public', 'index.html'), 'utf8');
+    const TEMPLATES = INDEX.match(/<template id="[^"]+">[\s\S]*?<\/template>/g).join('');
+    const settle = async () => { for (let i = 0; i < 5; i++) await new Promise(r => setTimeout(r, 20)); };
+
+    it('面板仍列出 4 個內建手沖法；選了沒填研磨度的計劃，摘要顯示「—」', async () => {
+        const { window: w, document: doc } = await loadApp({ bodyHtml: `<main id="app"></main>${TEMPLATES}` });
+        w.apiFetch = p => Promise.resolve(p === '/api/brew-plans' || p === '/api/shops' ? [] : null);
+        w.setSessionUser({ id: 'u1' });
+        w.location.hash = '#/new/cupping';
+        await settle();
+        doc.getElementById('f-brew-plan-open').click();
+        await settle();
+        const opts = [...doc.querySelectorAll('.brew-plan-option')];
+        expect(opts.map(b => b.dataset.planId)).toEqual(['builtin-kasuya-4-6', 'builtin-hoffmann-ultimate-v60',
+            'builtin-hoffmann-1-cup', 'builtin-scott-rao-v60']);
+        // 內建都有研磨度，所以借一個沒研磨度的快照直接進摘要。
+        w.setFormBrewPlan({ brew_plan_id: 'p1', brew_plan_name: '家裡的日常', method: '家裡的日常',
+            grind: null, water_temp: null, ratio: '1:16.7', extraction_time: '165' });
+        const rows = [...doc.querySelectorAll('#f-brew-plan-summary dd')].map(d => d.textContent);
+        expect(rows).toEqual(['家裡的日常', '—', '—', '1:16.7', '165 秒']);
+    });
+});
