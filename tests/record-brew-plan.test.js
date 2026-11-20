@@ -5,6 +5,9 @@ import { fileURLToPath } from 'node:url';
 import { loadApp } from './load-app.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
+const INDEX = fs.readFileSync(path.join(here, '..', 'public', 'index.html'), 'utf8');
+const TEMPLATES = INDEX.match(/<template id="[^"]+">[\s\S]*?<\/template>/g).join('');
+const settle = async () => { for (let i = 0; i < 5; i++) await new Promise(r => setTimeout(r, 20)); };
 
 // 沖煮記錄的「所依計劃」（#147，docs/adr/0004）：存計劃 id 與名稱，參數抄進記錄既有的五欄。
 
@@ -38,13 +41,10 @@ describe('brewPlanRecordFields', () => {
 
 // 表單走真的 router（#/new/cupping），只 stub apiFetch。
 describe('沖煮表單：依計劃沖', () => {
-    const INDEX = fs.readFileSync(path.join(here, '..', 'public', 'index.html'), 'utf8');
-    const TEMPLATES = INDEX.match(/<template id="[^"]+">[\s\S]*?<\/template>/g).join('');
     const MINE = { id: 'p1', name: '家裡的日常', dripper: null, grind: null, dose_g: 15, water_temp: 93,
         steps: [pour(60, 250), wait(105)] };
 
     let fwin, doc, posts;
-    const settle = async () => { for (let i = 0; i < 5; i++) await new Promise(r => setTimeout(r, 20)); };
     const $ = sel => doc.querySelector(sel);
 
     beforeEach(async () => {
@@ -121,7 +121,6 @@ describe('沖煮記錄詳細頁：所依計劃', () => {
     const REC = { id: 'r1', bean_name: '耶加雪菲', method: 'V60', water_temp: '93', ratio: '1:16.7',
         extraction_time: '165', created_at: '2026-11-12T00:00:00Z' };
     let dwin, doc;
-    const settle = async () => { for (let i = 0; i < 5; i++) await new Promise(r => setTimeout(r, 20)); };
 
     async function open(record, { planExists }) {
         ({ window: dwin, document: doc } = await loadApp());
@@ -164,9 +163,6 @@ describe('沖煮記錄詳細頁：所依計劃', () => {
 });
 
 describe('沖煮表單：沒有自己的計劃', () => {
-    const INDEX = fs.readFileSync(path.join(here, '..', 'public', 'index.html'), 'utf8');
-    const TEMPLATES = INDEX.match(/<template id="[^"]+">[\s\S]*?<\/template>/g).join('');
-    const settle = async () => { for (let i = 0; i < 5; i++) await new Promise(r => setTimeout(r, 20)); };
 
     it('面板仍列出 4 個內建手沖法；選了沒填研磨度的計劃，摘要顯示「—」', async () => {
         const { window: w, document: doc } = await loadApp({ bodyHtml: `<main id="app"></main>${TEMPLATES}` });

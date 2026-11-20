@@ -2461,7 +2461,7 @@ async function viewRecordDetail(root, { mode, recordId }) {
             </div></div>`;
             return;
         }
-        root.innerHTML = renderRecordDetail(mode, r, { brewPlanStatus: await brewPlanStatus(r) });
+        root.innerHTML = renderRecordDetail(mode, r, { planStatus: await brewPlanStatus(r) });
     } catch (e) {
         console.error(e);
         root.innerHTML = `<div class="empty-state error">
@@ -2482,7 +2482,7 @@ async function brewPlanStatus(r) {
     }
 }
 
-function renderRecordDetail(mode, r, { brewPlanStatus = null } = {}) {
+function renderRecordDetail(mode, r, { planStatus = null } = {}) {
     const tier = r.coe_tier_id ? tierById(r.coe_tier_id)
         : (typeof r.coe_total === 'number' ? tierFromScore(r.coe_total) : null);
     const score = typeof r.coe_total === 'number' ? r.coe_total.toFixed(1) : '—';
@@ -2515,7 +2515,7 @@ function renderRecordDetail(mode, r, { brewPlanStatus = null } = {}) {
         </div>
 
         ${renderDetailBasicCard(mode, r)}
-        ${mode === 'cupping' ? renderDetailBrewingCard(r, brewPlanStatus) : ''}
+        ${mode === 'cupping' ? renderDetailBrewingCard(r, planStatus) : ''}
         ${mode === 'tasting' ? renderShopNoteLinkCard(r) : ''}
 
         <div class="card coe-card">
@@ -4904,7 +4904,8 @@ function buildFormPayload(mode) {
                 ? (document.getElementById('f-blend_composition').value.trim() || null)
                 : null,
             roast: document.querySelector('input[name="roast"]:checked')?.value || null,
-            // 有所依計劃就用抄下來的參數；沒有就只記方法（#147）。
+            // 有所依計劃就用抄下來的參數；沒有就只記方法（#147）。沒有路由會編輯既有記錄，
+            // 所以舊記錄的研磨度等四欄不會被這裡清掉；之後若加編輯頁，要先保留它們。
             ...(state.currentForm?.brewPlan || {
                 brew_plan_id: null,
                 brew_plan_name: null,
