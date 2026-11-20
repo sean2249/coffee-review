@@ -926,6 +926,21 @@ function brewPlanMeta(plan) {
     };
 }
 
+// 沖煮記錄的「所依計劃」（#147，docs/adr/0004）：存計劃 id 與名稱，參數抄進記錄既有的五欄，
+// 之後計劃改了或刪了，記錄都不變。這五欄在 DB 是 text。沒填濾杯就用計劃名稱當方法。
+function brewPlanRecordFields(plan) {
+    const s = planSummary(plan);
+    return {
+        brew_plan_id: plan.id,
+        brew_plan_name: plan.name,
+        method: plan.dripper || plan.name,
+        grind: plan.grind || null,
+        water_temp: plan.water_temp == null ? null : String(plan.water_temp),
+        ratio: s.ratio,
+        extraction_time: String(s.endSeconds),
+    };
+}
+
 // 內建手沖法：寫死、唯讀，形狀和 API 的一列相同（#143 的表格，作者 2026-10-27 確認）。
 // 「複製成我的」以這些值預填新增頁。
 const BUILTIN_BREW_PLANS = [
@@ -2446,7 +2461,7 @@ async function viewRecordDetail(root, { mode, recordId }) {
             </div></div>`;
             return;
         }
-        root.innerHTML = renderRecordDetail(mode, r);
+        root.innerHTML = renderRecordDetail(mode, r, { brewPlanStatus: await brewPlanStatus(r) });
     } catch (e) {
         console.error(e);
         root.innerHTML = `<div class="empty-state error">
@@ -2455,7 +2470,19 @@ async function viewRecordDetail(root, { mode, recordId }) {
     }
 }
 
-function renderRecordDetail(mode, r) {
+// 所依計劃還在不在（#147）：'exists' | 'deleted' | 'unknown'（讀取失敗）；沒有所依計劃是 null。
+// 內建手沖法在程式裡，不用問 API。
+async function brewPlanStatus(r) {
+    if (!r.brew_plan_id) return null;
+    if (BUILTIN_BREW_PLANS.some(p => p.id === r.brew_plan_id)) return 'exists';
+    try {
+        return (await api.getBrewPlan(r.brew_plan_id)) ? 'exists' : 'deleted';
+    } catch {
+        return 'unknown';
+    }
+}
+
+function renderRecordDetail(mode, r, { brewPlanStatus = null } = {}) {
     const tier = r.coe_tier_id ? tierById(r.coe_tier_id)
         : (typeof r.coe_total === 'number' ? tierFromScore(r.coe_total) : null);
     const score = typeof r.coe_total === 'number' ? r.coe_total.toFixed(1) : '—';
@@ -2488,7 +2515,7 @@ function renderRecordDetail(mode, r) {
         </div>
 
         ${renderDetailBasicCard(mode, r)}
-        ${mode === 'cupping' ? renderDetailBrewingCard(r) : ''}
+        ${mode === 'cupping' ? renderDetailBrewingCard(r, brewPlanStatus) : ''}
         ${mode === 'tasting' ? renderShopNoteLinkCard(r) : ''}
 
         <div class="card coe-card">
@@ -2579,18 +2606,36 @@ function renderDetailBasicCard(mode, r) {
         </div>`;
 }
 
-function renderDetailBrewingCard(r) {
+// 沖煮記錄的五個參數，詳細頁與表單的計劃摘要共用。
+function brewingRows(r) {
     const rows = [];
     if (r.method) rows.push(['方法', r.method]);
     if (r.grind) rows.push(['研磨度', r.grind]);
     if (r.water_temp) rows.push(['水溫', `${r.water_temp} °C`]);
     if (r.ratio) rows.push(['粉水比', r.ratio]);
     if (r.extraction_time) rows.push(['萃取時間', `${r.extraction_time} 秒`]);
-    if (rows.length === 0) return '';
+    return rows;
+}
+
+function renderDetailBrewingCard(r, planStatus = null) {
+    const rows = brewingRows(r);
+    if (rows.length === 0 && !r.brew_plan_id) return '';
+    const name = escapeHtml(r.brew_plan_name || '');
+    let planRef = '';
+    if (planStatus === 'exists') {
+        planRef = `<a class="brew-plan-ref" href="#/plans/${enc(r.brew_plan_id)}">
+            <span class="brew-plan-summary-label">依計劃</span><span class="brew-plan-summary-name">${name}</span>
+            <i class="bi bi-chevron-right" aria-hidden="true"></i></a>`;
+    } else if (planStatus) {
+        const suffix = planStatus === 'deleted' ? '（計劃已刪除）' : '';
+        planRef = `<p class="brew-plan-ref">
+            <span class="brew-plan-summary-label">依計劃</span><span>${name}${suffix}</span></p>`;
+    }
     return `
         <div class="card">
             <div class="card-body">
                 <h3 class="card-title"><i class="bi bi-sliders"></i>沖煮參數</h3>
+                ${planRef}
                 <dl class="detail-list">
                     ${rows.map(([k, v]) =>
                         `<dt>${escapeHtml(k)}</dt><dd>${escapeHtml(String(v))}</dd>`).join('')}
@@ -4600,6 +4645,7 @@ function bindFormHandlers({ onSubmit = submitForm, onDelete = deleteCurrentRecor
     if (methodEl) {
         methodEl.addEventListener('input', e => setBrewingMethodChip(e.target.value));
     }
+    document.getElementById('f-brew-plan-open')?.addEventListener('click', openBrewPlanPicker);
 
     // Process method: chip row + free-text input two-way binding
     const processEl = document.getElementById('f-process');
@@ -4690,6 +4736,114 @@ function setBrewingMethodChip(value) {
     });
 }
 
+// 沖煮表單的所依計劃（#147，docs/adr/0004）。fields = brewPlanRecordFields 的結果（或從記錄讀回的
+// 同樣形狀），null = 不用計劃，只記方法。存檔時 buildFormPayload 直接用這份。
+function setFormBrewPlan(fields) {
+    if (!state.currentForm) return;
+    state.currentForm.brewPlan = fields;
+    const summary = document.getElementById('f-brew-plan-summary');
+    document.getElementById('f-brew-free').hidden = !!fields;
+    summary.hidden = !fields;
+    if (!fields) {
+        summary.innerHTML = '';
+        return;
+    }
+    summary.innerHTML = `
+        <div class="brew-plan-summary-head">
+            <div class="brew-plan-summary-title">
+                <span class="brew-plan-summary-label">依計劃</span>
+                <span class="brew-plan-summary-name">${escapeHtml(fields.brew_plan_name || '')}</span>
+            </div>
+            <button type="button" class="btn btn-outline-secondary btn-sm" id="f-brew-plan-change">換一個</button>
+            <button type="button" class="btn btn-outline-danger btn-sm" id="f-brew-plan-clear">不用計劃</button>
+        </div>
+        <dl class="detail-list">
+            ${brewingRows(fields).map(([k, v]) =>
+                `<dt>${escapeHtml(k)}</dt><dd>${escapeHtml(String(v))}</dd>`).join('')}
+        </dl>`;
+    summary.querySelector('#f-brew-plan-change').addEventListener('click', openBrewPlanPicker);
+    summary.querySelector('#f-brew-plan-clear').addEventListener('click', () => {
+        setFormBrewPlan(null);
+        document.getElementById('f-brew-plan-open').focus();
+    });
+}
+
+function brewPlanOptionMarkup(p) {
+    const m = brewPlanMeta(p);
+    const meta = [m.dripper, m.temp, p.grind, fmtClock(planSummary(p).endSeconds)].filter(Boolean).join(' · ');
+    const lock = p.builtin ? '<i class="bi bi-lock" role="img" aria-label="內建"></i>' : '';
+    return `<button type="button" class="brew-plan-option" data-plan-id="${escapeHtml(p.id)}">
+        <span class="brew-plan-option-main">
+            <span class="brew-plan-option-name">${lock}${escapeHtml(p.name)}</span>
+            <span class="brew-plan-option-meta">${escapeHtml(meta)}</span>
+        </span>
+        <span class="bp-ratio">${planSummary(p).ratio}</span>
+    </button>`;
+}
+
+// 底部面板：我的計劃 + 內建手沖法，點一列就選定並關掉。讀不到我的計劃時仍可選內建。
+async function openBrewPlanPicker() {
+    const opener = document.activeElement;
+    let mine = [];
+    let loadError = '';
+    try {
+        mine = (await api.listBrewPlans()) || [];
+    } catch (e) {
+        loadError = e.message || String(e);
+    }
+    if (!state.currentForm) return; // 讀取中已離開表單
+    const plans = [...mine, ...BUILTIN_BREW_PLANS];
+    const mineBody = loadError
+        ? `<p class="bp-empty">讀不到我的計劃：${escapeHtml(loadError)}</p>`
+        : mine.length ? mine.map(brewPlanOptionMarkup).join('') : '<p class="bp-empty">還沒有自己的計劃。</p>';
+
+    const backdrop = document.createElement('div');
+    backdrop.className = 'modal-backdrop-custom brew-plan-sheet-backdrop';
+    backdrop.innerHTML = `
+        <div class="modal-shell brew-plan-sheet" role="dialog" aria-modal="true" aria-labelledby="brew-plan-sheet-title">
+            <header class="modal-header">
+                <h3 id="brew-plan-sheet-title">依哪個計劃沖？</h3>
+                <button type="button" class="modal-close" aria-label="關閉"><i class="bi bi-x-lg"></i></button>
+            </header>
+            <div class="modal-body">
+                <p class="brew-plan-sheet-hint">選了計劃，這筆記錄就照計劃當下的參數記下來。這次不一樣的地方寫在備註。</p>
+                <h4 class="bp-section-title">我的計劃</h4>
+                <div class="bp-list">${mineBody}</div>
+                <h4 class="bp-section-title">內建手沖法</h4>
+                <div class="bp-list">${BUILTIN_BREW_PLANS.map(brewPlanOptionMarkup).join('')}</div>
+            </div>
+        </div>`;
+    document.body.appendChild(backdrop);
+    document.body.classList.add('modal-open-custom');
+    const restoreBackground = inertBackground(backdrop);
+
+    const onKey = e => { if (e.key === 'Escape') close(); };
+    function close() {
+        backdrop.remove();
+        document.body.classList.remove('modal-open-custom');
+        document.removeEventListener('keydown', onKey);
+        restoreBackground();
+    }
+    document.addEventListener('keydown', onKey);
+    backdrop.querySelector('.modal-close').addEventListener('click', () => {
+        close();
+        if (opener?.isConnected) opener.focus?.();
+    });
+    backdrop.addEventListener('click', e => {
+        if (e.target === backdrop) {
+            close();
+            if (opener?.isConnected) opener.focus?.();
+        }
+    });
+    backdrop.querySelectorAll('.brew-plan-option').forEach(btn => btn.addEventListener('click', () => {
+        const plan = plans.find(p => p.id === btn.dataset.planId);
+        close();
+        setFormBrewPlan(brewPlanRecordFields(plan));
+        document.getElementById('f-brew-plan-change')?.focus();
+    }));
+    backdrop.querySelector('.brew-plan-option')?.focus();
+}
+
 function buildEvaluationPayload() {
     const payload = {
         coe_total: coeState.coeTotal,
@@ -4752,11 +4906,18 @@ function buildFormPayload(mode) {
                 ? (document.getElementById('f-blend_composition').value.trim() || null)
                 : null,
             roast: document.querySelector('input[name="roast"]:checked')?.value || null,
-            grind: document.getElementById('f-grind').value || null,
-            water_temp: document.getElementById('f-water_temp').value || null,
-            ratio: document.getElementById('f-ratio').value || null,
-            method: document.getElementById('f-method').value || null,
-            extraction_time: document.getElementById('f-extraction_time').value || null,
+            // 有所依計劃就用抄下來的參數；沒有就只記方法（#147）。舊記錄讀進來時的四欄留在
+            // keptBrew，重存不會被清掉。
+            ...(state.currentForm?.brewPlan || {
+                brew_plan_id: null,
+                brew_plan_name: null,
+                method: document.getElementById('f-method').value || null,
+                grind: null,
+                water_temp: null,
+                ratio: null,
+                extraction_time: null,
+                ...state.currentForm?.keptBrew,
+            }),
             defects: defects || null,
             defects_tags: defectsTags,
             notes: notes || null,
@@ -4903,12 +5064,22 @@ function applyRecordToForm(mode, r) {
 
     if (mode === 'cupping') {
         document.getElementById('f-cupping-bean').value = r.bean_name || '';
-        ['origin', 'process', 'grind', 'water_temp', 'ratio', 'method', 'extraction_time', 'blend_composition']
+        ['origin', 'process', 'method', 'blend_composition']
             .forEach(k => {
                 const el = document.getElementById(`f-${k}`);
                 if (el && r[k] != null) el.value = r[k];
             });
         setBrewingMethodChip(r.method || '');
+        const brew = {
+            method: r.method ?? null, grind: r.grind ?? null, water_temp: r.water_temp ?? null,
+            ratio: r.ratio ?? null, extraction_time: r.extraction_time ?? null,
+        };
+        if (r.brew_plan_id) {
+            setFormBrewPlan({ brew_plan_id: r.brew_plan_id, brew_plan_name: r.brew_plan_name, ...brew });
+        } else {
+            const { method: _method, ...kept } = brew;
+            state.currentForm.keptBrew = kept;
+        }
         setProcessChip(r.process || '');
         populateSuggestDatalists();
         if (r.roast != null) {
