@@ -2815,15 +2815,9 @@ a.brew-plan-ref .brew-plan-summary-name { color: var(--accent); flex: 1; }
 .brew-plan-option:last-child { border-bottom: 0; }
 .brew-plan-option:hover { background: var(--bg-soft); }
 .brew-plan-option-main { display: flex; flex-direction: column; flex: 1; min-width: 0; }
-.brew-plan-option-name {
-    display: flex;
-    align-items: center;
-    gap: 0.3rem;
-    font-weight: 700;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
+/* 名稱包在內層 span：flex 容器本身的文字不會出現省略號。 */
+.brew-plan-option-name { display: flex; align-items: center; gap: 0.3rem; min-width: 0; font-weight: 700; }
+.brew-plan-option-name > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .brew-plan-option-name .bi { font-size: 0.75rem; color: var(--text-muted); }
 .brew-plan-option-meta { font-family: var(--font-mono); font-size: 0.75rem; color: var(--text-secondary); }
 @media (max-width: 576px) {

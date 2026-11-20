@@ -4776,7 +4776,7 @@ function brewPlanOptionMarkup(p) {
     const lock = p.builtin ? '<i class="bi bi-lock" role="img" aria-label="內建"></i>' : '';
     return `<button type="button" class="brew-plan-option" data-plan-id="${escapeHtml(p.id)}">
         <span class="brew-plan-option-main">
-            <span class="brew-plan-option-name">${lock}${escapeHtml(p.name)}</span>
+            <span class="brew-plan-option-name">${lock}<span>${escapeHtml(p.name)}</span></span>
             <span class="brew-plan-option-meta">${escapeHtml(meta)}</span>
         </span>
         <span class="bp-ratio">${escapeHtml(s.ratio)}</span>
