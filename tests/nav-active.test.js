@@ -56,10 +56,10 @@ describe('main navigation', () => {
         expect(await activeRoutes(hash)).toEqual([route]);
     });
 
-    // 手機的 tabbar 沒有「個人」，帳號入口在記錄頁右上角。
+    // 手機的 tabbar 沒有「設定」，帳號入口在記錄頁右上角。
     it('puts an account link on the records page', async () => {
         await activeRoutes('#/records');
         const link = doc.querySelector('#app a[href="#/me"]');
-        expect(link?.getAttribute('aria-label')).toBe('個人');
+        expect(link?.getAttribute('aria-label')).toBe('設定');
     });
 });

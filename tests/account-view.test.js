@@ -41,3 +41,38 @@ describe('#/me route', () => {
         expect(html).not.toContain('請先登入');
     });
 });
+
+// #172：個人 → 設定，加上「加入主畫面」區塊（只在已登入時出現）。
+describe('accountMarkup — 設定 / 加入主畫面', () => {
+    const user = { id: 'u1', email: 'a@b.com' };
+
+    it('titles the page 設定', () => {
+        expect(win.accountMarkup({ user })).toContain('設定');
+        expect(win.accountMarkup({ user: null })).toContain('設定');
+        expect(win.accountMarkup({ user: null })).not.toContain('個人');
+    });
+
+    it('shows 已安裝 and no install button when installed', () => {
+        const html = win.accountMarkup({ user, install: 'installed' });
+        expect(html).toContain('已安裝');
+        expect(html).not.toContain('id="account-install-btn"');
+    });
+
+    it('shows a 安裝 button when the browser can prompt', () => {
+        const html = win.accountMarkup({ user, install: 'prompt' });
+        expect(html).toMatch(/<button[^>]*type="button"[^>]*id="account-install-btn"[^>]*>[\s\S]*安裝/);
+    });
+
+    it('explains 分享 → 加入主畫面 on iOS', () => {
+        const html = win.accountMarkup({ user, install: 'ios' });
+        expect(html).toContain('分享');
+        expect(html).toContain('加入主畫面');
+        expect(html).not.toContain('id="account-install-btn"');
+    });
+
+    it('has no install section when there is nothing to offer', () => {
+        const html = win.accountMarkup({ user, install: null });
+        expect(html).not.toContain('加入主畫面');
+        expect(html).not.toContain('已安裝');
+    });
+});

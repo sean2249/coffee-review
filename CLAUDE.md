@@ -161,7 +161,7 @@ purpose.md, 口感.md design notes (Chinese)
 | `#/cupping/<id>` / `#/tasting/<id>` | Read-only detail (no edit/delete UI) |
 | `#/session/<id>` / `#/session/<id>/edit` | 杯測場次 detail (ranking + per-cup) / edit form |
 | `#/shops` / `#/shops/<id>` | Shop registry + per-shop records + 我的店家筆記 |
-| `#/me` | Google sign-in / sign-out |
+| `#/me` | 設定 (labelled 設定, code still says account): email, sign-out, 加入主畫面 (#172) |
 | `#/plans` / `#/plans/<id>` | 沖煮計劃 list (mine + 4 built-in V60) / read-only detail |
 | `#/plans/new[?from=<id>]` / `#/plans/<id>/edit` | Brew plan editor; `from` copies a plan (複製成我的) |
 

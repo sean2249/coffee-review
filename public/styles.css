@@ -142,7 +142,7 @@ body {
 }
 .tabbar-btn-new:hover .tabbar-btn-pill { background-color: var(--accent-hover); }
 
-/* 個人：手機在記錄頁右上角（.records-account-link），tabbar 裡只有電腦版顯示 */
+/* 設定：手機在記錄頁右上角（.records-account-link），tabbar 裡只有電腦版顯示 */
 .tabbar-btn-account { display: none; }
 .records-account-link {
     display: inline-flex;
@@ -1879,7 +1879,7 @@ hr { border-color: var(--border); opacity: 0.7; }
         clip: auto;
     }
 
-    /* 個人：側欄最底部 */
+    /* 設定：側欄最底部 */
     .tabbar-btn-account { display: flex; margin-top: auto; }
     .records-account-link { display: none; }
 
@@ -1999,8 +1999,10 @@ hr { border-color: var(--border); opacity: 0.7; }
     font-size: 0.8rem;
 }
 
-/* ───── Account (個人) ────────────────────────────────────────────────── */
+/* ───── Account (設定) ────────────────────────────────────────────────── */
 .account-card { max-width: 22rem; margin: 2rem auto; }
+/* 全域 .card-title 是 flex，text-center 管不到 */
+.account-card .card-title { justify-content: center; }
 .account-avatar {
     width: 5rem; height: 5rem; border-radius: 50%;
     object-fit: cover; margin-bottom: 0.75rem;
@@ -2010,6 +2012,12 @@ hr { border-color: var(--border); opacity: 0.7; }
     display: block; margin-bottom: 0.5rem;
 }
 .account-email { word-break: break-all; }
+.account-install {
+    margin-top: 1.5rem; padding-top: 1rem;
+    border-top: 1px solid var(--border);
+    color: var(--text-muted);
+}
+.account-install-text { margin-bottom: 0.75rem; }
 
 /* ───── 個人數據 (stats) ──────────────────────────────────────────────── */
 .stats-header {
