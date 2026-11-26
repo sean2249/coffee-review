@@ -658,7 +658,7 @@ function installRowMarkup(install) {
     }
     const iosHint = install === 'ios'
         ? `<p class="account-row-hint">點瀏覽器的分享按鈕
-            <i class="bi bi-box-arrow-up" role="img" aria-label="分享"></i>，再選「加入主畫面」。</p>`
+            <i class="bi bi-box-arrow-up" aria-hidden="true"></i>，再選「加入主畫面」。</p>`
         : '';
     return `<div class="list-group-item account-row">
         <div class="account-row-main"><i class="bi bi-phone"></i>加入主畫面${detail}</div>

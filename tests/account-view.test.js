@@ -68,6 +68,8 @@ describe('accountMarkup — 設定 / 加入主畫面', () => {
         expect(html).toContain('分享');
         expect(html).toContain('加入主畫面');
         expect(html).not.toContain('id="account-install-btn"');
+        // 文字已經寫「分享按鈕」，圖示只是裝飾，螢幕閱讀器不必再念一次。
+        expect(html).toMatch(/<i class="bi bi-box-arrow-up" aria-hidden="true"><\/i>/);
     });
 
     it('has no install section when there is nothing to offer', () => {
