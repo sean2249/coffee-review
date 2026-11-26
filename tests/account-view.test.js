@@ -19,10 +19,10 @@ describe('accountMarkup', () => {
         expect(html).toContain('a@b.com');
     });
 
-    // #92：我的數據、沖煮計劃已是主導覽的入口，個人頁只剩帳號。
-    it('no longer links to 我的數據 or 沖煮計劃', () => {
+    // #172 / #164：數據併入設定，從設定頁的清單點進去；沖煮計劃仍是主導覽入口。
+    it('links to 我的數據 but not 沖煮計劃', () => {
         const html = win.accountMarkup({ user: { id: 'u1', email: 'a@b.com' } });
-        expect(html).not.toContain('href="#/stats"');
+        expect(html).toMatch(/<a[^>]*href="#\/stats"[^>]*>[\s\S]*?我的數據/);
         expect(html).not.toContain('href="#/plans"');
     });
 

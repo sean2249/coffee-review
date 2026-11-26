@@ -142,21 +142,6 @@ body {
 }
 .tabbar-btn-new:hover .tabbar-btn-pill { background-color: var(--accent-hover); }
 
-/* 設定：手機在記錄頁右上角（.records-account-link），tabbar 裡只有電腦版顯示 */
-.tabbar-btn-account { display: none; }
-.records-account-link {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 44px;
-    min-height: 44px;
-    margin: -0.35rem -0.35rem -0.35rem auto;
-    color: var(--text-secondary);
-    font-size: 1.5rem;
-    text-decoration: none;
-}
-.records-account-link:hover { color: var(--accent); }
-
 /* ───── Cards ──────────────────────────────────────────────────────────── */
 .card {
     background-color: var(--bg-card);
@@ -1880,8 +1865,7 @@ hr { border-color: var(--border); opacity: 0.7; }
     }
 
     /* 設定：側欄最底部 */
-    .tabbar-btn-account { display: flex; margin-top: auto; }
-    .records-account-link { display: none; }
+    .tabbar-btn-account { margin-top: auto; }
 
     .toast-msg {
         bottom: 1.5rem;
@@ -2012,12 +1996,19 @@ hr { border-color: var(--border); opacity: 0.7; }
     display: block; margin-bottom: 0.5rem;
 }
 .account-email { word-break: break-all; }
-.account-install {
-    margin-top: 1.5rem; padding-top: 1rem;
-    border-top: 1px solid var(--border);
-    color: var(--text-muted);
+.account-card:has(+ .account-list) { margin-bottom: 1rem; }
+.account-list { max-width: 22rem; margin: 0 auto 1rem; }
+.account-row-main {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
 }
-.account-install-text { margin-bottom: 0.75rem; }
+.account-row-end { margin-left: auto; color: var(--text-muted); }
+.account-row-hint {
+    margin: 0.35rem 0 0 1.6rem;
+    color: var(--text-muted);
+    font-size: 0.875rem;
+}
 
 /* ───── 個人數據 (stats) ──────────────────────────────────────────────── */
 .stats-header {

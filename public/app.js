@@ -645,27 +645,25 @@ window.addEventListener('appinstalled', () => {
     rerenderSettingsIfOpen();
 });
 
-function installSectionMarkup(install) {
+// 設定頁清單裡的一列；沒有可提供的（Firefox、桌面 Safari）就整列不出現。
+function installRowMarkup(install) {
+    if (!install) return '';
+    let detail = '';
     if (install === 'installed') {
-        return `<div class="account-install">
-            <i class="bi bi-check-circle me-1"></i>已安裝到主畫面
-        </div>`;
+        detail = '<span class="account-row-end"><i class="bi bi-check-circle me-1"></i>已安裝</span>';
+    } else if (install === 'prompt') {
+        detail = `<button type="button" class="btn btn-sm btn-outline-primary account-row-end" id="account-install-btn">
+            <i class="bi bi-download me-1"></i>安裝
+        </button>`;
     }
-    if (install === 'prompt') {
-        return `<div class="account-install">
-            <p class="account-install-text">加入主畫面，像 app 一樣從桌面開啟。</p>
-            <button type="button" class="btn btn-outline-primary" id="account-install-btn">
-                <i class="bi bi-download me-2"></i>安裝
-            </button>
-        </div>`;
-    }
-    if (install === 'ios') {
-        return `<div class="account-install">
-            <p class="account-install-text">加入主畫面：點瀏覽器的分享按鈕
-                <i class="bi bi-box-arrow-up" aria-label="分享"></i>，再選「加入主畫面」。</p>
-        </div>`;
-    }
-    return '';
+    const iosHint = install === 'ios'
+        ? `<p class="account-row-hint">點瀏覽器的分享按鈕
+            <i class="bi bi-box-arrow-up" aria-label="分享"></i>，再選「加入主畫面」。</p>`
+        : '';
+    return `<div class="list-group-item account-row">
+        <div class="account-row-main"><i class="bi bi-phone"></i>加入主畫面${detail}</div>
+        ${iosHint}
+    </div>`;
 }
 
 // ─── View: 設定 ──────────────────────────────────────────────────────────────
@@ -686,12 +684,19 @@ function accountMarkup({ user, install = null }) {
     return `<div class="card account-card"><div class="card-body text-center">
         <i class="bi bi-person-circle account-avatar-placeholder"></i>
         <h3 class="card-title">設定</h3>
-        ${email ? `<p class="text-muted account-email">${escapeHtml(email)}</p>` : ''}
-        <button class="btn btn-outline-secondary" id="account-signout">
-            <i class="bi bi-box-arrow-right me-2"></i>登出
+        ${email ? `<p class="text-muted account-email mb-0">${escapeHtml(email)}</p>` : ''}
+    </div></div>
+    <div class="list-group account-list">
+        <a class="list-group-item list-group-item-action account-row" href="#/stats">
+            <div class="account-row-main"><i class="bi bi-bar-chart-line"></i>我的數據<i class="bi bi-chevron-right account-row-end"></i></div>
+        </a>
+        ${installRowMarkup(install)}
+    </div>
+    <div class="list-group account-list">
+        <button type="button" class="list-group-item list-group-item-action account-row" id="account-signout">
+            <div class="account-row-main"><i class="bi bi-box-arrow-right"></i>登出</div>
         </button>
-        ${installSectionMarkup(install)}
-    </div></div>`;
+    </div>`;
 }
 
 function viewAccount(root) {
@@ -1735,7 +1740,8 @@ function updateTabbarActive() {
     const { parts } = parseHash();
     const links = [...document.querySelectorAll('.tabbar-btn')];
     // 路由第一段就是導覽的 data-route；沒有對應入口的（沖煮、品鑑、杯測的單筆頁）都算在「記錄」底下。
-    const first = `/${parts[0] || 'records'}`;
+    // 我的數據是設定底下的子頁（#172 / #164）。
+    const first = parts[0] === 'stats' ? '/me' : `/${parts[0] || 'records'}`;
     const activeRoute = links.some(a => a.dataset.route === first) ? first : '/records';
     links.forEach(a => {
         const isActive = a.dataset.route === activeRoute;
@@ -2228,7 +2234,6 @@ async function viewRecordsList(root, query = {}) {
             <button type="button" class="btn btn-sm btn-outline-secondary filter-adv-btn" id="filter-adv-btn">
                 <i class="bi bi-sliders"></i>進階篩選<span class="filter-adv-badge" id="filter-adv-badge" hidden></span>
             </button>
-            <a class="records-account-link" href="#/me" aria-label="設定"><i class="bi bi-gear"></i></a>
         </div>
         <div class="list-order-bar">
             <select class="form-select form-select-sm" id="list-sort" aria-label="排序">

@@ -31,9 +31,10 @@ const activeRoutes = async hash => {
 };
 
 describe('main navigation', () => {
-    it('lists 記錄、沖煮計劃、新增、店家、數據 in that order, then the account', () => {
+    // #172 / #164：數據併入設定，第五格就是設定。
+    it('lists 記錄、沖煮計劃、新增、店家、設定 in that order', () => {
         const routes = [...doc.querySelectorAll('nav a[data-route]')].map(a => a.dataset.route);
-        expect(routes).toEqual(['/records', '/plans', '/new', '/shops', '/stats', '/me']);
+        expect(routes).toEqual(['/records', '/plans', '/new', '/shops', '/me']);
     });
 
     it.each([
@@ -48,7 +49,7 @@ describe('main navigation', () => {
         ['#/plans/p1/edit', '/plans'],
         ['#/shops', '/shops'],
         ['#/shops/shop-a', '/shops'],
-        ['#/stats', '/stats'],
+        ['#/stats', '/me'],
         ['#/new', '/new'],
         ['#/new/tasting', '/new'],
         ['#/me', '/me'],
@@ -56,10 +57,9 @@ describe('main navigation', () => {
         expect(await activeRoutes(hash)).toEqual([route]);
     });
 
-    // 手機的 tabbar 沒有「設定」，帳號入口在記錄頁右上角。
-    it('puts an account link on the records page', async () => {
+    // 設定已在主導覽，記錄頁右上角不再放第二個入口。
+    it('has no extra 設定 link on the records page', async () => {
         await activeRoutes('#/records');
-        const link = doc.querySelector('#app a[href="#/me"]');
-        expect(link?.getAttribute('aria-label')).toBe('設定');
+        expect(doc.querySelector('#app a[href="#/me"]')).toBeNull();
     });
 });
