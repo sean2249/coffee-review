@@ -4,8 +4,8 @@
 //   npm run dev:worktree              準備好就啟動 wrangler dev
 //   npm run dev:worktree -- --setup   只準備（Claude 的預覽工具接著用 .claude/launch.json 啟動）
 //
-// .dev.vars 與 .claude/launch.json 已存在就不動（兩者都在 .gitignore 裡）；launch.json 裡已經有
-// coffee-review 設定時，沿用它的 port，npm script 和預覽工具才會開在同一個 port。
+// .dev.vars 與 .claude/launch.json 已存在就不動（兩者都在 .gitignore 裡）。launch.json 裡已經有
+// coffee-review 設定時，沿用它交給 wrangler 的 --port，npm script 和預覽工具才會開在同一個 port。
 import { execSync, spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
@@ -16,8 +16,39 @@ import { fileURLToPath } from 'node:url';
 const CONFIG_NAME = 'coffee-review';
 
 // realpath.native：同一個資料夾用不同大小寫的路徑進來，也要算出同一個 port。
+// 10000–10999：避開 8787（wrangler 預設）、9229（Node inspector）這些常用 port。
 const root = fs.realpathSync.native(path.join(path.dirname(fileURLToPath(import.meta.url)), '..'));
-const derivedPort = 8800 + (createHash('sha1').update(root).digest().readUInt16BE(0) % 1000);
+const derivedPort = 10000 + (createHash('sha1').update(root).digest().readUInt16BE(0) % 1000);
+
+const wranglerArgs = p => ['wrangler', 'dev', '--port', String(p)];
+const isPort = v => Number.isInteger(v) && v > 0 && v < 65536;
+const launchPath = path.join(root, '.claude', 'launch.json');
+
+// 既有的 launch.json：預覽工具實際跑的是 runtimeArgs 的 --port，等的是 port 欄位；兩個要一樣。
+function portFromLaunch() {
+    let config;
+    try {
+        config = JSON.parse(fs.readFileSync(launchPath, 'utf8'))
+            .configurations?.find?.(c => c?.name === CONFIG_NAME);
+    } catch (err) {
+        console.error(`讀不懂 .claude/launch.json：${err.message}。修好或刪掉它再跑一次。`);
+        process.exit(1);
+    }
+    if (!config) {
+        console.warn(`.claude/launch.json 沒有「${CONFIG_NAME}」設定；沒有改它，預覽工具要自己加。`);
+        return derivedPort;
+    }
+    const args = Array.isArray(config.runtimeArgs) ? config.runtimeArgs : [];
+    const argPort = Number(args[args.indexOf('--port') + 1]);
+    const port = isPort(argPort) ? argPort : (isPort(config.port) ? config.port : derivedPort);
+    if (config.port !== port || argPort !== port) {
+        console.warn(`.claude/launch.json 的「${CONFIG_NAME}」：port 欄位（${config.port}）和 runtimeArgs 的`
+            + ` --port（${args[args.indexOf('--port') + 1]}）要是同一個數字；這次用 ${port}。`);
+    }
+    return port;
+}
+
+const port = fs.existsSync(launchPath) ? portFromLaunch() : derivedPort;
 
 const devVars = path.join(root, '.dev.vars');
 if (!fs.existsSync(devVars)) {
@@ -27,15 +58,7 @@ if (!fs.existsSync(devVars)) {
 
 execSync('npm run db:migrate:local', { cwd: root, stdio: 'inherit' });
 
-const wranglerArgs = p => ['wrangler', 'dev', '--port', String(p)];
-const launchPath = path.join(root, '.claude', 'launch.json');
-let port = derivedPort;
-if (fs.existsSync(launchPath)) {
-    const existing = JSON.parse(fs.readFileSync(launchPath, 'utf8'))
-        .configurations?.find(c => c.name === CONFIG_NAME);
-    if (existing?.port) port = existing.port;
-    else console.warn(`.claude/launch.json 已存在但沒有「${CONFIG_NAME}」設定；沒有改它，預覽工具要自己加`);
-} else {
+if (!fs.existsSync(launchPath)) {
     fs.mkdirSync(path.dirname(launchPath), { recursive: true });
     fs.writeFileSync(launchPath, JSON.stringify({
         version: '0.0.1',
@@ -46,16 +69,16 @@ if (fs.existsSync(launchPath)) {
 
 console.log(`這個 worktree 的 port：${port} → http://localhost:${port}`);
 
-// 只有 1000 個 port 可分，兩個 worktree 可能撞到同一個；先探一下，被佔用就提醒。
+// 只有 1000 個 port 可分，兩個 worktree 可能撞到同一個；先探一下（不指定 host = IPv4 + IPv6）。
 const busy = await new Promise(resolve => {
     const probe = net.createServer()
         .once('error', () => resolve(true))
         .once('listening', () => probe.close(() => resolve(false)))
-        .listen(port, '127.0.0.1');
+        .listen(port);
 });
 if (busy) {
     console.warn(`port ${port} 已被佔用：可能這個 worktree 已經在跑，或另一個 worktree 算到同一個 port。`
-        + '後者請改 .claude/launch.json 的 port。');
+        + `後者請把 .claude/launch.json「${CONFIG_NAME}」的 port 欄位和 runtimeArgs 的 --port 一起改。`);
 }
 
 if (!process.argv.includes('--setup')) {

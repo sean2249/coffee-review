@@ -109,7 +109,7 @@ PWA-installable. All UI text is Traditional Chinese — keep it that way when ed
   shell; same-origin `/api/*` and `/cdn-cgi/*` are passed straight through — see
   `shouldBypass`). On localhost the page registers no service worker (and removes a
   leftover one) so previews never serve a stale `app.js`; add `?sw=1` to test PWA behaviour
-  (it sticks for that tab; `?sw=0` turns it off).
+  (it sticks for that tab and tabs opened from it; `?sw=0` turns it off).
 - **Tooling**: ESLint flat config + typescript-eslint for `src/worker/**`, Stylelint,
   `tsc -p tsconfig.worker.json` for typecheck. **Vitest with two projects**
   (`vitest.config.ts`): `app` runs the existing jsdom tests in `tests/` (environment is
