@@ -523,7 +523,16 @@
             integrity="sha384-geWF76RCwLtnZ8qwWowPQNguL3RmwHVBC9FhGdlKrxdiJJigb/j/68SIy3Te4Bkz" crossorigin="anonymous"></script>
     <script src="app.js"></script>
     <script>
-        if ('serviceWorker' in navigator) {
+        // 本機開發（localhost）不用 service worker：快取會讓預覽拿到舊的 app.js。
+        // 之前註冊過的就拆掉並重載一次；要測 PWA 行為在網址加 ?sw=1。
+        const skipSw = ['localhost', '127.0.0.1', '[::1]'].includes(location.hostname)
+            && !new URLSearchParams(location.search).has('sw');
+        if ('serviceWorker' in navigator && skipSw) {
+            navigator.serviceWorker.getRegistrations().then(async regs => {
+                await Promise.all(regs.map(r => r.unregister()));
+                if (navigator.serviceWorker.controller) location.reload();
+            });
+        } else if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
                 navigator.serviceWorker.register('sw.js').catch(err => {
                     console.warn('Service worker registration failed:', err);
