@@ -48,6 +48,8 @@ async function boot(formHash, api = defaultApi) {
 const $ = sel => doc.querySelector(sel);
 // 點在 tabbar 的圖示上（實際手機上點到的通常是內部的 <i>）
 const tabIcon = route => $(`.tabbar-btn[data-route="${route}"] i`);
+// 沖煮 / 品鑑 8 項都要判斷過才能存（#169）
+const judgeAll = () => doc.querySelectorAll('.adjust-item [data-adjust="zero"]').forEach(b => b.click());
 function type(sel, value) {
     const el = $(sel);
     el.value = value;
@@ -65,6 +67,10 @@ describe.each([
         type(field, '沒存就離開');
         tabIcon('/shops').click();
         await settle();
+        // 沖煮 / 品鑑有輸入時離開要確認（#169）；杯測場次不變。
+        if (mode !== 'session') $('.confirm-dialog [data-confirm="ok"]').click();
+        await settle();
+        expect(win.location.hash).toBe('#/shops');
         await go(`#/new/${mode}`);
         expect($('.draft-banner')).toBeNull();
         expect($(field).value).toBe(original);
@@ -100,6 +106,7 @@ describe('存檔中離開', () => {
             : defaultApi(p, init)));
         $('.bean-type-chip-row[data-bean-type-group="cupping"] .bean-type-chip').click();
         type('#f-cupping-bean', '耶加雪菲');
+        judgeAll();
         $('#f-save').click();
         await tick();
         tabIcon('/shops').click();
@@ -124,6 +131,7 @@ describe('存檔中離開', () => {
         $('.bean-type-chip-row[data-bean-type-group="tasting"] .bean-type-chip').click();
         type('#f-item_ordered', '拿鐵');
         type('#sn-intro', '筆記改了');
+        judgeAll();
         $('#f-save').click();
         await tick();
         await go('#/records');

@@ -63,6 +63,18 @@
     --brew-temp: #b4532a;
     --brew-temp-bg: #fbe9e1;
     --brew-error: #b42318;
+
+    /* 調整分 5 階（#169）：−1 磚紅、0 灰、0.5–1 淺綠、1.5–2 深綠、2 以上紫 */
+    --adj-none: #c4c8ce;
+    --adj-neg: #b4532a;
+    --adj-zero: #6b7280;
+    --adj-low: #4c9a5b;
+    --adj-high: #22663a;
+    --adj-top: #6a3fb0;
+    /* 分數列：深底等級用白字白環、淺底（銀、金）用深字深環 */
+    --on-tier-dark: #ffffff;
+    --on-tier-dark-track: rgba(255, 255, 255, 0.35);
+    --on-tier-light-track: rgba(17, 20, 24, 0.18);
 }
 
 /* ───── Base ───────────────────────────────────────────────────────────── */
@@ -2823,4 +2835,236 @@ a.brew-plan-ref .brew-plan-summary-name { color: var(--accent); flex: 1; }
 @media (max-width: 576px) {
     .brew-plan-sheet-backdrop { align-items: flex-end; padding: 0; }
     .brew-plan-sheet { max-width: none; max-height: 85vh; border-radius: var(--radius-lg) var(--radius-lg) 0 0; }
+}
+
+/* ───── 調整分評分（沖煮 / 品鑑，#169）──────────────────────────────────── */
+/* 手機：分數列黏在 8 項上方；電腦版（≥ 992px）左 8 項、右分數面板（含儲存鈕）。
+   整塊不准有橫向捲動：名稱過長就截斷，每列固定一行高。 */
+.adjust-layout { margin-bottom: 1rem; }
+.score-panel {
+    position: sticky;
+    top: calc(env(safe-area-inset-top, 0px) + 0.4rem);
+    z-index: 5;
+    margin-bottom: 0.6rem;
+}
+.score-panel-save { display: none; }
+
+.score-bar {
+    --tier-color: var(--bg-muted);
+    --ring-color: var(--on-tier-dark);
+    --ring-track: var(--on-tier-dark-track);
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    height: 56px;
+    padding: 0 1rem 0 0.45rem;
+    border-radius: 999px;
+    background: var(--tier-color);
+    color: var(--on-tier-dark);
+    box-shadow: var(--shadow-md);
+    min-width: 0;
+}
+.score-bar.is-unscored {
+    background: var(--bg-muted);
+    color: var(--text-secondary);
+    --ring-color: var(--text-muted);
+    --ring-track: var(--border-strong);
+}
+.score-bar.on-light { color: var(--text-primary); --ring-color: var(--text-primary); --ring-track: var(--on-tier-light-track); }
+.score-ring {
+    flex: 0 0 auto;
+    display: grid;
+    place-items: center;
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    background: conic-gradient(var(--ring-color) calc(var(--ring, 0) * 360deg), var(--ring-track) 0);
+}
+.score-ring-text {
+    display: grid;
+    place-items: center;
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    background: var(--tier-color);
+    font-weight: 700;
+    font-size: 0.95rem;
+}
+.score-bar.is-unscored .score-ring-text { background: var(--bg-muted); font-size: 0.85rem; }
+.score-bar-value {
+    flex: 0 0 auto;
+    font-family: var(--font-mono);
+    font-weight: 700;
+    font-size: 1.35rem;
+}
+.score-bar.is-unscored .score-bar-value { font-family: inherit; font-size: 0.95rem; font-weight: 600; }
+.score-bar-desc {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: 0.8rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.score-bar-next { display: none; }
+
+.adjust-intro { font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.5rem; }
+.adjust-credit { font-size: 0.72rem; color: var(--text-dim); margin: 0.6rem 0 0; }
+
+.adjust-list { border-top: 1px solid var(--border); }
+.adjust-item {
+    --adj-color: var(--adj-none);
+    border-bottom: 1px solid var(--border);
+}
+.adjust-item[data-level="neg"],  .detail-adjust-row[data-level="neg"]  { --adj-color: var(--adj-neg); }
+.adjust-item[data-level="zero"], .detail-adjust-row[data-level="zero"] { --adj-color: var(--adj-zero); }
+.adjust-item[data-level="low"],  .detail-adjust-row[data-level="low"]  { --adj-color: var(--adj-low); }
+.adjust-item[data-level="high"], .detail-adjust-row[data-level="high"] { --adj-color: var(--adj-high); }
+.adjust-item[data-level="top"],  .detail-adjust-row[data-level="top"]  { --adj-color: var(--adj-top); }
+
+.adjust-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    height: 52px;
+    min-width: 0;
+}
+.adjust-dot {
+    flex: 0 0 auto;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    border: 2px solid var(--adj-color);
+    background: var(--adj-color);
+}
+.adjust-item[data-level="none"] .adjust-dot { background: transparent; }
+.adjust-name {
+    flex: 1 1 auto;
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    min-width: 0;
+    overflow: hidden;
+}
+.adjust-label {
+    flex: 0 1 auto;
+    min-width: 0;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.adjust-summary { display: flex; align-items: center; gap: 0.2rem; flex: 0 0 auto; }
+.adjust-flavor-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--ft-color);
+}
+.adjust-note-icon { font-size: 0.75rem; color: var(--text-muted); margin-left: 0.1rem; }
+
+.adjust-stepper {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    height: 36px;
+    border: 1px solid var(--adj-color);
+    border-radius: 999px;
+    color: var(--adj-color);
+}
+.adjust-item[data-level="none"] .adjust-stepper { color: var(--text-muted); }
+.adjust-btn,
+.adjust-value {
+    border: 0;
+    background: transparent;
+    color: inherit;
+    height: 100%;
+    padding: 0;
+}
+.adjust-btn { width: 36px; font-size: 1.15rem; line-height: 1; }
+.adjust-btn:disabled { opacity: 0.3; }
+.adjust-value {
+    min-width: 3.2em;
+    font-family: var(--font-mono);
+    font-weight: 700;
+    font-size: 0.95rem;
+}
+.adjust-expand {
+    flex: 0 0 auto;
+    width: 32px;
+    height: 36px;
+    border: 0;
+    background: transparent;
+    color: var(--text-muted);
+}
+.adjust-expand .bi { display: inline-block; transition: transform 0.15s ease; }
+.adjust-item.is-open .adjust-expand .bi { transform: rotate(180deg); }
+.adjust-body { padding: 0.25rem 0 0.85rem; }
+
+/* 風味輪第一層：兩欄大卡片；第二層以下的 chip 自動換行（只套在這張表單，杯測不變） */
+.adjust-body .flavor-row-l1 {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.4rem;
+}
+.adjust-body .flavor-row-l1 .flavor-tag {
+    display: block;
+    padding: 0.7em 0.8em;
+    border-radius: var(--radius-md);
+    font-size: 0.9em;
+    text-align: left;
+    white-space: normal;
+}
+.adjust-body .flavor-row.flavor-row-l2,
+.adjust-body .flavor-row.flavor-row-l3 { margin-left: 0; }
+
+/* 詳細頁的 8 項：同一套顏色，唯讀 */
+.detail-adjust-item { border-bottom: 1px solid var(--border); padding: 0.35rem 0; }
+.detail-adjust-item:last-child { border-bottom: 0; }
+.detail-adjust-row {
+    --adj-color: var(--adj-none);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-height: 36px;
+}
+.detail-adjust-label { flex: 1; min-width: 0; font-weight: 600; }
+.detail-adjust-value {
+    font-family: var(--font-mono);
+    font-weight: 700;
+    color: var(--adj-color);
+}
+
+@media (min-width: 992px) {
+    .adjust-layout {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 240px;
+        gap: 1rem;
+        align-items: start;
+    }
+    .adjust-layout > .adjust-card { grid-row: 1; grid-column: 1; margin-bottom: 0; }
+    .score-panel {
+        grid-row: 1;
+        grid-column: 2;
+        top: 1rem;
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+        margin-bottom: 0;
+    }
+    .score-bar {
+        height: auto;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.35rem;
+        padding: 1.1rem 0.9rem;
+        border-radius: var(--radius-lg);
+        text-align: center;
+    }
+    .score-ring { width: 64px; height: 64px; }
+    .score-ring-text { width: 52px; height: 52px; font-size: 1.3rem; }
+    .score-bar-desc { white-space: normal; }
+    .score-bar-next { display: block; font-size: 0.75rem; opacity: 0.85; }
+    .score-panel-save { display: block; width: 100%; }
+    .record-action-bar #f-save { display: none; }
 }

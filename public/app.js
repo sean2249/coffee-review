@@ -17,8 +17,8 @@
 // ─── Tier definitions ────────────────────────────────────────────────────────
 const totalScoreTiers = [
     { id: 'trash',      medal: '劣', label: '≤76',   min: 74, max: 76.5,
-      badgeName: '瑕疵',   name: '風味平淡',
-      description: '平淡無亮點，或帶明顯瑕疵',
+      badgeName: '平淡',   name: '風味平淡',
+      description: '平淡無亮點',
       cssClass: 't-trash',      color: '#6c757d' },
 
     { id: 'commercial', medal: '凡', label: '77-79', min: 77, max: 79.5,
@@ -52,9 +52,11 @@ const totalScoreTiers = [
       cssClass: 't-godly',      color: '#5a2ea0' },
 ];
 
+// 分數由調整分算出（#169），最低 72、沒有上限：低於最低級歸最低級、高於最高級歸最高級；
+// 兩級之間的空隙（如 76.6，只有舊資料可能出現）歸到下面那一級。
 function tierFromScore(score) {
-    return totalScoreTiers.find(t => score >= t.min && score <= t.max)
-        || totalScoreTiers[2];
+    if (!Number.isFinite(score)) return totalScoreTiers[2];
+    return [...totalScoreTiers].reverse().find(t => score >= t.min) || totalScoreTiers[0];
 }
 function tierById(id) {
     return totalScoreTiers.find(t => t.id === id) || totalScoreTiers[2];
@@ -165,6 +167,96 @@ const referenceFields = [
 const observationFields = [
     { key: 'aroma', label: '香氣 Aroma', icon: 'bi-wind', hasFlavorWheel: true },
 ];
+
+// ─── 調整分（沖煮 / 品鑑的評分，#169）──────────────────────────────────────────
+// 計分參考 CFGC:2026.01（台灣咖啡研究室，CC BY-SA 4.0）。每項從「未判斷」(null) 出發，
+// 可選 −1、0、0.5、1 …（0 以上每格 0.5、沒有上限，沒有 −0.5）。分數 = 80 + Σ，
+// 8 項都判斷完才有。key 沿用舊參考分的 key（acidity → 酸 / 鹹、sweetness → 甜 / 苦、
+// cleanness → 清晰度），新舊紀錄靠 schema_version 區分（ADJUSTMENT_SCHEMA 以上是新制）。
+// 杯測場次不用這套，仍是 referenceFields + 總分挑選器。
+const adjustmentFields = [
+    { key: 'aroma',      label: '香氣',       hasFlavorWheel: true },
+    { key: 'flavor',     label: '風味',       hasFlavorWheel: true },
+    { key: 'aftertaste', label: '尾韻' },
+    { key: 'acidity',    label: '酸 / 鹹' },
+    { key: 'sweetness',  label: '甜 / 苦' },
+    { key: 'mouthfeel',  label: '口感' },
+    { key: 'balance',    label: '平衡 / 和諧' },
+    { key: 'cleanness',  label: '清晰度' },
+];
+const ADJUSTMENT_BASE = 80;
+const ADJUSTMENT_SCHEMA = { cupping: 4, tasting: 6 };
+
+// action：'plus' | 'minus' | 'zero'（點數值本身 = 普通 0）。
+function stepAdjustment(value, action) {
+    if (action === 'zero') return 0;
+    if (value == null) return action === 'plus' ? 0.5 : -1;
+    if (action === 'plus') return value === -1 ? 0 : value + 0.5;
+    return value <= 0 ? -1 : value - 0.5;
+}
+
+function formatAdjustment(value) {
+    if (typeof value !== 'number') return '—';
+    return value < 0 ? `−${Math.abs(value).toFixed(1)}` : value.toFixed(1);
+}
+
+// 5 階顏色：−1 磚紅、0 灰、0.5–1 淺綠、1.5–2 深綠、2 以上紫；未判斷 'none'。
+function adjustmentLevel(value) {
+    if (typeof value !== 'number') return 'none';
+    if (value < 0) return 'neg';
+    if (value === 0) return 'zero';
+    if (value <= 1) return 'low';
+    if (value <= 2) return 'high';
+    return 'top';
+}
+
+// values：{ key: number|null }。任何一項未判斷 → null（未評分）。
+function scoreFromAdjustments(values) {
+    let sum = 0;
+    for (const f of adjustmentFields) {
+        const v = values?.[f.key];
+        if (typeof v !== 'number') return null;
+        sum += v;
+    }
+    return ADJUSTMENT_BASE + sum;
+}
+
+// 舊參考分（4–8，普通 5）→ 調整分：減 5，得到 −0.5（含以下）的歸到 −1。
+function legacyAdjustment(score) {
+    const v = score - 5;
+    return v < 0 ? -1 : v;
+}
+
+function isAdjustmentRecord(mode, r) {
+    return (r?.schema_version ?? 0) >= (ADJUSTMENT_SCHEMA[mode] ?? Infinity);
+}
+
+// 一筆沖煮 / 品鑑紀錄 8 項的調整分（顯示用；舊紀錄在這裡換算，資料庫不改寫）。
+// 舊紀錄的香氣沒有分數 → 0；「整體」不在 adjustmentFields 裡，自然不出現。
+// 舊紀錄一項參考分都沒有 = 從沒評過 → 8 項都是未判斷；只缺幾項 → 缺的當舊預設 5（= 0）。
+function recordAdjustments(mode, r) {
+    const legacy = !isAdjustmentRecord(mode, r);
+    const scoreOf = key => r?.evaluations?.[key]?.score;
+    const legacyRated = legacy && referenceFields.some(f => typeof scoreOf(f.key) === 'number');
+    const out = {};
+    for (const f of adjustmentFields) {
+        const score = scoreOf(f.key);
+        if (!legacy) out[f.key] = typeof score === 'number' ? score : null;
+        else if (!legacyRated) out[f.key] = null;
+        else out[f.key] = f.key === 'aroma' ? 0 : legacyAdjustment(typeof score === 'number' ? score : 5);
+    }
+    return out;
+}
+
+// 分數列的進度環：在本級裡往下一級走了多少（0–1）、還差幾分。最高級沒有下一級 → 滿環。
+function tierProgress(score) {
+    const tier = tierFromScore(score);
+    const idx = totalScoreTiers.indexOf(tier);
+    const next = totalScoreTiers[idx + 1] || null;
+    if (!next) return { tier, next: null, fraction: 1, toNext: 0 };
+    const fraction = Math.min(1, Math.max(0, (score - tier.min) / (next.min - tier.min)));
+    return { tier, next, fraction, toNext: next.min - score };
+}
 
 // ─── Flavor wheel data ───────────────────────────────────────────────────────
 const flavors = [
@@ -652,7 +744,7 @@ function statsMarkup(stats) {
                 <span class="stats-num">${stats.sessions} <small>場 · ${stats.sessionCups} 杯</small></span>
             </div>
             <div class="stats-row">
-                <span class="stats-label"><i class="bi bi-award"></i>我的平均 CoE 總分</span>
+                <span class="stats-label"><i class="bi bi-award"></i>我的平均分數</span>
                 <span class="stats-num">${avg}</span>
             </div>
         </div>
@@ -711,7 +803,7 @@ function statsTrendMarkup(months) {
     const labels = months.map((m, i) =>
         `<text class="stats-trend-axis" x="${x(i)}" y="${H - 6}" text-anchor="middle">${m.label}</text>`).join('');
     return `<p class="stats-note">最近 12 個月</p>
-        <svg class="stats-trend" viewBox="0 0 ${W} ${H}" role="img" aria-label="最近 12 個月每月平均 CoE 總分">
+        <svg class="stats-trend" viewBox="0 0 ${W} ${H}" role="img" aria-label="最近 12 個月每月平均分數">
             ${grid}<path class="stats-trend-line" d="${path.trim()}"></path>${dots}${labels}
         </svg>
         <p class="stats-note stats-trend-foot">空白的月份 = 那個月沒有評分記錄</p>`;
@@ -1822,8 +1914,9 @@ function searchHitInRecord(r, kw) {
         || text('產地', r.origin) || text('處理法', r.process)
         || text('配方', r.blend_composition) || text('烘焙度', r.roast);
     if (hit) return hit;
-    for (const entry of Object.values(r.evaluations || {})) {
-        const m = flavorName('風味', entry?.flavors);
+    // 新制紀錄的香氣在 evaluations.aroma（#169），標成香氣；其他評分項目都是風味。
+    for (const [key, entry] of Object.entries(r.evaluations || {})) {
+        const m = flavorName(key === 'aroma' ? '香氣' : '風味', entry?.flavors);
         if (m) return m;
     }
     const aroma = r.observation?.aroma;
@@ -1838,7 +1931,8 @@ function searchHitInRecord(r, kw) {
         const a = text('乾香', aroma.dryAroma) || text('濕香', aroma.wetAroma) || text('香氣備註', aroma.notes);
         if (a) return a;
     }
-    return text('備註', r.notes) || text('瑕疵', r.defects);
+    // 「瑕疵」只用在杯測；沖煮、品鑑的 defects 叫負面風味（#169）。
+    return text('備註', r.notes) || text(r._type === 'session_cup' ? '瑕疵' : '負面風味', r.defects);
 }
 
 function searchHit(r, kw) {
@@ -2520,9 +2614,9 @@ function renderRecordDetail(mode, r, { planStatus = null } = {}) {
 
         <div class="card coe-card">
             <div class="card-body">
-                <h3 class="card-title"><i class="bi bi-award-fill"></i>CoE 總分</h3>
+                <h3 class="card-title"><i class="bi bi-award-fill"></i>分數</h3>
                 <div class="coe-total-block">
-                    <span class="coe-total-display">${score}</span>
+                    <span class="coe-total-display detail-score-value">${score}</span>
                     <span class="coe-total-of">/ 100</span>
                     ${tier ? `<span class="coe-total-tier-badge" style="color:${tier.color}">[ ${tier.badgeName} ]</span>` : ''}
                     ${tier ? `<span class="coe-total-desc">${escapeHtml(tier.description)}</span>` : ''}
@@ -2532,13 +2626,43 @@ function renderRecordDetail(mode, r, { planStatus = null } = {}) {
 
         <div class="card">
             <div class="card-body">
-                <h3 class="card-title"><i class="bi bi-bookmark-star-fill"></i>感官評估</h3>
-                ${renderEstimatedTotalBlock(r)}
-                ${renderDetailObservations(r)}
-                ${renderDetailReferences(r)}
-                ${renderDetailDefectsNotes(r)}
+                <h3 class="card-title"><i class="bi bi-bookmark-star-fill"></i>評分</h3>
+                ${renderDetailAdjustments(mode, r)}
+                ${renderDetailDefectsNotes(r, '負面風味與備註')}
             </div>
         </div>`;
+}
+
+// 沖煮 / 品鑑詳細頁的 8 項（#169）。分數一律是紀錄上的 coe_total（舊紀錄是當時親手選的），
+// 這裡只顯示各項調整分；舊紀錄的參考分在 recordAdjustments 換算，不標「舊制」。
+// 舊紀錄的香氣內容在 observation.aroma，舊的 chip 選項照樣列出。
+function renderDetailAdjustments(mode, r) {
+    const values = recordAdjustments(mode, r);
+    const legacy = !isAdjustmentRecord(mode, r);
+    const flavorChips = ids => (Array.isArray(ids) ? ids : [])
+        .map(decodeFlavorMeta).filter(Boolean)
+        .map(m => `<span class="detail-flavor-chip" style="--ft-color:${m.color}">${escapeHtml(m.name)}</span>`).join('');
+    return `<div class="detail-adjust-list">${adjustmentFields.map(f => {
+        const data = (legacy && f.key === 'aroma' ? r.observation?.aroma : r.evaluations?.[f.key]) || {};
+        const chips = flavorChips(data.flavors);
+        const chipRows = legacy
+            ? renderChipDetailRows(f.key === 'aroma' ? observationOptions.aroma : evaluationOptions[f.key], data)
+            : '';
+        const v = values[f.key];
+        return `
+            <div class="detail-adjust-item">
+                <div class="detail-adjust-row" data-level="${adjustmentLevel(v)}">
+                    <span class="adjust-dot" aria-hidden="true"></span>
+                    <span class="detail-adjust-label">${escapeHtml(f.label)}</span>
+                    <span class="detail-adjust-value">${formatAdjustment(v)}</span>
+                </div>
+                ${data.dryAroma ? `<div class="detail-eval-row"><span class="detail-eval-key">乾香</span><span class="detail-eval-val">${escapeHtml(data.dryAroma)}</span></div>` : ''}
+                ${data.wetAroma ? `<div class="detail-eval-row"><span class="detail-eval-key">濕香</span><span class="detail-eval-val">${escapeHtml(data.wetAroma)}</span></div>` : ''}
+                ${chipRows}
+                ${chips ? `<div class="detail-flavor-row">${chips}</div>` : ''}
+                ${data.notes ? `<p class="detail-eval-notes">${escapeHtml(data.notes)}</p>` : ''}
+            </div>`;
+    }).join('')}</div>`;
 }
 
 // 預估總分（36 + 8 項）— 沖煮 / 品鑑詳細頁與杯測場次的每一杯共用。
@@ -2781,14 +2905,15 @@ function renderDetailReferences(r) {
     }).join('');
 }
 
-function renderDetailDefectsNotes(r) {
+// label：杯測叫「瑕疵與備註」；沖煮 / 品鑑叫「負面風味與備註」（「瑕疵」只用在杯測，#169）。
+function renderDetailDefectsNotes(r, label = '瑕疵與備註') {
     const defectsTags = Array.isArray(r.defects_tags) ? r.defects_tags : [];
     if (!r.defects && !r.notes && defectsTags.length === 0) return '';
     return `
         <div class="detail-eval-section">
             <h4 class="detail-eval-section-title">
                 <span class="eval-icon"><i class="bi bi-exclamation-diamond"></i></span>
-                <span class="detail-eval-section-label">瑕疵與備註</span>
+                <span class="detail-eval-section-label">${escapeHtml(label)}</span>
             </h4>
             ${renderChipRow(defectsTags)}
             ${r.defects ? `<div class="detail-eval-row"><span class="detail-eval-key">補充</span><span class="detail-eval-val">${escapeHtml(r.defects)}</span></div>` : ''}
@@ -3096,11 +3221,11 @@ async function viewForm(root, { mode, recordId, prefillShopId = null }) {
     root.innerHTML = '';
     root.appendChild(tpl.content.cloneNode(true));
 
-    state.currentForm = { mode, recordId, prefillShopId };
+    const form = { mode, recordId, prefillShopId };
+    state.currentForm = form;
 
     setFormMode(mode);
-    initCoeWidget();
-    initEvaluationAccordion();
+    initAdjustmentWidget();
     bindFormHandlers();
 
     await refreshShopsCache();
@@ -3129,6 +3254,84 @@ async function viewForm(root, { mode, recordId, prefillShopId = null }) {
         document.getElementById('f-save-label').textContent = '儲存';
         document.getElementById('f-delete').hidden = true;
     }
+    if (state.currentForm === form) guardFormLeave(form);
+}
+
+// ─── 離開提醒（沖煮 / 品鑑，#169） ──────────────────────────────────────────
+// 表單有任何輸入時，換頁（hashchange）或關分頁（beforeunload）前要確認。不做草稿
+// 或自動暫存（#137 刻意拿掉了）。「有輸入」= payload 和掛載完成那一刻不同，或店家
+// 筆記改過。按下儲存且通過檢查後就拆掉，存檔中離開不會再問。
+let formLeaveGuard = null; // { form, hash, baseline }
+
+function formPayloadSnapshot(mode) {
+    return JSON.stringify(buildFormPayload(mode));
+}
+
+function guardFormLeave(form) {
+    formLeaveGuard = { form, hash: location.hash, baseline: formPayloadSnapshot(form.mode) };
+}
+
+function formHasUnsavedInput() {
+    const g = formLeaveGuard;
+    if (!g || state.currentForm !== g.form) return false;
+    return formPayloadSnapshot(g.form.mode) !== g.baseline || formShopNoteIsDirty();
+}
+
+function confirmFormLeave() {
+    return confirmDialog({
+        title: '離開表單',
+        message: '尚未儲存，確定離開？',
+        confirmText: '離開',
+        danger: true,
+    });
+}
+
+let leavePromptOpen = false;
+
+// 問一次，true = 離開。對話框開著時又按了上一頁，網址已經不是表單：取消就 push 一格
+// 回表單（Back 之後 = […, 列表, 表單]，再按 Back 回得去）。前進、手打網址後取消會
+// 多留一格，要逐格記序號才分得出方向，不值得。
+async function askFormLeave(guard) {
+    leavePromptOpen = true;
+    const ok = await confirmFormLeave();
+    leavePromptOpen = false;
+    if (formLeaveGuard !== guard) return false;
+    if (!ok && location.hash !== guard.hash) history.pushState(history.state, '', guard.hash);
+    return ok;
+}
+
+// App 內的路由連結（tabbar…）在換 hash 之前就攔下來問，瀏覽紀錄完全不動。
+// 修飾鍵 / 非左鍵是開新分頁，照瀏覽器的來。
+async function onLeaveLinkClick(e) {
+    if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    const link = e.target.closest?.('a[href^="#/"]');
+    if (!link || !formHasUnsavedInput()) return;
+    const target = link.getAttribute('href');
+    if (target === location.hash) return;
+    e.preventDefault();
+    const guard = formLeaveGuard;
+    if (!(await askFormLeave(guard))) return;
+    formLeaveGuard = null;
+    // navigate：對話框開著時若已按上一頁到同一個 hash，就不會有 hashchange，得自己畫。
+    navigate(target.slice(1));
+}
+
+// 上一頁、手打網址：hash 已經換了才知道。對話框開著時再換的 hash 不另外問，
+// 等那一個對話框決定（離開就畫最後停的那一頁）。
+async function onHashChange() {
+    if (leavePromptOpen) return;
+    const guard = formLeaveGuard;
+    if (guard && location.hash !== guard.hash && formHasUnsavedInput()) {
+        if (!(await askFormLeave(guard))) return;
+    }
+    formLeaveGuard = null;
+    renderRoute();
+}
+
+function onBeforeUnload(e) {
+    if (!formHasUnsavedInput()) return;
+    e.preventDefault();
+    e.returnValue = '';
 }
 
 function applyShopPrefill(shopId) {
@@ -3810,6 +4013,192 @@ function refreshTotalDisplay() {
     document.getElementById('coeTotalDesc').textContent = tier.description;
 }
 
+// ─── 調整分元件（沖煮 / 品鑑，#169） ─────────────────────────────────────────
+// #tpl-form 每次掛載呼叫一次 initAdjustmentWidget。8 項的值在 adjustState.values
+// （null = 未判斷），筆記與風味輪（只有香氣、風味）收在各列的展開區；負面風味
+// （defects_tags + f-defects）與最終備註在下面另一張卡。杯測場次不用這套。
+const adjustState = { values: {} };
+
+function adjustRowHtml(f) {
+    const k = f.key;
+    const label = escapeHtml(f.label);
+    const wheel = f.hasFlavorWheel
+        ? `<span class="form-label">風味（點選後展開細項）</span>
+           <div id="${k}_flavorList" class="flavor-wheel"></div>`
+        : '';
+    return `<div class="adjust-item" data-adjust-key="${k}" data-level="none">
+        <div class="adjust-row">
+            <span class="adjust-dot" aria-hidden="true"></span>
+            <span class="adjust-name">
+                <span class="adjust-label">${label}</span>
+                <span class="adjust-summary" id="${k}_adjSummary"></span>
+            </span>
+            <span class="adjust-stepper" role="group" aria-label="${label}">
+                <button type="button" class="adjust-btn" data-adjust="minus" aria-label="${label} 減分">−</button>
+                <button type="button" class="adjust-value" data-adjust="zero">—</button>
+                <button type="button" class="adjust-btn" data-adjust="plus" aria-label="${label} 加分">＋</button>
+            </span>
+            <button type="button" class="adjust-expand" aria-expanded="false"
+                    aria-controls="adjust_body_${k}" aria-label="${label} 筆記">
+                <i class="bi bi-chevron-down"></i>
+            </button>
+        </div>
+        <div class="adjust-body" id="adjust_body_${k}" hidden>
+            ${wheel}
+            <label class="form-label" for="${k}_notes">筆記</label>
+            <textarea id="${k}_notes" class="form-control" rows="2"></textarea>
+        </div>
+    </div>`;
+}
+
+function negativeFlavorHtml() {
+    return `<div class="small-hint mb-2">只做記錄，不影響分數。</div>${defectsBodyHtml('負面風味')}`;
+}
+
+function initAdjustmentWidget() {
+    const list = document.getElementById('adjustList');
+    if (!list) return;
+    adjustState.values = Object.fromEntries(adjustmentFields.map(f => [f.key, null]));
+    list.innerHTML = adjustmentFields.map(adjustRowHtml).join('');
+    document.getElementById('negativeFlavorSection').innerHTML = negativeFlavorHtml();
+
+    adjustmentFields.forEach(f => {
+        if (f.hasFlavorWheel) renderFlavorWheel(`${f.key}_flavorList`, () => updateAdjustSummary(f.key));
+        renderAdjustRow(f.key);
+    });
+    renderScoreBar();
+
+    list.addEventListener('click', e => {
+        const item = e.target.closest('.adjust-item');
+        if (!item) return;
+        const key = item.dataset.adjustKey;
+        const stepBtn = e.target.closest('[data-adjust]');
+        if (stepBtn) {
+            setAdjustment(key, stepAdjustment(adjustState.values[key], stepBtn.dataset.adjust));
+            return;
+        }
+        const expand = e.target.closest('.adjust-expand');
+        if (expand) {
+            const open = expand.getAttribute('aria-expanded') !== 'true';
+            expand.setAttribute('aria-expanded', String(open));
+            item.classList.toggle('is-open', open);
+            document.getElementById(`adjust_body_${key}`).hidden = !open;
+        }
+    });
+    list.addEventListener('input', e => {
+        const key = e.target.closest('.adjust-item')?.dataset.adjustKey;
+        if (key) updateAdjustSummary(key);
+    });
+    document.getElementById('negativeFlavorSection').addEventListener('click', e => {
+        const chip = e.target.closest('.chip[data-chip-value]');
+        if (!chip) return;
+        chip.setAttribute('aria-pressed', String(chip.getAttribute('aria-pressed') !== 'true'));
+    });
+}
+
+function setAdjustment(key, value) {
+    adjustState.values[key] = value;
+    renderAdjustRow(key);
+    renderScoreBar();
+}
+
+function renderAdjustRow(key) {
+    const item = document.querySelector(`.adjust-item[data-adjust-key="${key}"]`);
+    if (!item) return;
+    const value = adjustState.values[key];
+    const label = adjustmentFields.find(f => f.key === key).label;
+    item.dataset.level = adjustmentLevel(value);
+    const valueBtn = item.querySelector('.adjust-value');
+    valueBtn.textContent = formatAdjustment(value);
+    valueBtn.setAttribute('aria-label',
+        `${label}：${value == null ? '未判斷' : formatAdjustment(value)}，點一下設為普通 0`);
+    item.querySelector('[data-adjust="minus"]').disabled = value === -1;
+    updateAdjustSummary(key);
+}
+
+// 折疊時和名稱同一行的摘要：選了的風味用該類別顏色的小點，有筆記就一個筆記圖示。
+function updateAdjustSummary(key) {
+    const el = document.getElementById(`${key}_adjSummary`);
+    if (!el) return;
+    const field = adjustmentFields.find(f => f.key === key);
+    const ids = field.hasFlavorWheel ? getSelectedFlavorIds(`${key}_flavorList`) : [];
+    const leaves = ids.filter(id => !ids.some(o => o !== id && o.startsWith(id + '__')));
+    const dots = leaves.map(decodeFlavorMeta).filter(Boolean).slice(0, 6)
+        .map(m => `<span class="adjust-flavor-dot" style="--ft-color:${m.color}" title="${escapeHtml(m.name)}"></span>`)
+        .join('');
+    const hasNotes = !!document.getElementById(`${key}_notes`)?.value.trim();
+    el.innerHTML = dots + (hasNotes ? '<i class="bi bi-journal-text adjust-note-icon" aria-label="有筆記"></i>' : '');
+}
+
+function renderScoreBar() {
+    const bar = document.getElementById('scoreBar');
+    if (!bar) return;
+    const done = adjustmentFields.filter(f => typeof adjustState.values[f.key] === 'number').length;
+    const score = scoreFromAdjustments(adjustState.values);
+    const total = adjustmentFields.length;
+    if (score == null) {
+        bar.className = 'score-bar is-unscored';
+        bar.style.removeProperty('--tier-color');
+        bar.style.setProperty('--ring', String(done / total));
+        bar.innerHTML = `
+            <span class="score-ring"><span class="score-ring-text">${done}</span></span>
+            <span class="score-bar-value">未評分 · ${done}/${total}</span>`;
+        return;
+    }
+    const { tier, next, fraction, toNext } = tierProgress(score);
+    bar.className = `score-bar is-scored ${isLightColor(tier.color) ? 'on-light' : 'on-dark'}`;
+    bar.style.setProperty('--tier-color', tier.color);
+    bar.style.setProperty('--ring', String(fraction));
+    bar.innerHTML = `
+        <span class="score-ring"><span class="score-ring-text">${escapeHtml(tier.medal)}</span></span>
+        <span class="score-bar-value">${score.toFixed(1)}</span>
+        <span class="score-bar-desc">${escapeHtml(tier.badgeName)} · ${escapeHtml(tier.description)}</span>
+        ${next ? `<span class="score-bar-next">距${escapeHtml(next.badgeName)}還差 ${toNext.toFixed(1)}</span>` : ''}`;
+}
+
+// 等級色是淺色（銀、金）時進度環與文字用深色，其餘用白色。
+function isLightColor(hex) {
+    const n = parseInt(hex.slice(1), 16);
+    const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+    return (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.55;
+}
+
+function buildAdjustmentPayload() {
+    const score = scoreFromAdjustments(adjustState.values);
+    const evaluations = {};
+    adjustmentFields.forEach(f => {
+        const entry = {
+            score: adjustState.values[f.key],
+            notes: document.getElementById(`${f.key}_notes`)?.value || '',
+        };
+        if (f.hasFlavorWheel) entry.flavors = getSelectedFlavorIds(`${f.key}_flavorList`);
+        evaluations[f.key] = entry;
+    });
+    return {
+        coe_total: score,
+        coe_tier_id: score == null ? null : tierFromScore(score).id,
+        evaluations,
+        observation: {},
+    };
+}
+
+// 只有 applyRecordToForm 會用（目前沒有路由會編輯既有的沖煮 / 品鑑）。
+function applyAdjustmentsToForm(mode, r) {
+    const values = recordAdjustments(mode, r);
+    adjustmentFields.forEach(f => {
+        adjustState.values[f.key] = values[f.key];
+        const data = r.evaluations?.[f.key] || {};
+        const notesEl = document.getElementById(`${f.key}_notes`);
+        if (notesEl) notesEl.value = data.notes || '';
+        if (f.hasFlavorWheel) {
+            applyFlavorSelections(`${f.key}_flavorList`, Array.isArray(data.flavors) ? data.flavors : []);
+        }
+        renderAdjustRow(f.key);
+    });
+    writeChipGroup('defects_tags', Array.isArray(r.defects_tags) ? r.defects_tags : []);
+    renderScoreBar();
+}
+
 // ─── Evaluation accordion ────────────────────────────────────────────────────
 // 共用：渲染 button-style chip 群組（single / multi）
 // 兩種型別都用 role="group"：children 是 toggle button（aria-pressed），
@@ -3924,7 +4313,7 @@ function generateReferenceItem(field) {
                        min="4" max="8" step="0.5" value="5" data-ref-score="${key}">
                 <span class="ref-slider-value" id="${key}_score_value">5.0</span>
             </div>
-            <div class="small-hint">參考分 4-8（預設 5），不影響上方 CoE 總分。</div>
+            <div class="small-hint">參考分 4-8（預設 5），不影響上方分數。</div>
         </div>`;
 
     const chipSpec = evaluationOptions[key];
@@ -3965,12 +4354,13 @@ function generateObservationItem(field) {
     return wrapAccordionItem(key, field.label, field.icon, body);
 }
 
-function generateDefectsItem() {
-    const body = `
-        ${chipGroupHtml('defects_tags', '常見瑕疵', 'multi', defectsOptions)}
+// word：杯測叫「瑕疵」，沖煮 / 品鑑叫「負面風味」（#169）。
+function defectsBodyHtml(word) {
+    return `
+        ${chipGroupHtml('defects_tags', `常見${word}`, 'multi', defectsOptions)}
         <label for="f-defects" class="form-label mt-2">補充說明</label>
         <textarea id="f-defects" class="form-control mb-2" rows="2"
-                  placeholder="其他瑕疵描述（選填）..."></textarea>
+                  placeholder="其他${word}描述（選填）..."></textarea>
         <div class="notes-slot" data-notes-slot="f-notes">
             <button type="button" class="notes-toggle" data-notes-target="f-notes"
                     aria-controls="f-notes-body" aria-expanded="false">
@@ -3982,7 +4372,10 @@ function generateDefectsItem() {
                           placeholder="請輸入額外的備註..."></textarea>
             </div>
         </div>`;
-    return wrapAccordionItem('defects', '瑕疵與備註', 'bi-exclamation-diamond', body);
+}
+
+function generateDefectsItem() {
+    return wrapAccordionItem('defects', '瑕疵與備註', 'bi-exclamation-diamond', defectsBodyHtml('瑕疵'));
 }
 
 function initEvaluationAccordion() {
@@ -4887,7 +5280,7 @@ function buildFormPayload(mode) {
     const defectsTags = readChipGroup('defects_tags') || [];
     const notes = document.getElementById('f-notes').value;
 
-    const ev = buildEvaluationPayload();
+    const ev = buildAdjustmentPayload();
 
     if (mode === 'cupping') {
         const beanName = document.getElementById('f-cupping-bean').value.trim() || null;
@@ -4918,7 +5311,7 @@ function buildFormPayload(mode) {
             defects: defects || null,
             defects_tags: defectsTags,
             notes: notes || null,
-            schema_version: 3,
+            schema_version: ADJUSTMENT_SCHEMA.cupping,
             ...ev,
         };
     }
@@ -4938,7 +5331,7 @@ function buildFormPayload(mode) {
         defects: defects || null,
         defects_tags: defectsTags,
         notes: notes || null,
-        schema_version: 5,
+        schema_version: ADJUSTMENT_SCHEMA.tasting,
         ...ev,
     };
 }
@@ -4948,7 +5341,15 @@ async function submitForm() {
     const form = state.currentForm;
     const { mode, recordId } = form;
 
-    // Bean type must be validated first — bean-name inputs are now hidden
+    // 8 項都要判斷過才能存（#169）：沖煮、品鑑不會存出未評分的紀錄。
+    const pending = adjustmentFields.find(f => typeof adjustState.values[f.key] !== 'number');
+    if (pending) {
+        document.querySelector(`.adjust-item[data-adjust-key="${pending.key}"] .adjust-value`)?.focus();
+        showToast('尚未填完：8 項評分都要判斷');
+        return;
+    }
+
+    // Bean type must be validated next — bean-name inputs are now hidden
     // until a type is chosen, so focusing them before that would be confusing.
     if (!getBeanType(mode)) {
         const firstChip = document.querySelector(
@@ -4987,8 +5388,12 @@ async function submitForm() {
         }
     }
 
-    const saveBtn = document.getElementById('f-save');
-    saveBtn.disabled = true;
+    // 電腦版還有分數面板裡的儲存鈕：全部停用，連按或按 Enter 才不會送出第二筆。
+    const saveBtns = [...document.querySelectorAll('.record-form button[type="submit"]')];
+    saveBtns.forEach(b => { b.disabled = true; });
+    // 存檔中離開不再問（送出的就是畫面上的內容）；存失敗而人還在 → 裝回去。
+    const leaveGuard = formLeaveGuard;
+    formLeaveGuard = null;
     // 存檔期間使用者可能已離開：店家筆記送出前先快照，回來後不管還在不在都用快照存；
     // 也不把人從別頁拉回記錄頁。
     const stillHere = () => state.currentForm === form;
@@ -5015,8 +5420,9 @@ async function submitForm() {
     } catch (e) {
         console.error(e);
         showErrorToast('儲存失敗：' + (e.message || e));
+        if (stillHere()) formLeaveGuard = leaveGuard;
     } finally {
-        saveBtn.disabled = false;
+        saveBtns.forEach(b => { b.disabled = false; });
     }
 }
 
@@ -5057,7 +5463,6 @@ function applyRecordToForm(mode, r) {
     document.getElementById('f-defects').value = r.defects || '';
     document.getElementById('f-notes').value = r.notes || '';
     if (r.notes) expandNotesSlot('f-notes', { focus: false });
-    updateDefectsSummary();
 
     if (mode === 'cupping') {
         document.getElementById('f-cupping-bean').value = r.bean_name || '';
@@ -5099,14 +5504,7 @@ function applyRecordToForm(mode, r) {
         refreshFormShopNote(shopSel.value);
     }
 
-    // CoE
-    coeState.coeTotal = typeof r.coe_total === 'number' ? r.coe_total : 82;
-    coeState.selectedTierId = r.coe_tier_id || tierFromScore(coeState.coeTotal).id;
-    renderTierMedals();
-    renderScoreChips(tierById(coeState.selectedTierId));
-    refreshTotalDisplay();
-
-    applyEvaluationsToForm(r);
+    applyAdjustmentsToForm(mode, r);
 }
 
 // 把 evaluations / observation / defects_tags 套進評分 accordion。缺的欄位一律重設成
@@ -6303,7 +6701,7 @@ function renderShopSummaryCard(summary) {
                     </div>
                     <div class="shop-summary-stat">
                         <span class="shop-summary-stat-num">${avgScore != null ? avgScore.toFixed(1) : '—'}</span>
-                        <span class="shop-summary-stat-label">平均 CoE 總分</span>
+                        <span class="shop-summary-stat-label">平均分數</span>
                     </div>
                     <div class="shop-summary-stat">
                         <span class="shop-summary-stat-num">${lastDate ? escapeHtml(fmtDate(lastDate)) : '—'}</span>
@@ -6577,7 +6975,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     await initAuth();
     authBootstrapped = true;
     // 在 auth 就緒後才掛 hashchange，避免 bootstrap 期間的 hash 設定觸發一次半成品 render。
-    window.addEventListener('hashchange', renderRoute);
+    window.addEventListener('hashchange', onHashChange);
+    window.addEventListener('beforeunload', onBeforeUnload);
+    document.addEventListener('click', onLeaveLinkClick, true);
     // iOS 可能直接關掉背景的 PWA：切到背景時先把 ② 評分到一半的內容暫存起來。
     document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'hidden') autosaveSession({ keepalive: true });

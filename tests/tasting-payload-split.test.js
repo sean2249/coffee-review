@@ -44,8 +44,9 @@ describe('buildFormPayload("tasting")', () => {
         expect(p.bean_name).toBe('聖馬丁莊園');
     });
 
-    it('bumps schema_version to 5', () => {
-        expect(win.buildFormPayload('tasting').schema_version).toBe(5);
+    // v6（#169）：8 項調整分取代總分挑選器，新舊紀錄靠 schema_version 區分。
+    it('bumps schema_version to 6', () => {
+        expect(win.buildFormPayload('tasting').schema_version).toBe(6);
     });
 });
 

@@ -71,6 +71,8 @@ describe('沖煮表單：依計劃沖', () => {
     }
 
     async function save() {
+        // 8 項都要判斷過才能存（#169）
+        doc.querySelectorAll('.adjust-item [data-adjust="zero"]').forEach(b => b.click());
         $('#f-save').click();
         await settle();
         return posts[0];
