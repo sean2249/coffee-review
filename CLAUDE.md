@@ -107,7 +107,9 @@ PWA-installable. All UI text is Traditional Chinese — keep it that way when ed
 - **PWA**: `public/manifest.json` + `public/sw.js` (navigations are network-first so an
   expired Access session can redirect to login; stale-while-revalidate for the app
   shell; same-origin `/api/*` and `/cdn-cgi/*` are passed straight through — see
-  `shouldBypass`).
+  `shouldBypass`). On localhost the page registers no service worker (and removes a
+  leftover one) so previews never serve a stale `app.js`; add `?sw=1` to test PWA behaviour
+  (it sticks for that tab; `?sw=0` turns it off).
 - **Tooling**: ESLint flat config + typescript-eslint for `src/worker/**`, Stylelint,
   `tsc -p tsconfig.worker.json` for typecheck. **Vitest with two projects**
   (`vitest.config.ts`): `app` runs the existing jsdom tests in `tests/` (environment is
@@ -310,6 +312,8 @@ This repo is public: every issue, PR, comment, commit message and committed file
 - `workers_dev: false` is load-bearing: a live `*.workers.dev` hostname would be a second
   entry point that bypasses Cloudflare Access entirely. Same for the absence of an
   unauthenticated `/api/*` endpoint — there is deliberately no `/api/health`.
+- The Google Places key is a Worker secret behind `requireAccess` + a per-user rate limit;
+  `/api/places/*` is the only path that spends money. Keep both.
 - `shops` is a **projection of Google Places**: `name` / `location` / `lat` / `lng`
   only ever come from the Places API, and the UI offers no free-text field for them
   (create = place picker, update = "從 Google 重新同步"). A DB trigger freezes
