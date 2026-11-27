@@ -114,10 +114,6 @@ describe('legacyAdjustment（舊參考分 → 調整分）', () => {
     it.each([[5, 0], [6.5, 1.5], [8, 3], [4.5, -1], [4, -1]])('%s → %s', (old, adj) => {
         expect(win.legacyAdjustment(old)).toBe(adj);
     });
-
-    it('沒有數字 → null', () => {
-        expect(win.legacyAdjustment(undefined)).toBeNull();
-    });
 });
 
 describe('recordAdjustments', () => {
@@ -149,6 +145,12 @@ describe('recordAdjustments', () => {
         expect(adj.flavor).toBe(1);
         expect(adj.acidity).toBe(0);
         expect(adj.cleanness).toBe(0);
+    });
+
+    it('舊紀錄完全沒有參考分（從沒評過）→ 8 項都是未判斷，不是 0', () => {
+        const adj = win.recordAdjustments('tasting', { schema_version: 5, evaluations: {} });
+        expect(Object.values(adj)).toEqual(Array(8).fill(null));
+        expect(Object.values(win.recordAdjustments('cupping', { schema_version: 3 }))).toEqual(Array(8).fill(null));
     });
 
     it('新舊分界依類型：沖煮 4、品鑑 6', () => {
@@ -367,6 +369,36 @@ describe.each(['cupping', 'tasting'])('%s 表單', mode => {
         expect(fwin.location.hash).toContain('#/new/');
         expect(fwin.history.length).toBe(before);
         expect(valueOf('flavor')).toBe('0.5');
+    });
+
+    it('對話框開著又按上一頁：只問一次，取消後只多一格表單', async () => {
+        await boot();
+        press('flavor', 'plus');
+        const before = fwin.history.length;
+        fwin.location.hash = '#/shops';
+        await settle();
+        fwin.location.hash = '#/plans';
+        await settle();
+        expect(fdoc.querySelectorAll('.confirm-dialog')).toHaveLength(1);
+        fdoc.querySelector('.confirm-dialog [data-confirm="cancel"]').click();
+        await settle();
+        expect(fwin.location.hash).toContain('#/new/');
+        expect(fwin.history.length).toBe(before + 3);
+        expect(fdoc.querySelector('.confirm-dialog')).toBeNull();
+        expect(valueOf('flavor')).toBe('0.5');
+    });
+
+    it('Ctrl / Cmd + 點連結不攔（交給瀏覽器開新分頁）', async () => {
+        await boot();
+        press('flavor', 'plus');
+        const link = $('.tabbar-btn[data-route="/shops"]');
+        const ev = new fwin.MouseEvent('click', { bubbles: true, cancelable: true, ctrlKey: true });
+        let prevented = null;
+        link.addEventListener('click', e => { prevented = e.defaultPrevented; e.preventDefault(); }, { once: true });
+        link.dispatchEvent(ev);
+        await settle();
+        expect(prevented).toBe(false);
+        expect(fdoc.querySelector('.confirm-dialog')).toBeNull();
     });
 
     it('沒有輸入時換頁不跳確認', async () => {

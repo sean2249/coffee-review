@@ -223,7 +223,6 @@ function scoreFromAdjustments(values) {
 
 // 舊參考分（4–8，普通 5）→ 調整分：減 5，得到 −0.5（含以下）的歸到 −1。
 function legacyAdjustment(score) {
-    if (typeof score !== 'number') return null;
     const v = score - 5;
     return v < 0 ? -1 : v;
 }
@@ -234,14 +233,17 @@ function isAdjustmentRecord(mode, r) {
 
 // 一筆沖煮 / 品鑑紀錄 8 項的調整分（顯示用；舊紀錄在這裡換算，資料庫不改寫）。
 // 舊紀錄的香氣沒有分數 → 0；「整體」不在 adjustmentFields 裡，自然不出現。
+// 舊紀錄一項參考分都沒有 = 從沒評過 → 8 項都是未判斷；只缺幾項 → 缺的當舊預設 5（= 0）。
 function recordAdjustments(mode, r) {
     const legacy = !isAdjustmentRecord(mode, r);
+    const scoreOf = key => r?.evaluations?.[key]?.score;
+    const legacyRated = legacy && referenceFields.some(f => typeof scoreOf(f.key) === 'number');
     const out = {};
     for (const f of adjustmentFields) {
-        const score = r?.evaluations?.[f.key]?.score;
-        // 舊表單每項都有預設 5：缺的當成 5，換算後是 0。
-        if (legacy) out[f.key] = f.key === 'aroma' ? 0 : legacyAdjustment(typeof score === 'number' ? score : 5);
-        else out[f.key] = typeof score === 'number' ? score : null;
+        const score = scoreOf(f.key);
+        if (!legacy) out[f.key] = typeof score === 'number' ? score : null;
+        else if (!legacyRated) out[f.key] = null;
+        else out[f.key] = f.key === 'aroma' ? 0 : legacyAdjustment(typeof score === 'number' ? score : 5);
     }
     return out;
 }
@@ -3284,30 +3286,42 @@ function confirmFormLeave() {
     });
 }
 
-// App 內的連結（tabbar、返回…）在換 hash 之前就攔下來問，瀏覽紀錄完全不動。
+let leavePromptOpen = false;
+
+// 問一次，true = 離開。對話框開著時又按了上一頁，網址已經不是表單：取消就 push 一格
+// 回表單（Back 之後 = […, 列表, 表單]，再按 Back 回得去）。前進、手打網址後取消會
+// 多留一格，要逐格記序號才分得出方向，不值得。
+async function askFormLeave(guard) {
+    leavePromptOpen = true;
+    const ok = await confirmFormLeave();
+    leavePromptOpen = false;
+    if (formLeaveGuard !== guard) return false;
+    if (!ok && location.hash !== guard.hash) history.pushState(history.state, '', guard.hash);
+    return ok;
+}
+
+// App 內的路由連結（tabbar…）在換 hash 之前就攔下來問，瀏覽紀錄完全不動。
+// 修飾鍵 / 非左鍵是開新分頁，照瀏覽器的來。
 async function onLeaveLinkClick(e) {
-    const link = e.target.closest?.('a[href^="#"]');
+    if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    const link = e.target.closest?.('a[href^="#/"]');
     if (!link || !formHasUnsavedInput()) return;
     const target = link.getAttribute('href');
     if (target === location.hash) return;
     e.preventDefault();
     const guard = formLeaveGuard;
-    if (!(await confirmFormLeave()) || formLeaveGuard !== guard) return;
+    if (!(await askFormLeave(guard))) return;
     formLeaveGuard = null;
     location.hash = target;
 }
 
-// 上一頁、手打網址：hash 已經換了才知道。問的時候網址先停在新的那一格；
-// 取消就 push 一格回表單（Back 之後的瀏覽紀錄 = […, 列表, 表單]，再按 Back 回得去）。
+// 上一頁、手打網址：hash 已經換了才知道。對話框開著時再換的 hash 不另外問，
+// 等那一個對話框決定（離開就畫最後停的那一頁）。
 async function onHashChange() {
+    if (leavePromptOpen) return;
     const guard = formLeaveGuard;
     if (guard && location.hash !== guard.hash && formHasUnsavedInput()) {
-        const ok = await confirmFormLeave();
-        if (formLeaveGuard !== guard) return;
-        if (!ok) {
-            history.pushState(history.state, '', guard.hash);
-            return;
-        }
+        if (!(await askFormLeave(guard))) return;
     }
     formLeaveGuard = null;
     renderRoute();
