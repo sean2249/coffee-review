@@ -39,11 +39,13 @@ function portFromLaunch() {
         return derivedPort;
     }
     const args = Array.isArray(config.runtimeArgs) ? config.runtimeArgs : [];
-    const argPort = Number(args[args.indexOf('--port') + 1]);
+    const at = args.indexOf('--port');
+    const argRaw = at < 0 ? undefined : args[at + 1];
+    const argPort = Number(argRaw);
     const port = isPort(argPort) ? argPort : (isPort(config.port) ? config.port : derivedPort);
     if (config.port !== port || argPort !== port) {
-        console.warn(`.claude/launch.json 的「${CONFIG_NAME}」：port 欄位（${config.port}）和 runtimeArgs 的`
-            + ` --port（${args[args.indexOf('--port') + 1]}）要是同一個數字；這次用 ${port}。`);
+        console.warn(`.claude/launch.json 的「${CONFIG_NAME}」：port 欄位（${config.port ?? '沒有'}）和`
+            + ` runtimeArgs 的 --port（${argRaw ?? '沒有'}）要是同一個數字；這次用 ${port}。`);
     }
     return port;
 }
@@ -69,13 +71,16 @@ if (!fs.existsSync(launchPath)) {
 
 console.log(`這個 worktree 的 port：${port} → http://localhost:${port}`);
 
-// 只有 1000 個 port 可分，兩個 worktree 可能撞到同一個；先探一下（不指定 host = IPv4 + IPv6）。
-const busy = await new Promise(resolve => {
+// 只有 1000 個 port 可分，兩個 worktree 可能撞到同一個；先探一下。IPv4、IPv6 的 loopback
+// 分開探：macOS 上萬用位址（::）綁得上，不代表別人沒佔著 127.0.0.1 或 ::1，而且只綁
+// loopback 不會跳防火牆詢問。機器沒有 IPv6（EADDRNOTAVAIL 等）就只看 IPv4。
+const inUse = host => new Promise(resolve => {
     const probe = net.createServer()
-        .once('error', () => resolve(true))
+        .once('error', err => resolve(err.code === 'EADDRINUSE'))
         .once('listening', () => probe.close(() => resolve(false)))
-        .listen(port);
+        .listen(port, host);
 });
+const busy = await inUse('127.0.0.1') || await inUse('::1');
 if (busy) {
     console.warn(`port ${port} 已被佔用：可能這個 worktree 已經在跑，或另一個 worktree 算到同一個 port。`
         + `後者請把 .claude/launch.json「${CONFIG_NAME}」的 port 欄位和 runtimeArgs 的 --port 一起改。`);
