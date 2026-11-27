@@ -4,10 +4,10 @@ import { loadApp } from './load-app.js';
 // 個人數據頁（#/stats，issue #129）。鎖住計數規則：記錄數算杯測「場次」、
 // 杯數另計；平均分與店家以每一杯為單位；未評分不拉低平均；店家只算自己記錄過的。
 
-// 導覽的兩顆就夠驗「#/stats 亮數據」。
+// 導覽的兩顆就夠驗「#/stats 亮設定」（#172 / #164：數據是設定底下的子頁）。
 const BODY = `<main id="app"></main><nav>
     <a class="tabbar-btn" data-route="/records" href="#/records"></a>
-    <a class="tabbar-btn" data-route="/stats" href="#/stats"></a>
+    <a class="tabbar-btn" data-route="/me" href="#/me"></a>
 </nav>`;
 
 let win, doc;
@@ -126,9 +126,7 @@ describe('#/stats route', () => {
         expect(html).toContain('我的數據');
         expect(html).toContain('86.0');
         const active = doc.querySelector('.tabbar-btn[aria-current="page"]');
-        expect(active?.dataset.route).toBe('/stats');
-        // 數據是主要入口，不再有「返回個人」。
-        expect(doc.querySelector('#app a[href="#/me"]')).toBeNull();
+        expect(active?.dataset.route).toBe('/me');
     });
 
     it('shows an error with a reload button when the fetch fails', async () => {

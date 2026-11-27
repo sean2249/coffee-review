@@ -19,10 +19,10 @@ describe('accountMarkup', () => {
         expect(html).toContain('a@b.com');
     });
 
-    // #92：我的數據、沖煮計劃已是主導覽的入口，個人頁只剩帳號。
-    it('no longer links to 我的數據 or 沖煮計劃', () => {
+    // #172 / #164：數據併入設定，從設定頁的清單點進去；沖煮計劃仍是主導覽入口。
+    it('links to 我的數據 but not 沖煮計劃', () => {
         const html = win.accountMarkup({ user: { id: 'u1', email: 'a@b.com' } });
-        expect(html).not.toContain('href="#/stats"');
+        expect(html).toMatch(/<a[^>]*href="#\/stats"[^>]*>[\s\S]*?我的數據/);
         expect(html).not.toContain('href="#/plans"');
     });
 
@@ -39,5 +39,42 @@ describe('#/me route', () => {
         const html = win.document.getElementById('app').innerHTML;
         expect(html).toContain('account-card');
         expect(html).not.toContain('請先登入');
+    });
+});
+
+// #172：個人 → 設定，加上「加入主畫面」區塊（只在已登入時出現）。
+describe('accountMarkup — 設定 / 加入主畫面', () => {
+    const user = { id: 'u1', email: 'a@b.com' };
+
+    it('titles the page 設定', () => {
+        expect(win.accountMarkup({ user })).toContain('設定');
+        expect(win.accountMarkup({ user: null })).toContain('設定');
+        expect(win.accountMarkup({ user: null })).not.toContain('個人');
+    });
+
+    it('shows 已安裝 and no install button when installed', () => {
+        const html = win.accountMarkup({ user, install: 'installed' });
+        expect(html).toContain('已安裝');
+        expect(html).not.toContain('id="account-install-btn"');
+    });
+
+    it('shows a 安裝 button when the browser can prompt', () => {
+        const html = win.accountMarkup({ user, install: 'prompt' });
+        expect(html).toMatch(/<button[^>]*type="button"[^>]*id="account-install-btn"[^>]*>[\s\S]*安裝/);
+    });
+
+    it('explains 分享 → 加入主畫面 on iOS', () => {
+        const html = win.accountMarkup({ user, install: 'ios' });
+        expect(html).toContain('分享');
+        expect(html).toContain('加入主畫面');
+        expect(html).not.toContain('id="account-install-btn"');
+        // 文字已經寫「分享按鈕」，圖示只是裝飾，螢幕閱讀器不必再念一次。
+        expect(html).toMatch(/<i class="bi bi-box-arrow-up" aria-hidden="true"><\/i>/);
+    });
+
+    it('has no install section when there is nothing to offer', () => {
+        const html = win.accountMarkup({ user, install: null });
+        expect(html).not.toContain('加入主畫面');
+        expect(html).not.toContain('已安裝');
     });
 });

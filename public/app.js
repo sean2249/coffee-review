@@ -677,14 +677,95 @@ async function initAuth() {
     }
 }
 
-// ─── View: 個人 ──────────────────────────────────────────────────────────────
+// ─── 加入主畫面（#172）──────────────────────────────────────────────────────
+// 只在設定頁顯示，絕不主動提醒。iPadOS 的 Safari 回報桌面 Mac 的 UA，靠觸控點數分辨。
+function installStatus({ standalone, installed, hasPrompt, userAgent, maxTouchPoints }) {
+    if (standalone || installed) return 'installed';
+    if (hasPrompt) return 'prompt';
+    const ua = userAgent || '';
+    if (/iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && maxTouchPoints > 1)) return 'ios';
+    return null;
+}
+
+// 攔下的 beforeinstallprompt；prompt() 只能用一次，用完就丟。
+let deferredInstallPrompt = null;
+let appInstalledThisVisit = false;
+
+function currentInstallStatus() {
+    return installStatus({
+        standalone: window.matchMedia?.('(display-mode: standalone)').matches
+            || window.navigator.standalone === true,
+        installed: appInstalledThisVisit,
+        hasPrompt: !!deferredInstallPrompt,
+        userAgent: window.navigator.userAgent,
+        maxTouchPoints: window.navigator.maxTouchPoints || 0,
+    });
+}
+
+// 設定頁開著才重繪；其他頁面一律不動。看路由而不是 .account-card：登入擋板也用那個 class。
+function rerenderSettingsIfOpen() {
+    if (parseHash().parts[0] !== 'me') return;
+    const root = document.getElementById('app');
+    if (root) viewAccount(root);
+}
+
+async function promptInstall() {
+    const evt = deferredInstallPrompt;
+    if (!evt) return;
+    deferredInstallPrompt = null;
+    try {
+        await evt.prompt();
+        const { outcome } = await evt.userChoice;
+        if (outcome === 'accepted') appInstalledThisVisit = true;
+    } catch (e) {
+        console.error('安裝提示失敗：', e);
+    } finally {
+        rerenderSettingsIfOpen();
+    }
+}
+
+// 在啟動時就掛上：事件可能在使用者打開設定頁之前觸發。
+// preventDefault() 壓掉瀏覽器自己的安裝提示，安裝只從設定頁進入。
+window.addEventListener('beforeinstallprompt', e => {
+    e.preventDefault();
+    deferredInstallPrompt = e;
+    rerenderSettingsIfOpen();
+});
+window.addEventListener('appinstalled', () => {
+    deferredInstallPrompt = null;
+    appInstalledThisVisit = true;
+    rerenderSettingsIfOpen();
+});
+
+// 設定頁清單裡的一列；沒有可提供的（Firefox、桌面 Safari）就整列不出現。
+function installRowMarkup(install) {
+    if (!install) return '';
+    let detail = '';
+    if (install === 'installed') {
+        detail = '<span class="account-row-end"><i class="bi bi-check-circle me-1"></i>已安裝</span>';
+    } else if (install === 'prompt') {
+        detail = `<button type="button" class="btn btn-sm btn-outline-primary account-row-end" id="account-install-btn">
+            <i class="bi bi-download me-1"></i>安裝
+        </button>`;
+    }
+    const iosHint = install === 'ios'
+        ? `<p class="account-row-hint">點瀏覽器的分享按鈕
+            <i class="bi bi-box-arrow-up" aria-hidden="true"></i>，再選「加入主畫面」。</p>`
+        : '';
+    return `<div class="list-group-item account-row">
+        <div class="account-row-main"><i class="bi bi-phone"></i>加入主畫面${detail}</div>
+        ${iosHint}
+    </div>`;
+}
+
+// ─── View: 設定 ──────────────────────────────────────────────────────────────
 // Cloudflare Access 的 application token 只帶 email，沒有姓名與頭像
 // （那些要另外打 get-identity，為了一張頭像不值得多一次 subrequest）。
-function accountMarkup({ user }) {
+function accountMarkup({ user, install = null }) {
     if (!user) {
         return `<div class="card account-card"><div class="card-body text-center">
             <i class="bi bi-person-circle account-avatar-placeholder"></i>
-            <h3 class="card-title">個人</h3>
+            <h3 class="card-title">設定</h3>
             <p class="text-muted">尚未取得登入身分，重新載入即可。</p>
             <button class="btn btn-primary" id="account-signin">
                 <i class="bi bi-arrow-clockwise me-2"></i>重新載入
@@ -694,17 +775,27 @@ function accountMarkup({ user }) {
     const email = user.email || '';
     return `<div class="card account-card"><div class="card-body text-center">
         <i class="bi bi-person-circle account-avatar-placeholder"></i>
-        ${email ? `<p class="text-muted account-email">${escapeHtml(email)}</p>` : ''}
-        <button class="btn btn-outline-secondary" id="account-signout">
-            <i class="bi bi-box-arrow-right me-2"></i>登出
+        <h3 class="card-title">設定</h3>
+        ${email ? `<p class="text-muted account-email mb-0">${escapeHtml(email)}</p>` : ''}
+    </div></div>
+    <div class="list-group account-list">
+        <a class="list-group-item list-group-item-action account-row" href="#/stats">
+            <div class="account-row-main"><i class="bi bi-bar-chart-line"></i>我的數據<i class="bi bi-chevron-right account-row-end"></i></div>
+        </a>
+        ${installRowMarkup(install)}
+    </div>
+    <div class="list-group account-list">
+        <button type="button" class="list-group-item list-group-item-action account-row" id="account-signout">
+            <div class="account-row-main"><i class="bi bi-box-arrow-right"></i>登出</div>
         </button>
-    </div></div>`;
+    </div>`;
 }
 
 function viewAccount(root) {
-    root.innerHTML = accountMarkup({ user: state.user });
+    root.innerHTML = accountMarkup({ user: state.user, install: currentInstallStatus() });
     document.getElementById('account-signin')?.addEventListener('click', retrySignIn);
     document.getElementById('account-signout')?.addEventListener('click', signOutUser);
+    document.getElementById('account-install-btn')?.addEventListener('click', promptInstall);
 }
 
 // ─── View: 我的數據 (#/stats) ────────────────────────────────────────────────
@@ -1741,7 +1832,8 @@ function updateTabbarActive() {
     const { parts } = parseHash();
     const links = [...document.querySelectorAll('.tabbar-btn')];
     // 路由第一段就是導覽的 data-route；沒有對應入口的（沖煮、品鑑、杯測的單筆頁）都算在「記錄」底下。
-    const first = `/${parts[0] || 'records'}`;
+    // 我的數據是設定底下的子頁（#172 / #164）。
+    const first = parts[0] === 'stats' ? '/me' : `/${parts[0] || 'records'}`;
     const activeRoute = links.some(a => a.dataset.route === first) ? first : '/records';
     links.forEach(a => {
         const isActive = a.dataset.route === activeRoute;
@@ -2236,7 +2328,6 @@ async function viewRecordsList(root, query = {}) {
             <button type="button" class="btn btn-sm btn-outline-secondary filter-adv-btn" id="filter-adv-btn">
                 <i class="bi bi-sliders"></i>進階篩選<span class="filter-adv-badge" id="filter-adv-badge" hidden></span>
             </button>
-            <a class="records-account-link" href="#/me" aria-label="個人"><i class="bi bi-person-circle"></i></a>
         </div>
         <div class="list-order-bar">
             <select class="form-select form-select-sm" id="list-sort" aria-label="排序">
