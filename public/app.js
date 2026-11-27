@@ -3312,7 +3312,8 @@ async function onLeaveLinkClick(e) {
     const guard = formLeaveGuard;
     if (!(await askFormLeave(guard))) return;
     formLeaveGuard = null;
-    location.hash = target;
+    // navigate：對話框開著時若已按上一頁到同一個 hash，就不會有 hashchange，得自己畫。
+    navigate(target.slice(1));
 }
 
 // 上一頁、手打網址：hash 已經換了才知道。對話框開著時再換的 hash 不另外問，

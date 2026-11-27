@@ -388,6 +388,19 @@ describe.each(['cupping', 'tasting'])('%s 表單', mode => {
         expect(valueOf('flavor')).toBe('0.5');
     });
 
+    it('點 tabbar 跳出確認後又按上一頁到同一頁，再按離開：畫出那一頁', async () => {
+        await boot();
+        press('flavor', 'plus');
+        $('.tabbar-btn[data-route="/records"] i').click();
+        await settle();
+        fwin.location.hash = '#/records';
+        await settle();
+        fdoc.querySelector('.confirm-dialog [data-confirm="ok"]').click();
+        await settle();
+        expect(fwin.location.hash).toBe('#/records');
+        expect($('.adjust-list')).toBeNull();
+    });
+
     it('Ctrl / Cmd + 點連結不攔（交給瀏覽器開新分頁）', async () => {
         await boot();
         press('flavor', 'plus');
