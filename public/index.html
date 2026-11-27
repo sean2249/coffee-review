@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>咖啡記錄 (CoE)</title>
+    <title>咖啡記錄</title>
 
     <link rel="manifest" href="manifest.json" crossorigin="use-credentials">
     <meta name="theme-color" content="#0e4d4d">
@@ -275,38 +275,35 @@
                 </div>
             </div>
 
-            <!-- CoE total (shared) -->
-            <div class="card coe-card">
-                <div class="card-body">
-                    <h3 class="card-title"><i class="bi bi-award-fill"></i>CoE 總分</h3>
-                    <div id="medalRow" class="medal-row" role="group" aria-label="徽章等級"></div>
-                    <div id="scoreChipRow" class="score-chip-row" role="group" aria-label="分數選擇"></div>
-                    <div class="coe-total-block">
-                        <span class="coe-total-display" id="coeTotalDisplay">82.0</span>
-                        <span class="coe-total-of">/ 100</span>
-                        <span class="coe-total-tier-badge" id="coeTotalTierBadge">[ 銅獎 ]</span>
-                        <span class="coe-total-desc" id="coeTotalDesc">合格精品，日常品飲的選擇</span>
+            <!-- 評分（#169）：8 項調整分，分數 = 80 + Σ。手機上分數列黏在列表上方；
+                 電腦版左邊 8 項、右邊分數面板（含儲存鈕）。 -->
+            <div class="adjust-layout">
+                <aside class="score-panel">
+                    <div class="score-bar" id="scoreBar" role="status" aria-live="polite"></div>
+                    <button type="submit" class="btn btn-info score-panel-save">
+                        <i class="bi bi-cloud-arrow-up me-1"></i>儲存
+                    </button>
+                </aside>
+                <div class="card adjust-card">
+                    <div class="card-body">
+                        <h3 class="card-title"><i class="bi bi-bookmark-star-fill"></i>評分</h3>
+                        <p class="adjust-intro">每一項先問自己：比普通好，還是差？普通點數字（0），好就按 ＋，差就按 −。8 項都判斷完，分數 = 80 + 加總。</p>
+                        <div class="adjust-list" id="adjustList"></div>
+                        <p class="adjust-credit">計分方式參考 CFGC:2026.01（台灣咖啡研究室，CC BY-SA 4.0）</p>
                     </div>
                 </div>
             </div>
 
-            <!-- Sensory accordion (shared) -->
+            <!-- 負面風味：只記錄、不扣分（「瑕疵」只用在杯測） -->
             <div class="card">
                 <div class="card-body">
-                    <h3 class="card-title"><i class="bi bi-bookmark-star-fill"></i>感官評估</h3>
-                    <div class="evaluation-estimated-total">
-                        <span class="evaluation-estimated-label">預估總分</span>
-                        <span class="evaluation-estimated-value" id="evalEstimatedValue">76.0</span>
-                        <span class="evaluation-estimated-of">/ 100</span>
-                        <span class="evaluation-estimated-tier" id="evalEstimatedTier"></span>
-                        <span class="evaluation-estimated-hint">參考用，依下方 8 項分數估算（36 + 加總）</span>
-                    </div>
-                    <div class="accordion accordion-flush" id="evaluationAccordion"></div>
+                    <h3 class="card-title"><i class="bi bi-exclamation-diamond"></i>負面風味</h3>
+                    <div id="negativeFlavorSection"></div>
                 </div>
             </div>
 
             <!-- Action buttons -->
-            <div class="action-bar">
+            <div class="action-bar record-action-bar">
                 <button type="button" class="btn btn-outline-danger" id="f-delete" hidden>
                     <i class="bi bi-trash me-1"></i>刪除
                 </button>
@@ -320,7 +317,7 @@
     <!-- ─── Form template — 杯測場次（三階段：① 設定 → ② 評分 → ③ 揭曉，只往前走） ───
          data-session-stage 列出該區塊出現在哪些階段（setSessionStage 切 hidden）。
          同一時間只放一杯的評分元件（#cup-editor）；③ 會把它整個搬到點開的那張杯卡下面。
-         CoE 卡與感官評估卡沿用 #tpl-form 的 id（同時只會掛一張表單）；
+         分數卡與感官評估卡的 id（#evaluationAccordion、#medalRow…）只有這張表單在用；
          除了 #f-save 以外的 button 一律 type="button"，否則點了就會送出整場。 -->
     <template id="tpl-session-form">
         <form class="record-form session-form" novalidate>
@@ -477,10 +474,10 @@
                             <span id="cup-score-summary"></span>
                         </button>
                         <div id="cup-score-body">
-                            <!-- CoE total（這一杯）：沒點過分數 = 未評分 -->
+                            <!-- 分數（這一杯）：沒點過分數 = 未評分 -->
                             <div class="card coe-card">
                                 <div class="card-body">
-                                    <h3 class="card-title"><i class="bi bi-award-fill"></i>CoE 總分</h3>
+                                    <h3 class="card-title"><i class="bi bi-award-fill"></i>分數</h3>
                                     <div id="medalRow" class="medal-row" role="group" aria-label="徽章等級"></div>
                                     <div id="scoreChipRow" class="score-chip-row" role="group" aria-label="分數選擇"></div>
                                     <div class="coe-total-block">

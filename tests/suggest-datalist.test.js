@@ -129,6 +129,7 @@ describe('沖煮 / 品鑑表單', () => {
 
         doc.querySelector('.bean-type-chip-row[data-bean-type-group="cupping"] .bean-type-chip').click();
         doc.getElementById('f-cupping-bean').value = '新的豆';
+        doc.querySelectorAll('.adjust-item [data-adjust="zero"]').forEach(b => b.click()); // 8 項都要判斷（#169）
         doc.getElementById('f-save').click();
         await settle();
         expect(api.calls.some(c => c.method === 'POST')).toBe(true);

@@ -128,7 +128,7 @@ PWA-installable. All UI text is Traditional Chinese — keep it that way when ed
 ```
 public/            everything the browser loads (this is the assets directory)
   index.html       markup + <template> blocks for form/modal; mounts to <main id="app">
-  app.js           router, views, api layer (fetch), CoE widget, flavor wheel
+  app.js           router, views, api layer (fetch), scoring widgets, flavor wheel
   styles.css       design tokens (:root) + section-banner-commented blocks
   sw.js            service worker (cache name bumped by VERSION constant)
   manifest.json    PWA manifest
@@ -178,7 +178,8 @@ first paint would be the sign-in prompt.
 `flattenSessionCups` into `session_cup` rows, because the bean-source shop lives on each cup.
 
 **杯測場次 form** (`#tpl-session-form`, `viewSessionForm`) is separate from `#tpl-form`. It
-reuses the same CoE card / accordion ids, but only **one cup's widgets are in the DOM at a
+is now the only user of the tier/score picker + `#evaluationAccordion` (`#tpl-form` uses the
+adjustment widget, `initAdjustmentWidget`), and only **one cup's widgets are in the DOM at a
 time**. The other cups live in `state.currentForm.cups`; call `syncActiveCup()` before
 reading `cups` (switch / save / overview). `writeCupToForm` must *reset* every
 widget (`applyEvaluationsToForm` resets missing keys to defaults). Every cup holds exactly
@@ -234,14 +235,26 @@ doesn't mislabel transient fetch failures as "已刪除店家". CoE selection li
 `coeState`; flavor-wheel selections in `wheelState` (keyed by container id —
 `wheelState.clear()` on each route transition).
 
-**CoE scoring model** (critical to preserve):
-- `coe_total` is the **user-entered** total (74–96), not a sum. Two-stage picker: medal
-  tier (`totalScoreTiers` at app.js:25) → score chip.
-- The 8 reference fields (`referenceFields` at app.js:162) score 4–8 with 0.5 step, default
-  5. They're **stored but don't compute** the total.
-- `observationFields` (`aroma`) is observation-only, no score.
-- Persisted shape: `coe_total`, `coe_tier_id`, `evaluations: jsonb`, `observation: jsonb`,
-  `schema_version: 1`. `evaluations[key] = { score, notes, flavors?, <custom keys>? }`.
+**Scoring model — 沖煮 / 品鑑** (#169, critical to preserve; terms in `GLOSSARY.md`「評分」):
+- 8 `adjustmentFields` (香氣、風味、尾韻、酸 / 鹹、甜 / 苦、口感、平衡 / 和諧、清晰度), each an
+  **調整分** starting at null (未判斷): −1, 0, 0.5, 1 … (0.5 steps, no cap, **no −0.5**) —
+  rules in `stepAdjustment`. 分數 = `80 + Σ` (`scoreFromAdjustments`), stored in
+  `coe_total`; `coe_tier_id = tierFromScore(coe_total).id`. Saving is blocked until all 8
+  are judged, so new 沖煮 / 品鑑 records always have a score. No picker, no 預估總分.
+- New records: `evaluations[key] = { score, notes, flavors? }` (flavors only on aroma /
+  flavor), `observation: {}`, `schema_version` ≥ `ADJUSTMENT_SCHEMA` (cupping 4, tasting 6).
+- **Old records keep their entered `coe_total`** (stats mix old and new on purpose). Their
+  4–8 reference scores are converted **at display time** by `recordAdjustments`
+  (old − 5, anything below 0 → −1, aroma 0, `overall` dropped); the DB is never rewritten.
+- On-screen wording: 分數 (never "CoE"); 「負面風味」 for 沖煮 / 品鑑 `defects`, 「瑕疵」 only
+  in 杯測. Field / code names (`coe_total`, `coeState`, …) stay.
+- Leaving a 沖煮 / 品鑑 form with input asks 「尚未儲存，確定離開？」 (`onHashChange` +
+  `beforeunload`); no drafts (#137).
+
+**Scoring model — 杯測場次 (unchanged by #169)**: `coe_total` is still picked directly with
+the two-stage tier → score-chip picker (`coeState`, `selectTier` / `selectScore`); the 8
+`referenceFields` (4–8, default 5) are stored but don't compute it; `observationFields`
+(`aroma`) is observation-only; `renderEstimatedTotalBlock` shows the 36 + Σ estimate.
 
 **Flavor wheel**: up to 3 levels in `flavors` (app.js:177). The persisted ids in
 `evaluations[key].flavors` / `observation.aroma.flavors` track the selection path and
@@ -339,9 +352,9 @@ This repo is public: every issue, PR, comment, commit message and committed file
   expands when the shop has no note yet and collapses when it does; the form only
   upserts it when `formShopNoteIsDirty()`); payload assembly is `buildShopNotePayload` /
   `applyShopNoteToEditor`.
-- Adding evaluation fields? Update `referenceFields` / `observationFields` and verify the
-  card list / detail card still renders sensibly with old records (treat missing keys as
-  default).
+- Adding evaluation fields? 沖煮 / 品鑑 use `adjustmentFields` (bump `ADJUSTMENT_SCHEMA`
+  if a key's meaning changes); 杯測 uses `referenceFields` / `observationFields`. Verify the
+  detail page still renders old records (treat missing keys as 未判斷 / default).
 - Adding an endpoint? It must sit behind `requireAccess` + `withUser`, and any query on
   an owned table must carry `and user_id = ?`. Add the two-user isolation test.
 - Anything that changes app-shell URLs → bump `public/sw.js` VERSION.
@@ -364,10 +377,9 @@ This repo is public: every issue, PR, comment, commit message and committed file
   `google_place_id`. Don't add a manual name input "for convenience".
 - Shop-to-record FKs are `ON DELETE RESTRICT` on purpose — shops and records are
   independent tables, so deleting a shop must never touch anyone's records.
-- The CoE total (`coe_total`) is **input, not computed** — don't "fix" it by summing
-  reference scores. (Separately, the **預估總分 / estimated total** *is* a deliberate
-  computed display — `36 + 8 reference scores`, `computeEstimatedTotalFromRecord` — shown
-  alongside `coe_total`, not a replacement for it.)
+- 沖煮 / 品鑑 `coe_total` is **computed from the 8 adjustment scores** (80 + Σ) for new
+  records and **kept as entered** for old ones — don't recompute old records from their
+  reference scores. 杯測 cups still enter `coe_total` directly.
 - UI strings are zh-TW; don't translate to English.
 - `purpose.md` and `口感.md` are background design notes, not living docs — don't rewrite
   them as part of unrelated changes.

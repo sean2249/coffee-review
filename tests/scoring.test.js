@@ -10,7 +10,7 @@ beforeAll(async () => {
 // totalScoreTiers (app.js:25) — half-open ranges keyed by min/max in 0.5 steps:
 //   trash      74    – 76.5
 //   commercial 77    – 79.5
-//   common     80    – 82.5   <-- silent fallback for out-of-range input
+//   common     80    – 82.5   <-- fallback for NaN only
 //   like       83    – 85.5
 //   recommend  86    – 88.5
 //   amazing    89    – 91.5
@@ -36,20 +36,20 @@ describe('tierFromScore', () => {
         expect(win.tierFromScore(96).id).toBe('godly');
     });
 
-    // The 0.5 step leaves gaps like (76.5, 77) and (79.5, 80). Document the
-    // current behaviour: any score that falls in a gap silently maps to
-    // common. A future tightening (e.g. snap-to-nearest-half) should update
-    // these expectations deliberately rather than by accident.
-    it('falls back to common for a score inside a gap (76.6)', () => {
-        expect(win.tierFromScore(76.6).id).toBe('common');
+    // 新尺度（#169）最低 72、沒有上限：範圍外的分數歸到最低 / 最高級，
+    // 落在兩級之間的空隙（只有舊資料才可能）歸到下面那一級。
+    it('maps a score inside a gap (76.6) to the tier below', () => {
+        expect(win.tierFromScore(76.6).id).toBe('trash');
     });
 
-    it('falls back to common for out-of-range low scores (73)', () => {
-        expect(win.tierFromScore(73).id).toBe('common');
+    it('maps out-of-range low scores to the lowest tier (72, 73)', () => {
+        expect(win.tierFromScore(72).id).toBe('trash');
+        expect(win.tierFromScore(73).id).toBe('trash');
     });
 
-    it('falls back to common for out-of-range high scores (96.5)', () => {
-        expect(win.tierFromScore(96.5).id).toBe('common');
+    it('maps out-of-range high scores to the highest tier (96.5, 100)', () => {
+        expect(win.tierFromScore(96.5).id).toBe('godly');
+        expect(win.tierFromScore(100).id).toBe('godly');
     });
 
     it('falls back to common for NaN input', () => {

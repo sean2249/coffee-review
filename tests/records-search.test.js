@@ -29,7 +29,7 @@ describe('searchHit — 每個欄位各自命中', () => {
         ['乾香', { observation: { aroma: { dryAroma: 'Zeta 堅果' } } }],
         ['濕香', { observation: { aroma: { wetAroma: 'Zeta 焦糖' } } }],
         ['備註', { notes: '尾段 Zeta' }],
-        ['瑕疵', { defects: 'Zeta 澀' }],
+        ['負面風味', { defects: 'Zeta 澀' }],
     ])('%s', (label, extra) => {
         const hit = win.searchHit({ ...base, ...extra }, 'zeta');
         expect(hit.label).toBe(label);
