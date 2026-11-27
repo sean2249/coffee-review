@@ -71,6 +71,10 @@
     --adj-low: #4c9a5b;
     --adj-high: #22663a;
     --adj-top: #6a3fb0;
+    /* 分數列：深底等級用白字白環、淺底（銀、金）用深字深環 */
+    --on-tier-dark: #ffffff;
+    --on-tier-dark-track: rgba(255, 255, 255, 0.35);
+    --on-tier-light-track: rgba(17, 20, 24, 0.18);
 }
 
 /* ───── Base ───────────────────────────────────────────────────────────── */
@@ -2847,8 +2851,8 @@ a.brew-plan-ref .brew-plan-summary-name { color: var(--accent); flex: 1; }
 
 .score-bar {
     --tier-color: var(--bg-muted);
-    --ring-color: #ffffff;
-    --ring-track: rgba(255, 255, 255, 0.35);
+    --ring-color: var(--on-tier-dark);
+    --ring-track: var(--on-tier-dark-track);
     display: flex;
     align-items: center;
     gap: 0.6rem;
@@ -2856,7 +2860,7 @@ a.brew-plan-ref .brew-plan-summary-name { color: var(--accent); flex: 1; }
     padding: 0 1rem 0 0.45rem;
     border-radius: 999px;
     background: var(--tier-color);
-    color: #ffffff;
+    color: var(--on-tier-dark);
     box-shadow: var(--shadow-md);
     min-width: 0;
 }
@@ -2866,7 +2870,7 @@ a.brew-plan-ref .brew-plan-summary-name { color: var(--accent); flex: 1; }
     --ring-color: var(--text-muted);
     --ring-track: var(--border-strong);
 }
-.score-bar.on-light { color: var(--text-primary); --ring-color: var(--text-primary); --ring-track: rgba(17, 20, 24, 0.18); }
+.score-bar.on-light { color: var(--text-primary); --ring-color: var(--text-primary); --ring-track: var(--on-tier-light-track); }
 .score-ring {
     flex: 0 0 auto;
     display: grid;

@@ -239,7 +239,8 @@ function recordAdjustments(mode, r) {
     const out = {};
     for (const f of adjustmentFields) {
         const score = r?.evaluations?.[f.key]?.score;
-        if (legacy) out[f.key] = f.key === 'aroma' ? 0 : legacyAdjustment(score);
+        // 舊表單每項都有預設 5：缺的當成 5，換算後是 0。
+        if (legacy) out[f.key] = f.key === 'aroma' ? 0 : legacyAdjustment(typeof score === 'number' ? score : 5);
         else out[f.key] = typeof score === 'number' ? score : null;
     }
     return out;
@@ -1911,8 +1912,9 @@ function searchHitInRecord(r, kw) {
         || text('產地', r.origin) || text('處理法', r.process)
         || text('配方', r.blend_composition) || text('烘焙度', r.roast);
     if (hit) return hit;
-    for (const entry of Object.values(r.evaluations || {})) {
-        const m = flavorName('風味', entry?.flavors);
+    // 新制紀錄的香氣在 evaluations.aroma（#169），標成香氣；其他評分項目都是風味。
+    for (const [key, entry] of Object.entries(r.evaluations || {})) {
+        const m = flavorName(key === 'aroma' ? '香氣' : '風味', entry?.flavors);
         if (m) return m;
     }
     const aroma = r.observation?.aroma;
@@ -2909,7 +2911,7 @@ function renderDetailDefectsNotes(r, label = '瑕疵與備註') {
         <div class="detail-eval-section">
             <h4 class="detail-eval-section-title">
                 <span class="eval-icon"><i class="bi bi-exclamation-diamond"></i></span>
-                <span class="detail-eval-section-label">${label}</span>
+                <span class="detail-eval-section-label">${escapeHtml(label)}</span>
             </h4>
             ${renderChipRow(defectsTags)}
             ${r.defects ? `<div class="detail-eval-row"><span class="detail-eval-key">補充</span><span class="detail-eval-val">${escapeHtml(r.defects)}</span></div>` : ''}
@@ -3273,19 +3275,39 @@ function formHasUnsavedInput() {
     return formPayloadSnapshot(g.form.mode) !== g.baseline || formShopNoteIsDirty();
 }
 
+function confirmFormLeave() {
+    return confirmDialog({
+        title: '離開表單',
+        message: '尚未儲存，確定離開？',
+        confirmText: '離開',
+        danger: true,
+    });
+}
+
+// App 內的連結（tabbar、返回…）在換 hash 之前就攔下來問，瀏覽紀錄完全不動。
+async function onLeaveLinkClick(e) {
+    const link = e.target.closest?.('a[href^="#"]');
+    if (!link || !formHasUnsavedInput()) return;
+    const target = link.getAttribute('href');
+    if (target === location.hash) return;
+    e.preventDefault();
+    const guard = formLeaveGuard;
+    if (!(await confirmFormLeave()) || formLeaveGuard !== guard) return;
+    formLeaveGuard = null;
+    location.hash = target;
+}
+
+// 上一頁、手打網址：hash 已經換了才知道。問的時候網址先停在新的那一格；
+// 取消就 push 一格回表單（Back 之後的瀏覽紀錄 = […, 列表, 表單]，再按 Back 回得去）。
 async function onHashChange() {
     const guard = formLeaveGuard;
     if (guard && location.hash !== guard.hash && formHasUnsavedInput()) {
-        const target = location.hash;
-        history.replaceState(history.state, '', guard.hash);
-        const ok = await confirmDialog({
-            title: '離開表單',
-            message: '尚未儲存，確定離開？',
-            confirmText: '離開',
-            danger: true,
-        });
-        if (!ok || formLeaveGuard !== guard) return;
-        history.replaceState(history.state, '', target);
+        const ok = await confirmFormLeave();
+        if (formLeaveGuard !== guard) return;
+        if (!ok) {
+            history.pushState(history.state, '', guard.hash);
+            return;
+        }
     }
     formLeaveGuard = null;
     renderRoute();
@@ -4015,23 +4037,7 @@ function adjustRowHtml(f) {
 }
 
 function negativeFlavorHtml() {
-    return `
-        <div class="small-hint mb-2">只做記錄，不影響分數。</div>
-        ${chipGroupHtml('defects_tags', '常見負面風味', 'multi', defectsOptions)}
-        <label for="f-defects" class="form-label mt-2">補充說明</label>
-        <textarea id="f-defects" class="form-control mb-2" rows="2"
-                  placeholder="其他負面風味（選填）..."></textarea>
-        <div class="notes-slot" data-notes-slot="f-notes">
-            <button type="button" class="notes-toggle" data-notes-target="f-notes"
-                    aria-controls="f-notes-body" aria-expanded="false">
-                <i class="bi bi-plus-circle"></i> 加上最終備註
-            </button>
-            <div id="f-notes-body" class="notes-body" hidden>
-                <label for="f-notes" class="form-label">最終備註</label>
-                <textarea id="f-notes" class="form-control" rows="3"
-                          placeholder="請輸入額外的備註..."></textarea>
-            </div>
-        </div>`;
+    return `<div class="small-hint mb-2">只做記錄，不影響分數。</div>${defectsBodyHtml('負面風味')}`;
 }
 
 function initAdjustmentWidget() {
@@ -4333,12 +4339,13 @@ function generateObservationItem(field) {
     return wrapAccordionItem(key, field.label, field.icon, body);
 }
 
-function generateDefectsItem() {
-    const body = `
-        ${chipGroupHtml('defects_tags', '常見瑕疵', 'multi', defectsOptions)}
+// word：杯測叫「瑕疵」，沖煮 / 品鑑叫「負面風味」（#169）。
+function defectsBodyHtml(word) {
+    return `
+        ${chipGroupHtml('defects_tags', `常見${word}`, 'multi', defectsOptions)}
         <label for="f-defects" class="form-label mt-2">補充說明</label>
         <textarea id="f-defects" class="form-control mb-2" rows="2"
-                  placeholder="其他瑕疵描述（選填）..."></textarea>
+                  placeholder="其他${word}描述（選填）..."></textarea>
         <div class="notes-slot" data-notes-slot="f-notes">
             <button type="button" class="notes-toggle" data-notes-target="f-notes"
                     aria-controls="f-notes-body" aria-expanded="false">
@@ -4350,7 +4357,10 @@ function generateDefectsItem() {
                           placeholder="請輸入額外的備註..."></textarea>
             </div>
         </div>`;
-    return wrapAccordionItem('defects', '瑕疵與備註', 'bi-exclamation-diamond', body);
+}
+
+function generateDefectsItem() {
+    return wrapAccordionItem('defects', '瑕疵與備註', 'bi-exclamation-diamond', defectsBodyHtml('瑕疵'));
 }
 
 function initEvaluationAccordion() {
@@ -5363,8 +5373,9 @@ async function submitForm() {
         }
     }
 
-    const saveBtn = document.getElementById('f-save');
-    saveBtn.disabled = true;
+    // 電腦版還有分數面板裡的儲存鈕：全部停用，連按或按 Enter 才不會送出第二筆。
+    const saveBtns = [...document.querySelectorAll('.record-form button[type="submit"]')];
+    saveBtns.forEach(b => { b.disabled = true; });
     // 存檔中離開不再問（送出的就是畫面上的內容）；存失敗而人還在 → 裝回去。
     const leaveGuard = formLeaveGuard;
     formLeaveGuard = null;
@@ -5396,7 +5407,7 @@ async function submitForm() {
         showErrorToast('儲存失敗：' + (e.message || e));
         if (stillHere()) formLeaveGuard = leaveGuard;
     } finally {
-        saveBtn.disabled = false;
+        saveBtns.forEach(b => { b.disabled = false; });
     }
 }
 
@@ -6951,6 +6962,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // 在 auth 就緒後才掛 hashchange，避免 bootstrap 期間的 hash 設定觸發一次半成品 render。
     window.addEventListener('hashchange', onHashChange);
     window.addEventListener('beforeunload', onBeforeUnload);
+    document.addEventListener('click', onLeaveLinkClick, true);
     // iOS 可能直接關掉背景的 PWA：切到背景時先把 ② 評分到一半的內容暫存起來。
     document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'hidden') autosaveSession({ keepalive: true });

@@ -144,6 +144,13 @@ describe('recordAdjustments', () => {
         });
     });
 
+    it('舊紀錄缺某一項 → 當成舊預設 5，換算成 0', () => {
+        const adj = win.recordAdjustments('cupping', { schema_version: 3, evaluations: { flavor: { score: 6 } } });
+        expect(adj.flavor).toBe(1);
+        expect(adj.acidity).toBe(0);
+        expect(adj.cleanness).toBe(0);
+    });
+
     it('新舊分界依類型：沖煮 4、品鑑 6', () => {
         expect(win.isAdjustmentRecord('cupping', { schema_version: 3 })).toBe(false);
         expect(win.isAdjustmentRecord('cupping', { schema_version: 4 })).toBe(true);
@@ -325,6 +332,41 @@ describe.each(['cupping', 'tasting'])('%s 表單', mode => {
         await settle();
         expect(fwin.location.hash).toBe('#/shops');
         expect($('.adjust-list')).toBeNull();
+    });
+
+    it('存檔中所有儲存鈕都停用（電腦版面板的儲存鈕也是），連按不會送出兩次', async () => {
+        await boot();
+        let release;
+        const api = fwin.apiFetch;
+        fwin.apiFetch = (p, init = {}) => {
+            if (init.method !== 'POST') return api(p, init);
+            calls.push({ method: 'POST', path: p, body: init.body });
+            return new Promise(r => { release = r; });
+        };
+        fillRequired();
+        KEYS.forEach(k => press(k, 'zero'));
+        $('.score-panel-save').click();
+        await tick();
+        expect($$('button[type="submit"]').every(b => b.disabled)).toBe(true);
+        $('.score-panel-save').click();
+        $('#f-save').click();
+        await tick();
+        expect(calls.filter(c => c.method === 'POST')).toHaveLength(1);
+        release({ id: 'r1' });
+        await settle();
+    });
+
+    it('點 tabbar 離開、按取消：留在表單，瀏覽紀錄不多也不少', async () => {
+        await boot();
+        press('flavor', 'plus');
+        const before = fwin.history.length;
+        $('.tabbar-btn[data-route="/shops"] i').click();
+        await settle();
+        fdoc.querySelector('.confirm-dialog [data-confirm="cancel"]').click();
+        await settle();
+        expect(fwin.location.hash).toContain('#/new/');
+        expect(fwin.history.length).toBe(before);
+        expect(valueOf('flavor')).toBe('0.5');
     });
 
     it('沒有輸入時換頁不跳確認', async () => {

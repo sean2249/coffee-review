@@ -36,6 +36,11 @@ describe('searchHit — 每個欄位各自命中', () => {
         expect(hit.value.toLowerCase()).toContain('zeta');
     });
 
+    it('新制紀錄香氣的風味（evaluations.aroma）標成香氣', () => {
+        const hit = win.searchHit({ ...base, evaluations: { aroma: { flavors: [jasmine] } } }, '茉莉');
+        expect(hit.label).toBe('香氣');
+    });
+
     it('店家名稱', () => {
         expect(win.searchHit({ ...base, shop_id: 'shop-a' }, '甲咖').label).toBe('店家');
     });
