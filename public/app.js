@@ -60,7 +60,7 @@ function tierFromScore(score) {
 }
 // 等級的顏色只在 styles.css（.t-* → --tier-bg / --tier-fg，見 tier palette）。這裡只給 class，
 // 不帶色碼：顯示等級的地方一律用 tierBadgeHtml，或在元素上掛 tier.cssClass。
-// tier 一定要是 totalScoreTiers 裡的一項（tierById / tierFromScore 的結果）：cssClass 不經 escape。
+// tier 一定要是 totalScoreTiers 裡的一項（tierById / tierFromScore 的結果）；cssClass 也照樣 escape。
 // tier 為 null = 未評分：灰色膠囊。
 function tierBadgeHtml(tier, text = tier ? tier.badgeName : '未評分') {
     return `<span class="tier-badge${tier ? ` ${escapeHtml(tier.cssClass)}` : ''}">${escapeHtml(text)}</span>`;

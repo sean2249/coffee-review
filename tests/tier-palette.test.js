@@ -53,7 +53,8 @@ describe('等級顏色只有一個來源', () => {
         for (const hex of palette) {
             expect(outside, hex).not.toContain(`#${hex}`);
             const [r, g, b] = [0, 2, 4].map(i => parseInt(hex.slice(i, i + 2), 16));
-            expect(outside, `rgb ${r},${g},${b}`).not.toMatch(new RegExp(`rgba?\\(\\s*${r}\\s*,\\s*${g}\\s*,\\s*${b}\\b`));
+            // 逗號或空白分隔都算：rgb(192, 140, 42) / rgb(192 140 42 / 10%)
+            expect(outside, `rgb ${r},${g},${b}`).not.toMatch(new RegExp(`rgba?\\(\\s*${r}[\\s,]+${g}[\\s,]+${b}\\b`));
         }
     });
 
@@ -62,6 +63,7 @@ describe('等級顏色只有一個來源', () => {
         for (const t of win.eval('totalScoreTiers')) {
             const hits = CSS.match(new RegExp(`\\.${t.cssClass}(?![\\w-])`, 'g')) || [];
             expect(hits, t.cssClass).toHaveLength(1);
+            expect(CSS, t.cssClass).toMatch(new RegExp(`\\n\\.${t.cssClass}\\s*\\{\\s*--tier-bg:`));
         }
     });
 
