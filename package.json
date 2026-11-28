@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "wrangler dev",
+    "dev:worktree": "node scripts/dev-worktree.mjs",
     "deploy": "wrangler deploy",
     "typecheck": "tsc -p tsconfig.worker.json",
     "lint": "npm run lint:js && npm run lint:css",

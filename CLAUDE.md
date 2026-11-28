@@ -107,7 +107,9 @@ PWA-installable. All UI text is Traditional Chinese — keep it that way when ed
 - **PWA**: `public/manifest.json` + `public/sw.js` (navigations are network-first so an
   expired Access session can redirect to login; stale-while-revalidate for the app
   shell; same-origin `/api/*` and `/cdn-cgi/*` are passed straight through — see
-  `shouldBypass`).
+  `shouldBypass`). On localhost the page registers no service worker (and removes a
+  leftover one) so previews never serve a stale `app.js`; add `?sw=1` to test PWA behaviour
+  (it sticks for that tab and a duplicated tab; `?sw=0` turns it off).
 - **Tooling**: ESLint flat config + typescript-eslint for `src/worker/**`, Stylelint,
   `tsc -p tsconfig.worker.json` for typecheck. **Vitest with two projects**
   (`vitest.config.ts`): `app` runs the existing jsdom tests in `tests/` (environment is
@@ -144,10 +146,12 @@ wrangler.jsonc     assets + D1 + rate limit + routes + Access vars
 .github/workflows  ci.yml + deploy.yml + issue-workflow callers (issue-status,
                    needs-info-reply → sean2249/skills reusable workflows)
 .github/           pull_request_template.md + dependabot.yml
-docs/agents/       issue-tracker, triage-labels, domain docs for the agent skills
+docs/agents/       architecture details + issue-tracker, triage-labels, domain docs for the agent skills
+scripts/           dev-worktree.mjs (per-worktree local dev setup)
 .claude/settings.json  permissions.deny for secret files (the only tracked file in .claude/)
 README.md          architecture, local dev, deploy
 purpose.md, 口感.md design notes (Chinese)
+CODING_STANDARDS.md review-only rules (read by the code-review skill)
 ```
 
 ## Architecture
@@ -177,22 +181,6 @@ first paint would be the sign-in prompt.
 `session` = **杯測** (one session, many coded cups). On shop pages a session is flattened by
 `flattenSessionCups` into `session_cup` rows, because the bean-source shop lives on each cup.
 
-**杯測場次 form** (`#tpl-session-form`, `viewSessionForm`) is separate from `#tpl-form`. It
-is now the only user of the tier/score picker + `#evaluationAccordion` (`#tpl-form` uses the
-adjustment widget, `initAdjustmentWidget`), and only **one cup's widgets are in the DOM at a
-time**. The other cups live in `state.currentForm.cups`; call `syncActiveCup()` before
-reading `cups` (switch / save / overview). `writeCupToForm` must *reset* every
-widget (`applyEvaluationsToForm` resets missing keys to defaults). Every cup holds exactly
-`id` + `readCupFromForm()` keys: never `created_at`, `user_id`, `session_id` or `position`.
-The bulk upsert needs identical key sets. `initEvaluationAccordion` runs once per mount
-(a second call stacks listeners). In this form `coeState.coeTotal` / `selectedTierId` can
-be `null` (= 未評分; `selectTier` / `selectScore` / `refreshTotalDisplay` guard it). Every
-non-submit `<button>` must be `type="button"`, or tapping it saves the whole session.
-
-**沖煮 / 品鑑 share one form template** (`#tpl-form` in index.html). The mode toggle
-flips visibility via `data-mode-only="cupping|tasting"` and `data-mode-text="..."`.
-`setFormMode` (app.js:1290) sets display + `required` on shop select.
-
 **API layer**: `apiFetch` in `public/app.js` is the single network exit — same origin,
 `credentials: 'same-origin'` to carry Access's `CF_Authorization` cookie. When Access's
 session expires, `/api/*` returns the login page as HTML; `apiFetch` detects that and
@@ -210,67 +198,19 @@ literally cannot send them — `src/worker/lib/columns.ts` is a per-table write 
 `test/worker/` has a "can't see another user's data" case for every owned table; keep it
 that way, a missing `and user_id = ?` is a silent cross-user leak with no error message.
 
-**Session save**: `PUT /api/sessions/:id` serves both create and edit with
-client-generated UUIDs, and the whole request is re-sendable. It validates cup codes
-first (duplicates → 400 with `code: '23505'`, DB untouched), then runs one
-`env.DB.batch()`: upsert the session, **delete all** its cups, re-insert every cup.
-SQLite has no deferrable constraints, so delete-all-then-insert is what makes A↔B code
-swaps structurally impossible to collide; it also subsumes the old `.not('id','in',…)`
-cleanup of half-finished saves. Surviving cups keep their original `created_at`.
-PUTting a session id that belongs to someone else is rejected as 404 before the batch.
-`viewSessionForm` loads data before mounting the template, so nothing can be saved
-half-loaded.
-Cups reference sessions through the composite FK `(session_id, user_id)` with cascade.
+Area details live in `docs/agents/architecture.md`. Read its section before changing:
 
-**Google Places** is proxied through `/api/places/*`; the key is a Worker secret and
-never reaches the browser. The Worker flattens the REST shapes (`displayName: {text}` →
-string, `location: {latitude, longitude}` → `{lat, lng}`) so app.js's accessors are
-unchanged. It is behind `requireAccess` plus a per-user rate limit — it is the only path
-that spends real money.
-
-**State** (`state` in app.js): in-memory only. `state.user` is `{ id, email }` from
-`/api/me` — Access's application token carries no name or avatar, so the account page is
-email-only. `state.shops` is a cache plus a `shopsLoaded` flag so that `shopName(id)`
-doesn't mislabel transient fetch failures as "已刪除店家". CoE selection lives in
-`coeState`; flavor-wheel selections in `wheelState` (keyed by container id —
-`wheelState.clear()` on each route transition).
-
-**Scoring model — 沖煮 / 品鑑** (#169, critical to preserve; terms in `GLOSSARY.md`「評分」):
-- 8 `adjustmentFields` (香氣、風味、尾韻、酸 / 鹹、甜 / 苦、口感、平衡 / 和諧、清晰度), each an
-  **調整分** starting at null (未判斷): −1, 0, 0.5, 1 … (0.5 steps, no cap, **no −0.5**) —
-  rules in `stepAdjustment`. 分數 = `80 + Σ` (`scoreFromAdjustments`), stored in
-  `coe_total`; `coe_tier_id = tierFromScore(coe_total).id`. Saving is blocked until all 8
-  are judged, so new 沖煮 / 品鑑 records always have a score. No picker, no 預估總分.
-- New records: `evaluations[key] = { score, notes, flavors? }` (flavors only on aroma /
-  flavor), `observation: {}`, `schema_version` ≥ `ADJUSTMENT_SCHEMA` (cupping 4, tasting 6).
-- **Old records keep their entered `coe_total`** (stats mix old and new on purpose). Their
-  4–8 reference scores are converted **at display time** by `recordAdjustments`
-  (old − 5, anything below 0 → −1, aroma 0, `overall` dropped); the DB is never rewritten.
-- On-screen wording: 分數 (never "CoE"); 「負面風味」 for 沖煮 / 品鑑 `defects`, 「瑕疵」 only
-  in 杯測. Field / code names (`coe_total`, `coeState`, …) stay.
-- Leaving a 沖煮 / 品鑑 form with input asks 「尚未儲存，確定離開？」 (`onHashChange` +
-  `beforeunload`); no drafts (#137).
-
-**Scoring model — 杯測場次 (unchanged by #169)**: `coe_total` is still picked directly with
-the two-stage tier → score-chip picker (`coeState`, `selectTier` / `selectScore`); the 8
-`referenceFields` (4–8, default 5) are stored but don't compute it; `observationFields`
-(`aroma`) is observation-only; `renderEstimatedTotalBlock` shows the 36 + Σ estimate.
-
-**Flavor wheel**: up to 3 levels in `flavors` (app.js:177). The persisted ids in
-`evaluations[key].flavors` / `observation.aroma.flavors` track the selection path and
-**vary in depth** — when an L1's `sub` entries are bare strings (e.g. `floral` → `'茉莉'`)
-the leaf stops at `${containerId}__l1-<slug>__l2-<slug>`; only branches whose L2 is an
-object with its own `sub` extend to `__l3-<slug>`. String-derived slugs strip `/` and
-whitespace (see `toggleFlavor`). Selecting a deeper level auto-selects ancestors;
-deselecting an ancestor cascades. `applyFlavorSelections` rebuilds the expansion state
-from stored ids.
+- **沖煮 / 品鑑 form and scoring**: `#tpl-form`, adjustment scores, old-record conversion,
+  leave prompt, the shared `bindFormHandlers`.
+- **杯測場次 form and session save**: `#tpl-session-form`, per-cup widgets, `PUT /api/sessions/:id`.
+- **Flavor wheel**: the persisted flavor-id shape.
+- **State** and the **Google Places proxy**.
 
 ## Conventions
 
 - **Indent 4 spaces**, single quotes in JS, trailing commas where ESLint allows.
 - HTML class attributes use Bootstrap utilities + custom classes from `styles.css`.
-- Always `escapeHtml(...)` user/DB strings before interpolating into `innerHTML`. The
-  helper is at app.js:257.
+- Always `escapeHtml(...)` user/DB strings before interpolating into `innerHTML`.
 - DOM ids in forms are prefixed `f-` for top-level inputs and `<key>_<suffix>` for
   evaluation widgets (e.g. `flavor_score`, `aroma_dryAroma`).
 - CSS section banners use the `/* ───── Title ──── */` style — keep new sections
@@ -285,6 +225,7 @@ npm install
 cp .dev.vars.example .dev.vars   # DEV_USER_EMAIL (+ optional GOOGLE_MAPS_API_KEY)
 npm run db:migrate:local         # create/refresh the local D1
 npm run dev                      # wrangler dev → http://localhost:8787
+npm run dev:worktree             # in a worktree: .dev.vars + local D1 + its own port (-- --setup: prepare only)
 
 npm run lint                     # lint:js + lint:css
 npm run typecheck                # tsc, Worker only
@@ -371,6 +312,8 @@ This repo is public: every issue, PR, comment, commit message and committed file
 - `workers_dev: false` is load-bearing: a live `*.workers.dev` hostname would be a second
   entry point that bypasses Cloudflare Access entirely. Same for the absence of an
   unauthenticated `/api/*` endpoint — there is deliberately no `/api/health`.
+- The Google Places key is a Worker secret behind `requireAccess` + a per-user rate limit;
+  `/api/places/*` is the only path that spends money. Keep both.
 - `shops` is a **projection of Google Places**: `name` / `location` / `lat` / `lng`
   only ever come from the Places API, and the UI offers no free-text field for them
   (create = place picker, update = "從 Google 重新同步"). A DB trigger freezes

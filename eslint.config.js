@@ -42,7 +42,7 @@ export default [
         },
     },
     {
-        files: ['eslint.config.js', 'vitest.config.ts'],
+        files: ['eslint.config.js', 'vitest.config.ts', 'scripts/**/*.mjs'],
         languageOptions: {
             ecmaVersion: 'latest',
             sourceType: 'module',
