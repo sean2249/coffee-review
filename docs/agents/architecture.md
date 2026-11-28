@@ -66,9 +66,10 @@ fields (`coe_total`, `coe_tier_id`, `evaluations`, `observation`, `schema_versio
 unchanged — every session save re-inserts every cup, so anything else would rewrite the
 old score. Bean info, 瑕疵 and notes stay editable. 「重新評分」 (`resetAdjustments`) clears
 the 8 items and switches that cup to the new format. The old form saved all 8 reference
-scores every time (default 5), so an old cup without a `coe_total` was never scored:
-`recordAdjustments('session_cup', …)` shows its 8 items as 未判斷, not as eight 0s
-(which would make it 80 and rank it). `initAdjustmentWidget` clears `legacyCup`, so it
+scores every time (default 5), so an old cup with no `coe_total` and every reference at 5
+was never scored: `recordAdjustments('session_cup', …)` shows its 8 items as 未判斷, not
+as eight 0s. One with no `coe_total` but changed references shows them converted; it stays
+未評分 either way (the score only ever comes from `coe_total`). `initAdjustmentWidget` clears `legacyCup`, so it
 never carries into the next form.
 
 **Session save**: `PUT /api/sessions/:id` serves both create and edit with

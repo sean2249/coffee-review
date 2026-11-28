@@ -208,12 +208,14 @@ function isAdjustmentRecord(mode, r) {
 // 一筆沖煮 / 品鑑紀錄 8 項的調整分（顯示用；舊紀錄在這裡換算，資料庫不改寫）。
 // 舊紀錄的香氣沒有分數 → 0；「整體」不在 adjustmentFields 裡，自然不出現。
 // 舊紀錄一項參考分都沒有 = 從沒評過 → 8 項都是未判斷；只缺幾項 → 缺的當舊預設 5（= 0）。
-// 舊杯：以前的表單每次都存 8 項參考分（沒動就是預設 5），所以看 coe_total——沒有總分 = 沒評過。
+// 舊杯：以前的表單每次都存 8 項參考分（沒動就是預設 5）。沒有總分、參考分又全是預設 5 = 沒評過；
+// 沒有總分但動過參考分的照樣換算顯示（分數仍是未評分）。
 function recordAdjustments(mode, r) {
     const legacy = !isAdjustmentRecord(mode, r);
     const scoreOf = key => r?.evaluations?.[key]?.score;
-    const legacyRated = legacy
-        && (mode !== 'session_cup' || typeof r?.coe_total === 'number')
+    const untouchedCup = mode === 'session_cup' && typeof r?.coe_total !== 'number'
+        && referenceFields.every(f => [undefined, null, 5].includes(scoreOf(f.key)));
+    const legacyRated = legacy && !untouchedCup
         && referenceFields.some(f => typeof scoreOf(f.key) === 'number');
     const out = {};
     for (const f of adjustmentFields) {
@@ -4004,8 +4006,8 @@ function renderScoreBar() {
     const total = adjustmentFields.length;
     const legacy = adjustState.legacyCup;
     const score = legacy ? (legacy.coe_total ?? null) : scoreFromAdjustments(adjustState.values);
-    const done = legacy ? (score == null ? 0 : total)
-        : adjustmentFields.filter(f => typeof adjustState.values[f.key] === 'number').length;
+    const judged = adjustmentFields.filter(f => typeof adjustState.values[f.key] === 'number').length;
+    const done = legacy && score != null ? total : judged;
     if (score == null) {
         bar.className = 'score-bar is-unscored';
         bar.style.setProperty('--ring', String(done / total));
@@ -5130,7 +5132,7 @@ function readCupFromForm() {
             coe_tier_id: legacy.coe_tier_id ?? null,
             evaluations: legacy.evaluations ?? {},
             observation: legacy.observation ?? {},
-            schema_version: legacy.schema_version ?? 1,
+            schema_version: legacy.schema_version,
         }
         : { ...buildAdjustmentPayload(), schema_version: ADJUSTMENT_SCHEMA.session_cup };
     return {

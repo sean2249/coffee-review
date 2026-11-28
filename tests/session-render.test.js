@@ -165,6 +165,21 @@ describe('renderSessionDetail', () => {
         expect(values).toEqual(Array(8).fill('—'));
     });
 
+    // review #183 round 2：沒有總分但動過參考分的舊杯，參考分照換算顯示（分數仍是未評分）。
+    it('沒有總分、但動過參考分的舊杯：照換算顯示，標題仍是未評分', () => {
+        const el = toDom(win.renderSessionDetail({
+            ...session,
+            cups: [{ id: 'k1', code: 'A', schema_version: 1, coe_total: null,
+                evaluations: { flavor: { score: 7 }, acidity: { score: 5 } } }],
+        }));
+        const row = label => [...el.querySelectorAll('.session-cup .detail-adjust-row')]
+            .find(r => r.querySelector('.detail-adjust-label').textContent === label)
+            .querySelector('.detail-adjust-value').textContent;
+        expect(row('風味')).toBe('2.0');
+        expect(row('酸 / 鹹')).toBe('0.0');
+        expect(el.querySelector('.session-cup').textContent).toContain('未評分');
+    });
+
     it('場次名稱、筆記與杯編號都會被 escape', () => {
         const html = win.renderSessionDetail({
             ...session,
