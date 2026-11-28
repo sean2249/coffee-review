@@ -399,10 +399,16 @@ function showErrorToast(msg) {
 
 // 失敗只告訴使用者「哪個動作失敗、怎麼辦」；err.message 是程式或 Worker 的內部
 // 訊息（例：null is not an object…、UNIQUE constraint failed），一律不上畫面，只進 console。
-// 只有 app.js 自己寫給使用者看的 err.userMessage 會原樣顯示。
+// 只有 app.js 自己寫給使用者看的 err.userMessage 會原樣顯示；429 換成「稍候再試」。
+function failureText(action, err) {
+    if (err?.userMessage) return `${action}失敗：${err.userMessage}`;
+    if (err?.status === 429) return `${action}太頻繁，請稍候再試`;
+    return `${action}失敗，請再試一次`;
+}
+
 function showFailureToast(action, err) {
     console.error(err);
-    showErrorToast(err?.userMessage ? `${action}失敗：${err.userMessage}` : `${action}失敗，請再試一次`);
+    showErrorToast(failureText(action, err));
 }
 
 // 對話框開著時把背景設成 inert：Tab、點擊、螢幕閱讀器都進不去。#toastMsg 不設，
@@ -1405,7 +1411,7 @@ function brewStepRowMarkup(rows, i, starts, cums, open, errors) {
             </div>
             ${!isOpen && tags.length ? `<div class="bp-tags">${tags.join('')}</div>` : ''}
             ${panel}
-            ${err.map(e => `<div class="bp-error">${escapeHtml(e.message)}</div>`).join('')}
+            ${err.map(problem => `<div class="bp-error">${escapeHtml(problem.message)}</div>`).join('')}
         </div>
     </li>`;
 }
@@ -1540,7 +1546,7 @@ function mountBrewPlanForm(root, { planId, draft }) {
 
     function renderErrors() {
         form.querySelectorAll('[data-error]').forEach(el => {
-            el.textContent = errors.filter(e => e.field === el.dataset.error).map(e => e.message).join('；');
+            el.textContent = errors.filter(p => p.field === el.dataset.error).map(p => p.message).join('；');
         });
     }
 
@@ -2635,7 +2641,7 @@ function renderRecordDetail(mode, r, { planStatus = null } = {}) {
             <div class="card-body">
                 <h3 class="card-title"><i class="bi bi-bookmark-star-fill"></i>評分</h3>
                 ${renderDetailAdjustments(mode, r)}
-                ${renderDetailDefectsNotes(r, '負面風味與備註')}
+                ${renderDetailDefectsNotes(r, r.defects || r.defects_tags?.length ? '負面風味與備註' : '備註')}
             </div>
         </div>`;
 }
@@ -2917,7 +2923,7 @@ function renderDetailDefectsNotes(r, label = '瑕疵與備註') {
     return `
         <div class="detail-eval-section">
             <h4 class="detail-eval-section-title">
-                <span class="eval-icon"><i class="bi bi-exclamation-diamond"></i></span>
+                <span class="eval-icon"><i class="bi ${label === '備註' ? 'bi-pencil' : 'bi-exclamation-diamond'}"></i></span>
                 <span class="detail-eval-section-label">${escapeHtml(label)}</span>
             </h4>
             ${renderChipRow(defectsTags)}
@@ -3837,7 +3843,7 @@ function openShopPicker({ currentId = '', allowEmpty = true, emptyLabel = '— �
             if (seq !== googleSeq || !document.body.contains(backdrop)) return;
             lastGoogleQuery = '';   // 失敗不算查過，讓使用者能再試一次
             console.error(err);
-            showGoogleNote('Google 搜尋失敗，請再試一次');
+            showGoogleNote(escapeHtml(failureText('Google 搜尋', err)));
         }
     }
 
@@ -6467,9 +6473,9 @@ function isShopDataStale(shop, now = Date.now()) {
 
 // 純資料層：抓 Google → 寫 DB → 回傳更新後的 shop。不碰任何 UI，失敗就 throw。
 async function fetchShopFromGoogle(shop) {
-    if (!shop.google_place_id) throw new Error('此店家沒有綁定 Google 地點');
+    if (!shop.google_place_id) throw Object.assign(new Error('no place id'), { userMessage: '此店家沒有綁定 Google 地點' });
     const place = await placesDetails(shop.google_place_id);
-    if (!place) throw new Error('Google 查無此地點');
+    if (!place) throw Object.assign(new Error('place not found'), { userMessage: 'Google 查無此地點' });
 
     // place_id 退役時 Google 會回一個不同的 id。DB trigger 凍結 google_place_id，
     // 所以這裡不能自動改寫 —— 那等於允許偷換店家。只回報，讓人決定。

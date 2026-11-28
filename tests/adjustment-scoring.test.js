@@ -331,6 +331,17 @@ describe.each(['cupping', 'tasting'])('%s 表單', mode => {
         expect(body.evaluations.flavor.score).toBe(1.5);
         expect(body.evaluations.cleanness.score).toBe(-1);
         expect(body.observation).toEqual({});
+        // 不再記負面風味（#179）
+        expect(body).not.toHaveProperty('defects');
+        expect(body).not.toHaveProperty('defects_tags');
+    });
+
+    it('部署過渡：模板留著隱藏的 #negativeFlavorSection，排在看得到的 #f-notes 後面', async () => {
+        await boot();
+        const placeholder = $('#negativeFlavorSection');
+        expect(placeholder.hidden).toBe(true);
+        const notes = $('#f-notes');
+        expect(notes.compareDocumentPosition(placeholder) & fwin.Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     });
 
     it('展開後有原本的描述標籤（不影響分數），筆記收在「加上備註」後面', async () => {

@@ -15,8 +15,18 @@ describe('不把內部錯誤訊息放上畫面', () => {
     it('app.js 沒有把 catch 到的 e.message / err.message 接進畫面文字', () => {
         const leaks = APP.split('\n')
             .map((line, i) => [i + 1, line])
-            .filter(([, line]) => /\b(e|err|error)\.message\s*\|\||String\((e|err|error)\)/.test(line));
+            .filter(([, line]) => !/^\s*\/\//.test(line))
+            .filter(([, line]) => /\b(e|err|error)\.message\b(?!\s*===)|String\((e|err|error)\)/.test(line));
         expect(leaks).toEqual([]);
+    });
+
+    it('app 自己寫的 userMessage 照樣顯示；429 請使用者稍候', async () => {
+        const { window: win } = await loadApp();
+        const userErr = Object.assign(new Error('place not found'), { userMessage: 'Google 查無此地點' });
+        expect(win.failureText('同步', userErr)).toBe('同步失敗：Google 查無此地點');
+        const limited = Object.assign(new Error('Google 搜尋太頻繁，請稍候再試'), { status: 429 });
+        expect(win.failureText('Google 搜尋', limited)).toBe('Google 搜尋太頻繁，請稍候再試');
+        expect(win.failureText('儲存', new Error('UNIQUE constraint failed'))).toBe('儲存失敗，請再試一次');
     });
 
     it('showFailureToast 只顯示動作，例外內容進 console', async () => {

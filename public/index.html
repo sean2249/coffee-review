@@ -310,6 +310,11 @@
                 </div>
             </div>
 
+            <!-- 部署過渡（#179）：v29 service worker 在新版上線後的第一次載入仍會給舊 app.js，
+                 它會往這裡塞負面風味並讀 #f-defects。留一版，之後拿掉。放在備註卡後面，
+                 舊程式讀到的 #f-notes 才是上面看得到的那個。 -->
+            <div id="negativeFlavorSection" hidden></div>
+
             <!-- Action buttons -->
             <div class="action-bar record-action-bar">
                 <button type="button" class="btn btn-outline-danger" id="f-delete" hidden>
