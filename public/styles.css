@@ -63,6 +63,9 @@
     --brew-temp: #b4532a;
     --brew-temp-bg: #fbe9e1;
     --brew-error: var(--danger);
+    /* Bootstrap 的 .text-danger 等讀這兩個：也指到 --danger */
+    --bs-danger: var(--danger);
+    --bs-danger-rgb: 180, 35, 24;
 
     /* 錯誤 / 危險（錯誤訊息、刪除、錯誤 toast）：全 app 只用這一組紅 */
     --danger: #b42318;
@@ -287,7 +290,26 @@ button.card-title {
 .btn-success:hover { background-color: #2e6448; border-color: #2e6448; }
 .btn-outline-secondary { color: var(--text-secondary); border-color: var(--border-strong); }
 .btn-outline-secondary:hover { background-color: var(--bg-soft); color: var(--text-primary); border-color: var(--border-strong); }
-.btn-outline-danger:hover { background-color: var(--danger); border-color: var(--danger); }
+.btn-danger {
+    --bs-btn-bg: var(--danger);
+    --bs-btn-border-color: var(--danger);
+    --bs-btn-hover-bg: var(--danger-strong);
+    --bs-btn-hover-border-color: var(--danger-strong);
+    --bs-btn-active-bg: var(--danger-strong);
+    --bs-btn-active-border-color: var(--danger-strong);
+    --bs-btn-disabled-bg: var(--danger);
+    --bs-btn-disabled-border-color: var(--danger);
+}
+.btn-outline-danger {
+    --bs-btn-color: var(--danger);
+    --bs-btn-border-color: var(--danger);
+    --bs-btn-hover-bg: var(--danger);
+    --bs-btn-hover-border-color: var(--danger);
+    --bs-btn-active-bg: var(--danger-strong);
+    --bs-btn-active-border-color: var(--danger-strong);
+    --bs-btn-disabled-color: var(--danger);
+    --bs-btn-disabled-border-color: var(--danger);
+}
 
 /* ───── New record mode picker ─────────────────────────────────────────── */
 .new-mode-picker-card .new-mode-picker-hint {
@@ -2439,7 +2461,7 @@ hr { border-color: var(--border); opacity: 0.7; }
     font-size: 0.9rem;
     cursor: pointer;
 }
-.cup-grid-remove:hover { color: var(--bs-danger); border-color: currentcolor; }
+.cup-grid-remove:hover { color: var(--danger); border-color: currentcolor; }
 .cup-grid-bean { display: flex; gap: 0.25rem; }
 .cup-grid-bean-chip {
     flex: 1;
@@ -2865,6 +2887,10 @@ a.brew-plan-ref .brew-plan-summary-name { color: var(--accent); flex: 1; }
     color: var(--tier-fg);
     box-shadow: var(--shadow-md);
     min-width: 0;
+}
+/* 沒有 color-mix 的瀏覽器（Safari < 16.2）：進度環底改用固定的半透明灰 */
+@supports not (color: color-mix(in srgb, red, blue)) {
+    .score-bar { --ring-track: rgba(127, 127, 127, 0.35); }
 }
 .score-bar.is-unscored {
     background: var(--bg-muted);

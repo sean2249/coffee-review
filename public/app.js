@@ -59,13 +59,11 @@ function tierFromScore(score) {
     return [...totalScoreTiers].reverse().find(t => score >= t.min) || totalScoreTiers[0];
 }
 // 等級的顏色只在 styles.css（.t-* → --tier-bg / --tier-fg，見 tier palette）。這裡只給 class，
-// 不帶色碼：顯示等級的地方一律用 tierBadgeHtml / setTierBadge，或在元素上掛 tier.cssClass。
-function tierBadgeHtml(tier) {
-    return `<span class="tier-badge ${tier.cssClass}">${escapeHtml(tier.badgeName)}</span>`;
-}
-function setTierBadge(el, tier, baseClass) {
-    el.className = `${baseClass} tier-badge ${tier.cssClass}`;
-    el.textContent = tier.badgeName;
+// 不帶色碼：顯示等級的地方一律用 tierBadgeHtml，或在元素上掛 tier.cssClass。
+// tier 一定要是 totalScoreTiers 裡的一項（tierById / tierFromScore 的結果）：cssClass 不經 escape。
+// tier 為 null = 未評分：灰色膠囊。
+function tierBadgeHtml(tier, text = tier ? tier.badgeName : '未評分') {
+    return `<span class="tier-badge${tier ? ` ${tier.cssClass}` : ''}">${escapeHtml(text)}</span>`;
 }
 
 function tierById(id) {
@@ -4026,14 +4024,13 @@ function refreshTotalDisplay() {
     if (coeState.coeTotal == null) {
         // 杯測場次的未評分杯
         display.textContent = '—';
-        badge.className = 'coe-total-tier-badge';
-        badge.textContent = '[ 未評分 ]';
+        badge.innerHTML = tierBadgeHtml(null);
         document.getElementById('coeTotalDesc').textContent = '';
         return;
     }
     const tier = tierById(coeState.selectedTierId);
     display.textContent = coeState.coeTotal.toFixed(1);
-    setTierBadge(badge, tier, 'coe-total-tier-badge');
+    badge.innerHTML = tierBadgeHtml(tier);
     document.getElementById('coeTotalDesc').textContent = tier.description;
 }
 
@@ -4478,12 +4475,7 @@ function updateEstimatedTotalDisplay() {
     const tier = tierFromScore(v);
     const badge = document.getElementById('evalEstimatedTier');
     if (badge) {
-        if (tier) {
-            setTierBadge(badge, tier, 'evaluation-estimated-tier');
-        } else {
-            badge.className = 'evaluation-estimated-tier';
-            badge.textContent = '';
-        }
+        badge.innerHTML = tier ? tierBadgeHtml(tier) : '';
     }
 }
 
@@ -6008,8 +6000,8 @@ function refreshSessionSummaries() {
     const score = document.getElementById('cup-score-summary');
     const cup = f.cups[f.activeIndex];
     if (score && cup) {
-        score.textContent = typeof cup.coe_total === 'number'
-            ? `評分 ${formatCupScore(cup)} ${cupTier(cup).medal}`
+        score.innerHTML = typeof cup.coe_total === 'number'
+            ? `評分 ${escapeHtml(formatCupScore(cup))} ${tierBadgeHtml(cupTier(cup), cupTier(cup).medal)}`
             : '評分 未評分';
     }
 }

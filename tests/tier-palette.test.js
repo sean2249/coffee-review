@@ -36,11 +36,31 @@ describe('等級顏色只有一個來源', () => {
         }
     });
 
+    // `\b` 讓 var(--t4-bg, …) 這種帶後備值的寫法也算一次。
     it('--t1-bg … --t7-bg 只在對照表裡被引用一次（元件不自己對 t-* 上色）', () => {
         for (let n = 1; n <= 7; n++) {
-            expect(CSS.match(new RegExp(`var\\(--t${n}-bg\\)`, 'g')) || [], `--t${n}-bg`).toHaveLength(1);
-            expect(CSS.match(new RegExp(`var\\(--t${n}-fg\\)`, 'g')) || [], `--t${n}-fg`).toHaveLength(1);
+            expect(CSS.match(new RegExp(`var\\(--t${n}-bg\\b`, 'g')) || [], `--t${n}-bg`).toHaveLength(1);
+            expect(CSS.match(new RegExp(`var\\(--t${n}-fg\\b`, 'g')) || [], `--t${n}-fg`).toHaveLength(1);
         }
+    });
+
+    it('色盤的色碼只出現在 :root（元件沒有抄一份）', () => {
+        const rootBlock = CSS.match(/:root\s*\{[^}]*\}/)[0];
+        const palette = [...rootBlock.matchAll(/--t\d-bg:\s*(#[0-9a-fA-F]{6})/g)].map(m => m[1].toLowerCase());
+        expect(palette).toHaveLength(7);
+        const outside = CSS.replace(/:root\s*\{[^}]*\}/g, '').toLowerCase();
+        for (const hex of palette) expect(outside, hex).not.toContain(hex);
+    });
+
+    // jsdom 算不出樣式，所以直接看規則：每個顯示等級的元件都要讀 --tier-bg。
+    it.each([
+        '.record-card-medal', '.tier-medal.selected', '.filter-tier-row .filter-chip.selected',
+        '.stats-dist-medal', '.stats-dist-bar', '.reveal-cup-medal:not(.is-empty)',
+        '.score-bar', '.score-ring-text', '.tier-badge', '.score-chip-row',
+    ])('%s 讀 --tier-bg', selector => {
+        const esc = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const rule = CSS.match(new RegExp(`(?:^|\\n|,\\s*)${esc}\\s*[,{][^}]*\\}`));
+        expect(rule?.[0], selector).toMatch(/var\(--tier-bg\b/);
     });
 });
 

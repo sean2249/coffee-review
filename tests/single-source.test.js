@@ -40,6 +40,14 @@ describe('錯誤 / 危險色', () => {
         }
         expect(CSS).toMatch(/--danger:/);
     });
+
+    it('Bootstrap 的紅（.btn-danger、.btn-outline-danger、.text-danger）也讀 --danger', () => {
+        expect(CSS).toMatch(/--bs-danger:\s*var\(--danger\)/);
+        expect(CSS).toMatch(/--bs-danger-rgb:\s*180,\s*35,\s*24/);
+        expect(CSS).toMatch(/\.btn-danger\s*\{[^}]*--bs-btn-bg:\s*var\(--danger\)/);
+        expect(CSS).toMatch(/\.btn-outline-danger\s*\{[^}]*--bs-btn-color:\s*var\(--danger\)/);
+        expect(CSS_OUTSIDE_ROOT).not.toMatch(/var\(--bs-danger\b/);
+    });
 });
 
 // 名稱和 TYPE_LABELS 一字不差不代表有讀它：暫時改掉 TYPE_LABELS，畫面要跟著變。

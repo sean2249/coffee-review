@@ -93,8 +93,8 @@ no color. To show a tier:
 
 - an element styled by the tier: add `tier.cssClass` and read `var(--tier-bg)` /
   `var(--tier-fg)` in its CSS (with a fallback when the element can be tier-less);
-- a tier name inside text: `tierBadgeHtml(tier)`, or `setTierBadge(el, tier, baseClass)`
-  for an element that is updated in place.
+- a tier name inside text: `tierBadgeHtml(tier)` (its `badgeName`; pass a second argument
+  for other text, e.g. the medal char; `tierBadgeHtml(null)` is the gray 未評分 pill).
 
 Places that show a tier today (keep this list current):
 
@@ -107,11 +107,15 @@ Places that show a tier today (keep this list current):
 | 沖煮 / 品鑑 detail page | `renderRecordDetail` | `.tier-badge` |
 | 杯測 form: tier picker, score chips, total | `renderTierMedals`, `renderScoreChips`, `refreshTotalDisplay` | `.tier-medal`, `.score-chip-row`, `#coeTotalTierBadge` |
 | 杯測 form / detail: 預估總分 | `updateEstimatedTotalDisplay`, `renderEstimatedTotalBlock` | `.evaluation-estimated-tier` |
-| 杯測 detail: per-cup score, ranking | `renderSessionDetail`, `renderCupRanking` | `.session-cup-score`, `.cup-ranking-score` |
+| 杯測 form: collapsed cup score summary | `refreshSessionSummaries` | `#cup-score-summary` |
+| 杯測 detail: per-cup score, ranking | `renderSessionCupDetail`, `renderCupRanking` | `.session-cup-score`, `.cup-ranking-score` |
 | 杯測 reveal cards | `renderRevealCardHead` | `.reveal-cup-medal` |
 
 `tests/tier-palette.test.js` fails if a tier gets a color property, if `app.js` reads
-`tier.color`, or if any rule other than the palette block references `--t*-bg` / `--t*-fg`.
+`tier.color`, if `--t*-bg` / `--t*-fg` is referenced outside the palette block (fallback forms
+included), if a palette hex value is copied outside `:root`, or if one of the components above
+stops reading `--tier-bg`. jsdom computes no styles, so it checks the rules, not rendered
+colors: a new component still needs a line in that test.
 
 ## Flavor wheel
 
