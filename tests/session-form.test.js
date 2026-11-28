@@ -675,7 +675,7 @@ describe('② 自動暫存', () => {
         expect(puts()).toHaveLength(1);
     });
 
-    it('暫存失敗 → 杯照樣切換、跳「暫存失敗：」；下次切杯再送', async () => {
+    it('暫存失敗 → 杯照樣切換、跳「暫存失敗」（不帶內部訊息）；下次切杯再送', async () => {
         await mount([cupA, cupB], { recordId: 's1' });
         let offline = true;
         record((p, init) => (init.method === 'PUT' && offline
@@ -687,7 +687,7 @@ describe('② 自動暫存', () => {
             await flush();
         });
         expect(form().activeIndex).toBe(0);
-        expect(toast().textContent).toBe('暫存失敗：Failed to fetch');
+        expect(toast().textContent).toBe('暫存失敗，請再試一次');
         expect(toast().classList.contains('error')).toBe(true);
         expect(status().textContent).toBe('切到別杯時會自動暫存');
 

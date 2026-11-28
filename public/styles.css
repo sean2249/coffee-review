@@ -2908,7 +2908,6 @@ a.brew-plan-ref .brew-plan-summary-name { color: var(--accent); flex: 1; }
 }
 .score-bar-next { display: none; }
 
-.adjust-intro { font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.5rem; }
 .adjust-credit { font-size: 0.72rem; color: var(--text-dim); margin: 0.6rem 0 0; }
 
 .adjust-list { border-top: 1px solid var(--border); }

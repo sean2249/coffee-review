@@ -174,15 +174,16 @@ const observationFields = [
 // 8 項都判斷完才有。key 沿用舊參考分的 key（acidity → 酸 / 鹹、sweetness → 甜 / 苦、
 // cleanness → 清晰度），新舊紀錄靠 schema_version 區分（ADJUSTMENT_SCHEMA 以上是新制）。
 // 杯測場次不用這套，仍是 referenceFields + 總分挑選器。
+// 順序照喝的感受：先聞 → 入口 → 口腔 → 吞下後 → 整體。
 const adjustmentFields = [
     { key: 'aroma',      label: '香氣',       hasFlavorWheel: true },
     { key: 'flavor',     label: '風味',       hasFlavorWheel: true },
-    { key: 'aftertaste', label: '尾韻' },
+    { key: 'cleanness',  label: '清晰度' },
     { key: 'acidity',    label: '酸 / 鹹' },
     { key: 'sweetness',  label: '甜 / 苦' },
     { key: 'mouthfeel',  label: '口感' },
+    { key: 'aftertaste', label: '尾韻' },
     { key: 'balance',    label: '平衡 / 和諧' },
-    { key: 'cleanness',  label: '清晰度' },
 ];
 const ADJUSTMENT_BASE = 80;
 const ADJUSTMENT_SCHEMA = { cupping: 4, tasting: 6 };
@@ -394,6 +395,14 @@ function showToast(msg, ms = 2000, isError = false) {
 
 function showErrorToast(msg) {
     showToast(msg, 4000, true);
+}
+
+// 失敗只告訴使用者「哪個動作失敗、怎麼辦」；err.message 是程式或 Worker 的內部
+// 訊息（例：null is not an object…、UNIQUE constraint failed），一律不上畫面，只進 console。
+// 只有 app.js 自己寫給使用者看的 err.userMessage 會原樣顯示。
+function showFailureToast(action, err) {
+    console.error(err);
+    showErrorToast(err?.userMessage ? `${action}失敗：${err.userMessage}` : `${action}失敗，請再試一次`);
 }
 
 // 對話框開著時把背景設成 inert：Tab、點擊、螢幕閱讀器都進不去。#toastMsg 不設，
@@ -941,7 +950,7 @@ async function viewStats(root) {
         console.error(e);
         if (location.hash !== route) return;
         root.innerHTML = `<div class="empty-state error">
-            <i class="bi bi-exclamation-triangle"></i>讀取失敗：${escapeHtml(e.message || String(e))}
+            <i class="bi bi-exclamation-triangle"></i>讀取失敗，請重新整理再試一次
             <div><button type="button" class="btn btn-outline-secondary mt-3" id="stats-retry">
                 重新載入
             </button></div>
@@ -1224,7 +1233,7 @@ function brewBackHeader(href, title, right = '') {
 function brewLoadError(root, e) {
     console.error(e);
     root.innerHTML = `<div class="empty-state error">
-        <i class="bi bi-exclamation-triangle"></i>讀取失敗：${escapeHtml(e.message || String(e))}
+        <i class="bi bi-exclamation-triangle"></i>讀取失敗，請重新整理再試一次
         <div><button type="button" class="btn btn-outline-secondary mt-3" id="bp-retry">重新載入</button></div>
     </div>`;
     document.getElementById('bp-retry').addEventListener('click', () => renderRoute());
@@ -1618,8 +1627,7 @@ function mountBrewPlanForm(root, { planId, draft }) {
             showToast('已刪除');
             navigate('/plans');
         } catch (e) {
-            console.error(e);
-            showErrorToast(`刪除失敗：${e.message || e}`);
+            showFailureToast('刪除', e);
         }
     });
 
@@ -1645,8 +1653,7 @@ function mountBrewPlanForm(root, { planId, draft }) {
                 errors = [{ field: 'name', message: '已有同名計劃' }];
                 renderErrors();
             } else {
-                console.error(err);
-                showErrorToast(`儲存失敗：${err.message || err}`);
+                showFailureToast('儲存', err);
             }
         } finally {
             save.disabled = false;
@@ -2337,7 +2344,7 @@ async function loadAndRenderCards() {
         listPendingSearch = false;
         console.error(e);
         container.innerHTML = `<div class="empty-state error">
-            <i class="bi bi-exclamation-triangle"></i>讀取失敗：${escapeHtml(e.message || String(e))}
+            <i class="bi bi-exclamation-triangle"></i>讀取失敗，請重新整理再試一次
         </div>`;
     }
 }
@@ -2559,7 +2566,7 @@ async function viewRecordDetail(root, { mode, recordId }) {
     } catch (e) {
         console.error(e);
         root.innerHTML = `<div class="empty-state error">
-            <i class="bi bi-exclamation-triangle"></i>讀取失敗：${escapeHtml(e.message || String(e))}
+            <i class="bi bi-exclamation-triangle"></i>讀取失敗，請重新整理再試一次
         </div>`;
     }
 }
@@ -2635,7 +2642,7 @@ function renderRecordDetail(mode, r, { planStatus = null } = {}) {
 
 // 沖煮 / 品鑑詳細頁的 8 項（#169）。分數一律是紀錄上的 coe_total（舊紀錄是當時親手選的），
 // 這裡只顯示各項調整分；舊紀錄的參考分在 recordAdjustments 換算，不標「舊制」。
-// 舊紀錄的香氣內容在 observation.aroma，舊的 chip 選項照樣列出。
+// 舊紀錄的香氣內容在 observation.aroma；描述標籤新舊紀錄都列出（adjustChipSpec）。
 function renderDetailAdjustments(mode, r) {
     const values = recordAdjustments(mode, r);
     const legacy = !isAdjustmentRecord(mode, r);
@@ -2645,9 +2652,7 @@ function renderDetailAdjustments(mode, r) {
     return `<div class="detail-adjust-list">${adjustmentFields.map(f => {
         const data = (legacy && f.key === 'aroma' ? r.observation?.aroma : r.evaluations?.[f.key]) || {};
         const chips = flavorChips(data.flavors);
-        const chipRows = legacy
-            ? renderChipDetailRows(f.key === 'aroma' ? observationOptions.aroma : evaluationOptions[f.key], data)
-            : '';
+        const chipRows = renderChipDetailRows(adjustChipSpec(f.key), data);
         const v = values[f.key];
         return `
             <div class="detail-adjust-item">
@@ -3831,7 +3836,8 @@ function openShopPicker({ currentId = '', allowEmpty = true, emptyLabel = '— �
         } catch (err) {
             if (seq !== googleSeq || !document.body.contains(backdrop)) return;
             lastGoogleQuery = '';   // 失敗不算查過，讓使用者能再試一次
-            showGoogleNote(`Google 搜尋失敗：${escapeHtml(err.message || String(err))}`);
+            console.error(err);
+            showGoogleNote('Google 搜尋失敗，請再試一次');
         }
     }
 
@@ -3895,7 +3901,7 @@ function openShopPicker({ currentId = '', allowEmpty = true, emptyLabel = '— �
             creating = false;
             btn.disabled = false;
             if (addrEl) addrEl.textContent = addrText;
-            showErrorToast('新增店家失敗：' + (err.message || err));
+            showFailureToast('新增店家', err);
         }
     }
 
@@ -4015,9 +4021,14 @@ function refreshTotalDisplay() {
 
 // ─── 調整分元件（沖煮 / 品鑑，#169） ─────────────────────────────────────────
 // #tpl-form 每次掛載呼叫一次 initAdjustmentWidget。8 項的值在 adjustState.values
-// （null = 未判斷），筆記與風味輪（只有香氣、風味）收在各列的展開區；負面風味
-// （defects_tags + f-defects）與最終備註在下面另一張卡。杯測場次不用這套。
+// （null = 未判斷），筆記與風味輪（只有香氣、風味）收在各列的展開區；最終備註
+// 在下面另一張卡。沖煮 / 品鑑不再記負面風味（舊紀錄的照樣顯示）。杯測場次不用這套。
 const adjustState = { values: {} };
+
+// 每一項展開後的描述標籤：沿用 #169 之前的選項（香氣用 observationOptions），只做記錄、不影響分數。
+function adjustChipSpec(key) {
+    return key === 'aroma' ? observationOptions.aroma : evaluationOptions[key];
+}
 
 function adjustRowHtml(f) {
     const k = f.key;
@@ -4045,14 +4056,11 @@ function adjustRowHtml(f) {
         </div>
         <div class="adjust-body" id="adjust_body_${k}" hidden>
             ${wheel}
-            <label class="form-label" for="${k}_notes">筆記</label>
-            <textarea id="${k}_notes" class="form-control" rows="2"></textarea>
+            ${Object.entries(adjustChipSpec(k) || {})
+                .map(([sub, o]) => chipGroupHtml(`${k}_${sub}`, o.label, o.type, o.options)).join('')}
+            ${notesSlotHtml(`${k}_notes`)}
         </div>
     </div>`;
-}
-
-function negativeFlavorHtml() {
-    return `<div class="small-hint mb-2">只做記錄，不影響分數。</div>${defectsBodyHtml('負面風味')}`;
 }
 
 function initAdjustmentWidget() {
@@ -4060,7 +4068,6 @@ function initAdjustmentWidget() {
     if (!list) return;
     adjustState.values = Object.fromEntries(adjustmentFields.map(f => [f.key, null]));
     list.innerHTML = adjustmentFields.map(adjustRowHtml).join('');
-    document.getElementById('negativeFlavorSection').innerHTML = negativeFlavorHtml();
 
     adjustmentFields.forEach(f => {
         if (f.hasFlavorWheel) renderFlavorWheel(`${f.key}_flavorList`, () => updateAdjustSummary(f.key));
@@ -4072,6 +4079,16 @@ function initAdjustmentWidget() {
         const item = e.target.closest('.adjust-item');
         if (!item) return;
         const key = item.dataset.adjustKey;
+        const chip = e.target.closest('.chip[data-chip-value]');
+        if (chip) {
+            const group = chip.closest('.chip-group');
+            if (group.dataset.chipType === 'multi') {
+                chip.setAttribute('aria-pressed', String(chip.getAttribute('aria-pressed') !== 'true'));
+            } else {
+                group.querySelectorAll('.chip').forEach(b => b.setAttribute('aria-pressed', String(b === chip)));
+            }
+            return;
+        }
         const stepBtn = e.target.closest('[data-adjust]');
         if (stepBtn) {
             setAdjustment(key, stepAdjustment(adjustState.values[key], stepBtn.dataset.adjust));
@@ -4088,11 +4105,6 @@ function initAdjustmentWidget() {
     list.addEventListener('input', e => {
         const key = e.target.closest('.adjust-item')?.dataset.adjustKey;
         if (key) updateAdjustSummary(key);
-    });
-    document.getElementById('negativeFlavorSection').addEventListener('click', e => {
-        const chip = e.target.closest('.chip[data-chip-value]');
-        if (!chip) return;
-        chip.setAttribute('aria-pressed', String(chip.getAttribute('aria-pressed') !== 'true'));
     });
 }
 
@@ -4172,6 +4184,9 @@ function buildAdjustmentPayload() {
             notes: document.getElementById(`${f.key}_notes`)?.value || '',
         };
         if (f.hasFlavorWheel) entry.flavors = getSelectedFlavorIds(`${f.key}_flavorList`);
+        Object.keys(adjustChipSpec(f.key) || {}).forEach(sub => {
+            entry[sub] = readChipGroup(`${f.key}_${sub}`);
+        });
         evaluations[f.key] = entry;
     });
     return {
@@ -4190,12 +4205,13 @@ function applyAdjustmentsToForm(mode, r) {
         const data = r.evaluations?.[f.key] || {};
         const notesEl = document.getElementById(`${f.key}_notes`);
         if (notesEl) notesEl.value = data.notes || '';
+        if (data.notes) expandNotesSlot(`${f.key}_notes`, { focus: false });
         if (f.hasFlavorWheel) {
             applyFlavorSelections(`${f.key}_flavorList`, Array.isArray(data.flavors) ? data.flavors : []);
         }
+        Object.keys(adjustChipSpec(f.key) || {}).forEach(sub => writeChipGroup(`${f.key}_${sub}`, data[sub]));
         renderAdjustRow(f.key);
     });
-    writeChipGroup('defects_tags', Array.isArray(r.defects_tags) ? r.defects_tags : []);
     renderScoreBar();
 }
 
@@ -4354,7 +4370,7 @@ function generateObservationItem(field) {
     return wrapAccordionItem(key, field.label, field.icon, body);
 }
 
-// word：杯測叫「瑕疵」，沖煮 / 品鑑叫「負面風味」（#169）。
+// 只剩杯測在用（word = 「瑕疵」）；沖煮 / 品鑑已不記負面風味。
 function defectsBodyHtml(word) {
     return `
         ${chipGroupHtml('defects_tags', `常見${word}`, 'multi', defectsOptions)}
@@ -5180,16 +5196,17 @@ function brewPlanOptionMarkup(p) {
 async function openBrewPlanPicker() {
     const opener = document.activeElement;
     let mine = [];
-    let loadError = '';
+    let loadError = false;
     try {
         mine = (await api.listBrewPlans()) || [];
     } catch (e) {
-        loadError = e.message || String(e);
+        console.error(e);
+        loadError = true;
     }
     if (!state.currentForm) return; // 讀取中已離開表單
     const plans = [...mine, ...BUILTIN_BREW_PLANS];
     const mineBody = loadError
-        ? `<p class="bp-empty">讀不到我的計劃：${escapeHtml(loadError)}</p>`
+        ? '<p class="bp-empty">讀不到我的計劃，請再試一次。</p>'
         : mine.length ? mine.map(brewPlanOptionMarkup).join('') : '<p class="bp-empty">還沒有自己的計劃。</p>';
 
     const backdrop = document.createElement('div');
@@ -5276,8 +5293,6 @@ function buildEvaluationPayload() {
 
 function buildFormPayload(mode) {
     const shopId = document.getElementById('f-shop').value || null;
-    const defects = document.getElementById('f-defects').value;
-    const defectsTags = readChipGroup('defects_tags') || [];
     const notes = document.getElementById('f-notes').value;
 
     const ev = buildAdjustmentPayload();
@@ -5308,8 +5323,6 @@ function buildFormPayload(mode) {
                 ratio: null,
                 extraction_time: null,
             }),
-            defects: defects || null,
-            defects_tags: defectsTags,
             notes: notes || null,
             schema_version: ADJUSTMENT_SCHEMA.cupping,
             ...ev,
@@ -5328,8 +5341,6 @@ function buildFormPayload(mode) {
         bean_type: getBeanType('tasting') || null,
         // v5 起店家體驗（環境/設施/風格/材質/服務/餐點/飲料）不再存在品鑑記錄裡，
         // 改存到 coffee.shop_notes（每人每店一筆）。
-        defects: defects || null,
-        defects_tags: defectsTags,
         notes: notes || null,
         schema_version: ADJUSTMENT_SCHEMA.tasting,
         ...ev,
@@ -5418,8 +5429,7 @@ async function submitForm() {
             return;
         }
     } catch (e) {
-        console.error(e);
-        showErrorToast('儲存失敗：' + (e.message || e));
+        showFailureToast('儲存', e);
         if (stillHere()) formLeaveGuard = leaveGuard;
     } finally {
         saveBtns.forEach(b => { b.disabled = false; });
@@ -5446,7 +5456,7 @@ async function deleteCurrentRecord() {
         showToast('✓ 已刪除');
         navigate('/records');
     } catch (e) {
-        showErrorToast('刪除失敗：' + (e.message || e));
+        showFailureToast('刪除', e);
     }
 }
 
@@ -5460,7 +5470,6 @@ function applyRecordToForm(mode, r) {
     refreshImportBeanForShop(mode, shopSel.value);
 
     // common fields
-    document.getElementById('f-defects').value = r.defects || '';
     document.getElementById('f-notes').value = r.notes || '';
     if (r.notes) expandNotesSlot('f-notes', { focus: false });
 
@@ -5574,8 +5583,7 @@ async function loadRecordIntoForm(mode, recordId) {
 
         applyRecordToForm(mode, r);
     } catch (e) {
-        console.error(e);
-        showErrorToast('讀取失敗：' + (e.message || e));
+        showFailureToast('讀取', e);
     }
 }
 
@@ -6177,8 +6185,7 @@ function autosaveSession({ keepalive = false } = {}) {
                 if (status) status.textContent = `已自動暫存 ${formatClockTime(new Date())}`;
             }
         } catch (e) {
-            console.error(e);
-            showErrorToast('暫存失敗：' + (e.message || e));
+            showFailureToast('暫存', e);
         } finally {
             if (form.pendingSnapshot === snap) form.pendingSnapshot = null;
         }
@@ -6227,7 +6234,7 @@ async function viewSessionForm(root, { sessionId = null } = {}) {
             if (state.currentForm !== form) return;
             console.error(e);
             root.innerHTML = `<div class="empty-state error">
-                <i class="bi bi-exclamation-triangle"></i>讀取失敗：${escapeHtml(e.message || String(e))}
+                <i class="bi bi-exclamation-triangle"></i>讀取失敗，請重新整理再試一次
             </div>`;
             return;
         }
@@ -6302,8 +6309,7 @@ async function submitSessionForm() {
     } catch (e) {
         // 表單與記憶體都原封不動，直接再按一次儲存即可重試。
         form.closing = closingAfterFailure(e);
-        console.error(e);
-        showErrorToast('儲存失敗：' + (e.message || e));
+        showFailureToast('儲存', e);
     } finally {
         saveBtn.disabled = false;
     }
@@ -6327,7 +6333,7 @@ async function deleteCurrentSession() {
         navigate('/records');
     } catch (e) {
         form.closing = closingAfterFailure(e);
-        showErrorToast('刪除失敗：' + (e.message || e));
+        showFailureToast('刪除', e);
     }
 }
 
@@ -6359,7 +6365,7 @@ async function viewSessionDetail(root, sessionId) {
         console.error(e);
         if (location.hash !== route) return;
         root.innerHTML = `<div class="empty-state error">
-            <i class="bi bi-exclamation-triangle"></i>讀取失敗：${escapeHtml(e.message || String(e))}
+            <i class="bi bi-exclamation-triangle"></i>讀取失敗，請重新整理再試一次
         </div>`;
     }
 }
@@ -6468,7 +6474,7 @@ async function fetchShopFromGoogle(shop) {
     // place_id 退役時 Google 會回一個不同的 id。DB trigger 凍結 google_place_id，
     // 所以這裡不能自動改寫 —— 那等於允許偷換店家。只回報，讓人決定。
     if (place.id && place.id !== shop.google_place_id) {
-        throw new Error('這個 Google 地點已被取代，需要重新綁定');
+        throw Object.assign(new Error('place superseded'), { userMessage: '這個 Google 地點已被取代，需要重新綁定' });
     }
 
     // 刻意不送 google_place_id：店家身分不可變（DB trigger 也擋）。
@@ -6498,7 +6504,7 @@ async function resyncShopFromGoogle(shop, btn) {
             btn.disabled = false;
             btn.innerHTML = restore;
         }
-        showErrorToast('同步失敗：' + (err.message || err));
+        showFailureToast('同步', err);
     }
 }
 
@@ -6610,8 +6616,9 @@ async function viewShopsList(root) {
             renderGrid(filtered, stats);
         });
     } catch (e) {
+        console.error(e);
         grid.innerHTML =
-            `<div class="empty-state error"><i class="bi bi-exclamation-triangle"></i>讀取失敗：${escapeHtml(e.message || String(e))}</div>`;
+            `<div class="empty-state error"><i class="bi bi-exclamation-triangle"></i>讀取失敗，請重新整理再試一次</div>`;
     }
 }
 
@@ -6833,7 +6840,7 @@ function mountShopNoteCard(host, shopId, note) {
                 mountShopNoteCard(host, shopId, saved);
             } catch (e) {
                 saveBtn.disabled = false;
-                showErrorToast('儲存失敗：' + (e.message || e));
+                showFailureToast('儲存', e);
             }
         });
     });
@@ -6940,13 +6947,14 @@ async function viewShopDetail(root, shopId) {
                 if (e.code === '23503') {
                     showErrorToast('這家店還有其他人的記錄連著，無法刪除');
                 } else {
-                    showErrorToast('刪除失敗：' + (e.message || e));
+                    showFailureToast('刪除', e);
                 }
             }
         });
     } catch (e) {
+        console.error(e);
         root.innerHTML = `<div class="empty-state error">
-            <i class="bi bi-exclamation-triangle"></i>讀取失敗：${escapeHtml(e.message || String(e))}
+            <i class="bi bi-exclamation-triangle"></i>讀取失敗，請重新整理再試一次
         </div>`;
     }
 }
