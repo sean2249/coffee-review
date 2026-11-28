@@ -213,8 +213,9 @@ function isAdjustmentRecord(mode, r) {
 function recordAdjustments(mode, r) {
     const legacy = !isAdjustmentRecord(mode, r);
     const scoreOf = key => r?.evaluations?.[key]?.score;
+    // 「整體」不在 8 項裡，只動它不算評過（否則會顯示 8 個 0.0）。
     const untouchedCup = mode === 'session_cup' && typeof r?.coe_total !== 'number'
-        && referenceFields.every(f => [undefined, null, 5].includes(scoreOf(f.key)));
+        && referenceFields.every(f => f.key === 'overall' || [undefined, null, 5].includes(scoreOf(f.key)));
     const legacyRated = legacy && !untouchedCup
         && referenceFields.some(f => typeof scoreOf(f.key) === 'number');
     const out = {};

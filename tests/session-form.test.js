@@ -422,6 +422,30 @@ describe('8 項調整分（#183）', () => {
         expect(win.rankCups(form().cups).map(r => r.rank)).toEqual([1, null]);
     });
 
+    // review #183 round 2–3：沒有總分但動過參考分 → 照換算顯示、唯讀、仍未評分、不進排名；
+    // 只動了「整體」（不在 8 項裡）→ 當作沒評過。
+    it('沒有總分、但動過參考分的舊杯：照換算顯示，仍未評分、原樣寫回、不進排名', async () => {
+        const touched = { ...cupOldUnscored, evaluations: { ...DEFAULT_REFERENCE, flavor: { score: 7, notes: '' } } };
+        await mount([cupA, touched], { recordId: 's1' });
+        clickTab(1);
+        expect(adjValue('flavor')).toBe('2.0');
+        expect(adjValue('acidity')).toBe('0.0');
+        expect(row('flavor').querySelector('[data-adjust="zero"]').disabled).toBe(true);
+        expect($('#scoreBar').textContent).toContain('未評分 · 8/8');
+        typeInto($('#f-notes'), '補個備註');
+        const cup = form().cups[1];
+        expect(cup.coe_total).toBeNull();
+        expect(cup.schema_version).toBe(1);
+        expect(cup.evaluations).toEqual(touched.evaluations);
+        expect(win.rankCups(form().cups).map(r => r.rank)).toEqual([1, null]);
+
+        const onlyOverall = { ...cupOldUnscored, evaluations: { ...DEFAULT_REFERENCE, overall: { score: 7, notes: '' } } };
+        await mount([cupA, onlyOverall], { recordId: 's1' });
+        clickTab(1);
+        expect(KEYS.map(adjValue)).toEqual(Array(8).fill('—'));
+        expect($('#scoreBar').textContent).toContain('未評分 · 0/8');
+    });
+
     // review #183：舊杯的唯讀狀態不能帶進下一個表單（例如接著去新增沖煮）。
     it('重新掛載評分元件 → 不再是舊杯、按鍵可以按', () => {
         expect(row('flavor').querySelector('[data-adjust="plus"]').disabled).toBe(true);
