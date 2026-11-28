@@ -62,7 +62,21 @@
     --brew-wait: #c4c8ce;
     --brew-temp: #b4532a;
     --brew-temp-bg: #fbe9e1;
-    --brew-error: #b42318;
+    --brew-error: var(--danger);
+
+    /* 錯誤 / 危險（錯誤訊息、刪除、錯誤 toast）：全 app 只用這一組紅 */
+    --danger: #b42318;
+    --danger-strong: #842029;
+    --danger-bg: #fef3f3;
+    --danger-border: #f5c2c0;
+
+    /* 記錄類型標籤（沖煮 / 品鑑 / 杯測）：自己的顏色，不借等級色盤 */
+    --type-cupping-bg: var(--accent-tint);
+    --type-cupping-fg: var(--accent);
+    --type-tasting-bg: #f6eedf;
+    --type-tasting-fg: #876615;
+    --type-session-bg: #ebe9f4;
+    --type-session-fg: #4c3d8f;
 
     /* 調整分 5 階（#169）：−1 磚紅、0 灰、0.5–1 淺綠、1.5–2 深綠、2 以上紫 */
     --adj-none: #c4c8ce;
@@ -273,7 +287,7 @@ button.card-title {
 .btn-success:hover { background-color: #2e6448; border-color: #2e6448; }
 .btn-outline-secondary { color: var(--text-secondary); border-color: var(--border-strong); }
 .btn-outline-secondary:hover { background-color: var(--bg-soft); color: var(--text-primary); border-color: var(--border-strong); }
-.btn-outline-danger:hover { background-color: #d9534f; border-color: #d9534f; }
+.btn-outline-danger:hover { background-color: var(--danger); border-color: var(--danger); }
 
 /* ───── New record mode picker ─────────────────────────────────────────── */
 .new-mode-picker-card .new-mode-picker-hint {
@@ -571,17 +585,17 @@ button.card-title {
     letter-spacing: 0.02em;
 }
 .record-card-type-badge.type-cupping {
-    background: var(--accent-tint);
-    color: var(--accent);
+    background: var(--type-cupping-bg);
+    color: var(--type-cupping-fg);
 }
 .record-card-type-badge.type-tasting {
-    background: rgba(192, 140, 42, 0.15);
-    color: #876615;
+    background: var(--type-tasting-bg);
+    color: var(--type-tasting-fg);
 }
 .record-card-type-badge.type-session,
 .record-card-type-badge.type-session_cup {
-    background: rgba(93, 75, 166, 0.12);
-    color: #4c3d8f;
+    background: var(--type-session-bg);
+    color: var(--type-session-fg);
 }
 .record-card-title {
     font-weight: 600;
@@ -646,11 +660,11 @@ button.card-title {
     font-size: 0.95rem;
 }
 .empty-state.error {
-    border-color: #f5c2c0;
-    background: #fef3f3;
-    color: #842029;
+    border-color: var(--danger-border);
+    background: var(--danger-bg);
+    color: var(--danger-strong);
 }
-.empty-state.error .bi { color: #b03a36; }
+.empty-state.error .bi { color: var(--danger); }
 .empty-state.small {
     padding: 0.6rem 0.75rem;
     font-size: 0.85rem;
@@ -1652,7 +1666,7 @@ hr { border-color: var(--border); opacity: 0.7; }
     transition: opacity 0.2s ease;
 }
 .toast-msg.show { opacity: 1; }
-.toast-msg.error { background: #842029; color: #fff; }
+.toast-msg.error { background: var(--danger-strong); color: #fff; }
 
 /* ───── Read-only record detail view ──────────────────────────────────── */
 .detail-back-bar {

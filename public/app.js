@@ -2249,9 +2249,9 @@ async function viewRecordsList(root, query = {}) {
         <div class="filter-bar">
             <div class="filter-chip-row" role="group" aria-label="記錄類型">
                 <button type="button" class="filter-chip" data-filter-type="all">全部</button>
-                <button type="button" class="filter-chip" data-filter-type="cupping">沖煮</button>
-                <button type="button" class="filter-chip" data-filter-type="tasting">品鑑</button>
-                <button type="button" class="filter-chip" data-filter-type="session">杯測</button>
+                <button type="button" class="filter-chip" data-filter-type="cupping">${TYPE_LABELS.cupping}</button>
+                <button type="button" class="filter-chip" data-filter-type="tasting">${TYPE_LABELS.tasting}</button>
+                <button type="button" class="filter-chip" data-filter-type="session">${TYPE_LABELS.session}</button>
             </div>
             <div class="filter-q-wrap">
                 <input type="search" class="form-control form-control-sm" id="filter-q"
@@ -2536,18 +2536,18 @@ function newModePickerOptions(shopId = null) {
         <div class="new-mode-picker">
             <a class="new-mode-picker-btn" href="#/new/cupping${suffix}">
                 <span class="new-mode-picker-icon"><i class="bi bi-cup-hot"></i></span>
-                <span class="new-mode-picker-label">沖煮</span>
+                <span class="new-mode-picker-label">${TYPE_LABELS.cupping}</span>
                 <span class="new-mode-picker-desc">記錄自家或樣品豆，含沖煮參數與評分</span>
             </a>
             <a class="new-mode-picker-btn" href="#/new/tasting${suffix}">
                 <span class="new-mode-picker-icon"><i class="bi bi-shop"></i></span>
-                <span class="new-mode-picker-label">品鑑</span>
+                <span class="new-mode-picker-label">${TYPE_LABELS.tasting}</span>
                 <span class="new-mode-picker-desc">記錄店家飲用體驗，含氛圍、裝潢、服務</span>
             </a>
             ${shopId ? '' : `
             <a class="new-mode-picker-btn" href="#/new/session">
                 <span class="new-mode-picker-icon"><i class="bi bi-grid-3x3-gap"></i></span>
-                <span class="new-mode-picker-label">杯測</span>
+                <span class="new-mode-picker-label">${TYPE_LABELS.session}</span>
                 <span class="new-mode-picker-desc">一次比較多支豆，每杯以編號或 A、B、C 編碼</span>
             </a>`}
         </div>`;

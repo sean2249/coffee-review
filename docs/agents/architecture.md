@@ -68,9 +68,23 @@ Cups reference sessions through the composite FK `(session_id, user_id)` with ca
 
 ## Shared visuals
 
-Three color systems are shared across pages. Each has **one source**; a page reads it, never
-copies a value. Before adding or changing any place that shows one, check the inventory
-below so no page is left on an old copy.
+Every meaning shared across pages has **one source**; a page reads it, never copies its value
+(#181). Before adding or changing a place that shows one, check this section so no page is
+left on an old copy. `tests/tier-palette.test.js` and `tests/single-source.test.js` fail when a
+second copy appears.
+
+| Meaning | Source | Read it with |
+|---|---|---|
+| Tier (徽章) colors | `--t1-bg` … `--t7-bg` / `--t*-fg` + the tier palette block in `styles.css` | `tier.cssClass` → `var(--tier-bg)` / `var(--tier-fg)` |
+| Record-type colors (沖煮 / 品鑑 / 杯測) | `--type-*-bg` / `--type-*-fg` in `:root` | `.record-card-type-badge.type-*` |
+| Error / danger red | `--danger`, `--danger-strong`, `--danger-bg`, `--danger-border` in `:root` | `var(--danger*)` |
+| Adjustment-score levels | `--adj-*` in `:root` | `adjustmentLevel(value)` → `data-level` |
+| Flavor colors | the `flavors` constant | `decodeFlavorMeta(id).color` |
+| Record-type names | `TYPE_LABELS` | `TYPE_LABELS[type]` (filter chips, new-record picker, badges) |
+| Tier names and descriptions | `totalScoreTiers` | README's badge table copies it, guarded by a test |
+
+Values that only happen to be equal are not copies: `--adj-neg` and `--brew-temp` are both
+`#b4532a` but mean "worse than normal" and "water temperature".
 
 **Tier (徽章) colors.** The palette is `--t1-bg` … `--t7-bg` / `--t*-fg` in `styles.css`
 `:root`; the **tier palette** block right after it maps each `tier.cssClass` (`.t-trash` …
@@ -98,14 +112,6 @@ Places that show a tier today (keep this list current):
 
 `tests/tier-palette.test.js` fails if a tier gets a color property, if `app.js` reads
 `tier.color`, or if any rule other than the palette block references `--t*-bg` / `--t*-fg`.
-
-**Adjustment-score levels (沖煮 / 品鑑).** `adjustmentLevel(value)` → `data-level`
-(`none` / `neg` / `zero` / `low` / `high` / `top`); colors are `--adj-*` in `:root`, used by
-the form rows and the detail page rows.
-
-**Flavor colors.** Each L1 / L2 entry in the `flavors` constant carries its own `color`;
-`decodeFlavorMeta(id)` returns it for a persisted id. Wheel tags, detail chips, the form's
-summary dots and the stats treemap all take it from there.
 
 ## Flavor wheel
 
