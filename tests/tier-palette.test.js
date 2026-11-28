@@ -121,8 +121,10 @@ describe('顯示等級的地方都掛 cssClass', () => {
         expect(bar.style).not.toContain('--tier-color');
     });
 
-    it('分數面板 A 以上加光暈', () => {
+    // 作者 2026-11-28：分數列不加光暈外框，A 以上也一樣。
+    it('分數面板 A 以上也沒有光暈', () => {
         const bar = scoreBarFor(10); // 90 → A
-        expect(bar.cls).toEqual(expect.arrayContaining(['t-a', 'tier-glow']));
+        expect(bar.cls).toContain('t-a');
+        expect(bar.cls).not.toContain('tier-glow');
     });
 });

@@ -52,7 +52,7 @@ function adjustmentTier(value) {
 // 不帶色碼：顯示等級的地方一律用 tierBadgeHtml，或在元素上掛 tier.cssClass。
 // tier 一定要是 totalScoreTiers 裡的一項（tierFromScore / scoreTier 的結果）；cssClass 也照樣 escape。
 // tier 為 null = 未評分：灰色膠囊。預設內容是字母＋中文（「C 優良」）；text 換成別的字。
-// tint：淡底＋色字（詳情頁標籤）；glow：A 以上加光暈（填寫分數列、詳情頁、杯測揭曉）。
+// tint：淡底＋色字（詳情頁標籤）；glow：A 以上加光暈（詳情頁、杯測揭曉；分數列不加）。
 function tierBadgeHtml(tier, text = null, { tint = false, glow = false } = {}) {
     if (!tier) return `<span class="tier-badge">${escapeHtml(text ?? '未評分')}</span>`;
     const cls = ['tier-badge', tier.cssClass, tint && 'is-tint', glow && tier.glow && 'tier-glow']
@@ -4015,7 +4015,8 @@ function renderScoreBar() {
         return;
     }
     const { tier, next, fraction, toNext } = tierProgress(score);
-    bar.className = `score-bar is-scored ${tier.cssClass}${tier.glow ? ' tier-glow' : ''}`;
+    // 分數列不加光暈（作者 2026-11-28）；光暈只在詳情頁標籤與杯測揭曉。
+    bar.className = `score-bar is-scored ${tier.cssClass}`;
     bar.style.setProperty('--ring', String(fraction));
     bar.innerHTML = `
         <span class="score-ring"><span class="score-ring-text">${escapeHtml(tier.medal)}</span></span>

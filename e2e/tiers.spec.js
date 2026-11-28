@@ -71,21 +71,24 @@ test.describe('沖煮表單', () => {
         for (let i = 0; i < times; i++) await row(page, key).locator(`[data-adjust="${action}"]`).click();
     };
 
-    test('8 項調整分的顏色：−1 F … 2 S，+2.5 起 SS；未判斷空心', async ({ page }) => {
+    // 作者 2026-11-28：等級色只在圓點；膠囊沒有外框，數字維持中性。
+    test('8 項調整分：圓點用等級色（−1 F … 2 S，+2.5 起 SS），膠囊無框、數字中性', async ({ page }) => {
         await page.goto('/#/new/cupping');
         const dot = row(page, 'flavor').locator('.adjust-dot');
         expect(await style(dot, 'backgroundColor')).toBe('rgba(0, 0, 0, 0)');
         const steps = [['minus', -1, 'F'], ['plus', 0, 'D'], ['plus', 0.5, 'C'], ['plus', 1, 'B'],
             ['plus', 1.5, 'A'], ['plus', 2, 'S'], ['plus', 2.5, 'SS'], ['plus', 3, 'SS']];
+        const stepper = row(page, 'flavor').locator('.adjust-stepper');
+        const valueBtn = row(page, 'flavor').locator('.adjust-value');
         for (const [action, value, medal] of steps) {
             await press(page, 'flavor', action);
             expect(await style(dot, 'backgroundColor'), `${value} dot`).toBe(rgb(PALETTE[medal].bg));
-            const valueBtn = row(page, 'flavor').locator('.adjust-value');
-            expect(await style(valueBtn, 'color'), `${value} text`).toBe(rgb(PALETTE[medal].ink));
+            expect(await style(stepper, 'borderTopWidth'), `${value} border`).toBe('0px');
+            expect(await style(valueBtn, 'color'), `${value} text`).toBe(rgb('#111418'));
         }
     });
 
-    test('分數列：判斷完照等級上色，A 以上有光暈', async ({ page }) => {
+    test('分數列：判斷完照等級上色，A 以上也沒有光暈', async ({ page }) => {
         await page.goto('/#/new/cupping');
         const bar = page.locator('#scoreBar');
         await expect(bar).toContainText('未評分 · 0/8');
@@ -96,7 +99,7 @@ test.describe('沖煮表單', () => {
         await press(page, 'flavor', 'plus', 18); // +9 → 89 A
         await expect(bar).toContainText('89.0');
         expect(await style(bar, 'backgroundColor')).toBe(rgb(PALETTE.A.bg));
-        expect(await style(bar, 'boxShadow')).toContain(rgb(PALETTE.A.bg));
+        expect(await style(bar, 'boxShadow')).not.toContain(rgb(PALETTE.A.bg));
     });
 });
 

@@ -2641,10 +2641,9 @@ a.brew-plan-ref .brew-plan-summary-name { color: var(--accent); flex: 1; }
     border-radius: 999px;
     background: var(--tier-bg);
     color: var(--tier-fg);
+    box-shadow: var(--shadow-md);
     min-width: 0;
 }
-/* 一般陰影只給沒有光暈的分數列：同一個 box-shadow 會蓋掉 .tier-glow */
-.score-bar:not(.tier-glow) { box-shadow: var(--shadow-md); }
 /* 沒有 color-mix 的瀏覽器（Safari < 16.2）：進度環底改用固定的半透明灰 */
 @supports not (color: color-mix(in srgb, red, blue)) {
     .score-bar { --ring-track: rgba(127, 127, 127, 0.35); }
@@ -2715,7 +2714,7 @@ a.brew-plan-ref .brew-plan-summary-name { color: var(--accent); flex: 1; }
     --adj-color: var(--adj-none);
     border-bottom: 1px solid var(--border);
 }
-/* 判斷過的列掛 adjustmentTier 的等級 class：圓點用等級底色，膠囊框與數字用它的字色。 */
+/* 判斷過的列掛 adjustmentTier 的等級 class：等級色只在圓點（作者 2026-11-28）。 */
 .adjust-item[class*=" t-"],
 .detail-adjust-row[class*=" t-"] { --adj-color: var(--tier-ink, var(--tier-bg)); }
 
@@ -2760,15 +2759,17 @@ a.brew-plan-ref .brew-plan-summary-name { color: var(--accent); flex: 1; }
 }
 .adjust-note-icon { font-size: 0.75rem; color: var(--text-muted); margin-left: 0.1rem; }
 
+/* − 數值 ＋：沒有外框，只留一層淡底讓按鍵範圍看得出來；數字維持中性色。 */
 .adjust-stepper {
     flex: 0 0 auto;
     display: inline-flex;
     align-items: center;
     height: 36px;
-    border: 1px solid var(--adj-color);
     border-radius: 999px;
-    color: var(--adj-color);
+    background: var(--bg-muted);
+    color: var(--text-primary);
 }
+.adjust-stepper .adjust-btn { color: var(--text-muted); }
 .adjust-item[data-level="none"] .adjust-stepper { color: var(--text-muted); }
 .adjust-btn,
 .adjust-value {
@@ -2829,7 +2830,7 @@ a.brew-plan-ref .brew-plan-summary-name { color: var(--accent); flex: 1; }
 .detail-adjust-value {
     font-family: var(--font-mono);
     font-weight: 700;
-    color: var(--adj-color);
+    color: var(--text-primary);
 }
 
 @media (min-width: 992px) {

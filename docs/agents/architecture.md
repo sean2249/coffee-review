@@ -108,7 +108,9 @@ on the tint reads `var(--tier-ink, var(--tier-bg))`. Tiers in `totalScoreTiers` 
 The treatment depends on the place (#173): **solid** for the list badge, stats and the
 杯測 ranking; **tint + colored text** for detail-page tags; **white + colored border** for an
 unselected filter chip (solid once selected); **glow** (`.tier-glow`, A and above only) on
-the form's score bar, the detail page's tag and the 杯測 reveal card. To show a tier:
+the detail page's tag and the 杯測 reveal card — not on the score bar (author 2026-11-28).
+The 8 adjustment rows carry the tier color on their dot only; the `− 數值 ＋` capsule has no
+border and a neutral number. To show a tier:
 
 - an element styled by the tier: add `tier.cssClass` and read `var(--tier-bg)` etc. in its
   CSS (with a fallback when the element can be tier-less);
