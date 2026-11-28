@@ -19,37 +19,37 @@ const totalScoreTiers = [
     { id: 'trash',      medal: '劣', label: '≤76',   min: 74, max: 76.5,
       badgeName: '平淡',   name: '風味平淡',
       description: '平淡無亮點',
-      cssClass: 't-trash',      color: '#6c757d' },
+      cssClass: 't-trash' },
 
     { id: 'commercial', medal: '凡', label: '77-79', min: 77, max: 79.5,
       badgeName: '普羅',   name: '商業風味',
       description: '普羅大眾的日常選擇，缺乏精品層次',
-      cssClass: 't-commercial', color: '#6e5640' },
+      cssClass: 't-commercial' },
 
     { id: 'common',     medal: '銅', label: '80-82', min: 80, max: 82.5,
       badgeName: '銅牌',   name: '卓越銅獎',
       description: '合格的精品咖啡，適合日常品飲',
-      cssClass: 't-common',     color: '#b86826' },
+      cssClass: 't-common' },
 
     { id: 'like',       medal: '銀', label: '83-85', min: 83, max: 85.5,
       badgeName: '銀牌',   name: '優秀銀獎',
       description: '平衡乾淨、值得反覆品飲的精品',
-      cssClass: 't-like',       color: '#9e9e9e' },
+      cssClass: 't-like' },
 
     { id: 'recommend',  medal: '金', label: '86-88', min: 86, max: 88.5,
       badgeName: '金牌',   name: '傑出金獎',
       description: '風味飽滿、層次豐富的傑作',
-      cssClass: 't-recommend',  color: '#d4a017' },
+      cssClass: 't-recommend' },
 
     { id: 'amazing',    medal: '鉑', label: '89-91', min: 89, max: 91.5,
       badgeName: '鉑金',   name: '大師鉑金',
       description: '結構完整、令人驚艷的大師之作',
-      cssClass: 't-amazing',    color: '#6c83a3' },
+      cssClass: 't-amazing' },
 
     { id: 'godly',      medal: '神', label: '≥92',   min: 92, max: 96,
       badgeName: '典藏',   name: '稀世絕品',
       description: '可遇不可求的競標級稀世絕品',
-      cssClass: 't-godly',      color: '#5a2ea0' },
+      cssClass: 't-godly' },
 ];
 
 // 分數由調整分算出（#169），最低 72、沒有上限：低於最低級歸最低級、高於最高級歸最高級；
@@ -58,6 +58,16 @@ function tierFromScore(score) {
     if (!Number.isFinite(score)) return totalScoreTiers[2];
     return [...totalScoreTiers].reverse().find(t => score >= t.min) || totalScoreTiers[0];
 }
+// 等級的顏色只在 styles.css（.t-* → --tier-bg / --tier-fg，見 tier palette）。這裡只給 class，
+// 不帶色碼：顯示等級的地方一律用 tierBadgeHtml / setTierBadge，或在元素上掛 tier.cssClass。
+function tierBadgeHtml(tier) {
+    return `<span class="tier-badge ${tier.cssClass}">${escapeHtml(tier.badgeName)}</span>`;
+}
+function setTierBadge(el, tier, baseClass) {
+    el.className = `${baseClass} tier-badge ${tier.cssClass}`;
+    el.textContent = tier.badgeName;
+}
+
 function tierById(id) {
     return totalScoreTiers.find(t => t.id === id) || totalScoreTiers[2];
 }
@@ -2632,7 +2642,7 @@ function renderRecordDetail(mode, r, { planStatus = null } = {}) {
                 <div class="coe-total-block">
                     <span class="coe-total-display detail-score-value">${score}</span>
                     <span class="coe-total-of">/ 100</span>
-                    ${tier ? `<span class="coe-total-tier-badge" style="color:${tier.color}">[ ${tier.badgeName} ]</span>` : ''}
+                    ${tier ? tierBadgeHtml(tier) : ''}
                     ${tier ? `<span class="coe-total-desc">${escapeHtml(tier.description)}</span>` : ''}
                 </div>
             </div>
@@ -2691,7 +2701,7 @@ function renderEstimatedTotalBlock(r) {
             <span class="evaluation-estimated-label">預估總分</span>
             <span class="evaluation-estimated-value">${estTotal.toFixed(1)}</span>
             <span class="evaluation-estimated-of">/ 100</span>
-            ${estTier ? `<span class="evaluation-estimated-tier" style="color:${estTier.color}">[ ${estTier.badgeName} ]</span>` : ''}
+            ${estTier ? `<span class="evaluation-estimated-tier">${tierBadgeHtml(estTier)}</span>` : ''}
             <span class="evaluation-estimated-hint">36 + 8 項分數加總</span>
         </div>`;
 }
@@ -3972,7 +3982,7 @@ function renderScoreChips(tier) {
     const row = document.getElementById('scoreChipRow');
     if (!row) return;
     row.innerHTML = '';
-    row.style.setProperty('--tier-color', tier.color);
+    row.className = `score-chip-row ${tier.cssClass}`;
     scoresInTier(tier).forEach(s => {
         const chip = document.createElement('button');
         chip.type = 'button';
@@ -4016,15 +4026,14 @@ function refreshTotalDisplay() {
     if (coeState.coeTotal == null) {
         // 杯測場次的未評分杯
         display.textContent = '—';
+        badge.className = 'coe-total-tier-badge';
         badge.textContent = '[ 未評分 ]';
-        badge.style.color = '';
         document.getElementById('coeTotalDesc').textContent = '';
         return;
     }
     const tier = tierById(coeState.selectedTierId);
     display.textContent = coeState.coeTotal.toFixed(1);
-    badge.textContent = `[ ${tier.badgeName} ]`;
-    badge.style.color = tier.color;
+    setTierBadge(badge, tier, 'coe-total-tier-badge');
     document.getElementById('coeTotalDesc').textContent = tier.description;
 }
 
@@ -4159,7 +4168,6 @@ function renderScoreBar() {
     const total = adjustmentFields.length;
     if (score == null) {
         bar.className = 'score-bar is-unscored';
-        bar.style.removeProperty('--tier-color');
         bar.style.setProperty('--ring', String(done / total));
         bar.innerHTML = `
             <span class="score-ring"><span class="score-ring-text">${done}</span></span>
@@ -4167,21 +4175,13 @@ function renderScoreBar() {
         return;
     }
     const { tier, next, fraction, toNext } = tierProgress(score);
-    bar.className = `score-bar is-scored ${isLightColor(tier.color) ? 'on-light' : 'on-dark'}`;
-    bar.style.setProperty('--tier-color', tier.color);
+    bar.className = `score-bar is-scored ${tier.cssClass}`;
     bar.style.setProperty('--ring', String(fraction));
     bar.innerHTML = `
         <span class="score-ring"><span class="score-ring-text">${escapeHtml(tier.medal)}</span></span>
         <span class="score-bar-value">${score.toFixed(1)}</span>
         <span class="score-bar-desc">${escapeHtml(tier.badgeName)} · ${escapeHtml(tier.description)}</span>
         ${next ? `<span class="score-bar-next">距${escapeHtml(next.badgeName)}還差 ${toNext.toFixed(1)}</span>` : ''}`;
-}
-
-// 等級色是淺色（銀、金）時進度環與文字用深色，其餘用白色。
-function isLightColor(hex) {
-    const n = parseInt(hex.slice(1), 16);
-    const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
-    return (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.55;
 }
 
 function buildAdjustmentPayload() {
@@ -4479,9 +4479,9 @@ function updateEstimatedTotalDisplay() {
     const badge = document.getElementById('evalEstimatedTier');
     if (badge) {
         if (tier) {
-            badge.textContent = `[ ${tier.badgeName} ]`;
-            badge.style.color = tier.color;
+            setTierBadge(badge, tier, 'evaluation-estimated-tier');
         } else {
+            badge.className = 'evaluation-estimated-tier';
             badge.textContent = '';
         }
     }
@@ -6354,7 +6354,7 @@ function renderCupRanking(cups) {
             <span class="cup-ranking-rank">${rank ?? '—'}</span>
             <span><span class="cup-code-badge">${escapeHtml(cup.code || `#${index + 1}`)}</span></span>
             <span class="cup-ranking-bean">${escapeHtml(cup.bean_name || '')}</span>
-            <span class="cup-ranking-score"${tier ? ` style="color:${tier.color}"` : ''}>${formatCupScore(cup)}</span>
+            <span class="cup-ranking-score${tier ? ` tier-badge ${tier.cssClass}` : ''}">${formatCupScore(cup)}</span>
         </div>`;
     });
     return `<div class="cup-ranking">${rows.join('')}</div>`;
@@ -6429,7 +6429,7 @@ function renderSessionCupDetail(c) {
                     <span class="cup-code-badge">${escapeHtml(c.code)}</span>
                     <span class="session-cup-title">${escapeHtml(c.bean_name || '(未填豆名)')}</span>
                     ${scored
-                        ? `<span class="session-cup-score"${tier ? ` style="color:${tier.color}"` : ''}>${c.coe_total.toFixed(1)}${tier ? ` [ ${escapeHtml(tier.badgeName)} ]` : ''}</span>`
+                        ? `<span class="session-cup-score">${c.coe_total.toFixed(1)}${tier ? ` ${tierBadgeHtml(tier)}` : ''}</span>`
                         : '<span class="text-muted">未評分</span>'}
                 </div>
                 ${shop ? `<div class="detail-meta">${shopLinkable

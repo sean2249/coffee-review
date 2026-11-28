@@ -66,6 +66,47 @@ PUTting a session id that belongs to someone else is rejected as 404 before the 
 half-loaded.
 Cups reference sessions through the composite FK `(session_id, user_id)` with cascade.
 
+## Shared visuals
+
+Three color systems are shared across pages. Each has **one source**; a page reads it, never
+copies a value. Before adding or changing any place that shows one, check the inventory
+below so no page is left on an old copy.
+
+**Tier (徽章) colors.** The palette is `--t1-bg` … `--t7-bg` / `--t*-fg` in `styles.css`
+`:root`; the **tier palette** block right after it maps each `tier.cssClass` (`.t-trash` …
+`.t-godly`) to `--tier-bg` / `--tier-fg`. Tiers in `totalScoreTiers` carry `cssClass` and
+no color. To show a tier:
+
+- an element styled by the tier: add `tier.cssClass` and read `var(--tier-bg)` /
+  `var(--tier-fg)` in its CSS (with a fallback when the element can be tier-less);
+- a tier name inside text: `tierBadgeHtml(tier)`, or `setTierBadge(el, tier, baseClass)`
+  for an element that is updated in place.
+
+Places that show a tier today (keep this list current):
+
+| Where | Function | Element |
+|---|---|---|
+| Records list card | `renderRecordCard` | `.record-card-medal` |
+| Advanced filter (等級) | `openFilterDrawer` | `.filter-tier-row .filter-chip` |
+| Stats: score distribution | `statsDistMarkup` | `.stats-dist-medal`, `.stats-dist-bar` |
+| 沖煮 / 品鑑 form score bar / panel | `renderScoreBar` | `#scoreBar.score-bar` |
+| 沖煮 / 品鑑 detail page | `renderRecordDetail` | `.tier-badge` |
+| 杯測 form: tier picker, score chips, total | `renderTierMedals`, `renderScoreChips`, `refreshTotalDisplay` | `.tier-medal`, `.score-chip-row`, `#coeTotalTierBadge` |
+| 杯測 form / detail: 預估總分 | `updateEstimatedTotalDisplay`, `renderEstimatedTotalBlock` | `.evaluation-estimated-tier` |
+| 杯測 detail: per-cup score, ranking | `renderSessionDetail`, `renderCupRanking` | `.session-cup-score`, `.cup-ranking-score` |
+| 杯測 reveal cards | `renderRevealCardHead` | `.reveal-cup-medal` |
+
+`tests/tier-palette.test.js` fails if a tier gets a color property, if `app.js` reads
+`tier.color`, or if any rule other than the palette block references `--t*-bg` / `--t*-fg`.
+
+**Adjustment-score levels (沖煮 / 品鑑).** `adjustmentLevel(value)` → `data-level`
+(`none` / `neg` / `zero` / `low` / `high` / `top`); colors are `--adj-*` in `:root`, used by
+the form rows and the detail page rows.
+
+**Flavor colors.** Each L1 / L2 entry in the `flavors` constant carries its own `color`;
+`decodeFlavorMeta(id)` returns it for a persisted id. Wheel tags, detail chips, the form's
+summary dots and the stats treemap all take it from there.
+
 ## Flavor wheel
 
 **Flavor wheel**: up to 3 levels in the `flavors` constant. The persisted ids in

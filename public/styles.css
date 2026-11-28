@@ -71,10 +71,29 @@
     --adj-low: #4c9a5b;
     --adj-high: #22663a;
     --adj-top: #6a3fb0;
-    /* 分數列：深底等級用白字白環、淺底（銀、金）用深字深環 */
-    --on-tier-dark: #ffffff;
-    --on-tier-dark-track: rgba(255, 255, 255, 0.35);
-    --on-tier-light-track: rgba(17, 20, 24, 0.18);
+}
+
+/* ───── Tier palette ─────────────────────────────────────────────────── */
+/* 等級（徽章）顏色的唯一對照表：JS 只給 tier.cssClass，元件一律讀 --tier-bg / --tier-fg，
+   不再各自對 t-* 上色。色盤本身是 :root 的 --t1-bg … --t7-bg。 */
+.t-trash      { --tier-bg: var(--t1-bg); --tier-fg: var(--t1-fg); }
+.t-commercial { --tier-bg: var(--t2-bg); --tier-fg: var(--t2-fg); }
+.t-common     { --tier-bg: var(--t3-bg); --tier-fg: var(--t3-fg); }
+.t-like       { --tier-bg: var(--t4-bg); --tier-fg: var(--t4-fg); }
+.t-recommend  { --tier-bg: var(--t5-bg); --tier-fg: var(--t5-fg); }
+.t-amazing    { --tier-bg: var(--t6-bg); --tier-fg: var(--t6-fg); }
+.t-godly      { --tier-bg: var(--t7-bg); --tier-fg: var(--t7-fg); }
+
+/* 文字裡的等級（詳情頁、杯測的杯）：徽章色的小膠囊。 */
+.tier-badge {
+    display: inline-block;
+    padding: 0.1em 0.6em;
+    border-radius: 999px;
+    background: var(--tier-bg, var(--bg-muted));
+    color: var(--tier-fg, var(--text-secondary));
+    font-weight: 700;
+    line-height: 1.4;
+    white-space: nowrap;
 }
 
 /* ───── Base ───────────────────────────────────────────────────────────── */
@@ -513,16 +532,9 @@ button.card-title {
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    background: var(--bg-muted);
-    color: var(--text-dim);
+    background: var(--tier-bg, var(--bg-muted));
+    color: var(--tier-fg, var(--text-dim));
 }
-.record-card-medal.t-trash      { background: var(--t1-bg); color: var(--t1-fg); }
-.record-card-medal.t-commercial { background: var(--t2-bg); color: var(--t2-fg); }
-.record-card-medal.t-common     { background: var(--t3-bg); color: var(--t3-fg); }
-.record-card-medal.t-like       { background: var(--t4-bg); color: var(--t4-fg); }
-.record-card-medal.t-recommend  { background: var(--t5-bg); color: var(--t5-fg); }
-.record-card-medal.t-amazing    { background: var(--t6-bg); color: var(--t6-fg); }
-.record-card-medal.t-godly      { background: var(--t7-bg); color: var(--t7-fg); }
 .record-card-medal-text {
     font-size: 1.05rem;
     font-weight: 800;
@@ -694,8 +706,8 @@ button.card-title {
     box-shadow: 0 0 0 3px var(--accent-tint);
 }
 .tier-medal.selected {
-    background-color: var(--medal-bg, var(--accent));
-    color: var(--medal-fg, #fff);
+    background-color: var(--tier-bg, var(--accent));
+    color: var(--tier-fg, #fff);
     transform: scale(1.08);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.16);
 }
@@ -719,16 +731,9 @@ button.card-title {
     font-weight: 700;
 }
 
-.tier-medal.t-trash      { --medal-bg: var(--t1-bg); --medal-fg: var(--t1-fg); }
-.tier-medal.t-commercial { --medal-bg: var(--t2-bg); --medal-fg: var(--t2-fg); }
-.tier-medal.t-common     { --medal-bg: var(--t3-bg); --medal-fg: var(--t3-fg); }
-.tier-medal.t-like       { --medal-bg: var(--t4-bg); --medal-fg: var(--t4-fg); }
-.tier-medal.t-recommend  { --medal-bg: var(--t5-bg); --medal-fg: var(--t5-fg); }
-.tier-medal.t-amazing    { --medal-bg: var(--t6-bg); --medal-fg: var(--t6-fg); }
-.tier-medal.t-godly      { --medal-bg: var(--t7-bg); --medal-fg: var(--t7-fg); }
 
 .score-chip-row {
-    --tier-color: var(--accent);
+    --tier-color: var(--tier-bg, var(--accent));
     display: flex;
     flex-wrap: wrap;
     justify-content: center;
@@ -763,7 +768,7 @@ button.card-title {
 .score-chip.selected {
     background-color: var(--tier-color);
     border-color: var(--tier-color);
-    color: #fff;
+    color: var(--tier-fg, #fff);
     box-shadow: var(--shadow-sm);
 }
 
@@ -1561,14 +1566,7 @@ body.modal-open-custom { overflow: hidden; }
 }
 .filter-tier-row { flex-wrap: wrap; }
 /* 選取的徽章 chip 顯示對應獎牌色（沿用卡片獎牌的 tier tokens）。 */
-.filter-tier-row .filter-chip.selected { border-color: transparent; }
-.filter-tier-row .filter-chip.t-trash.selected      { background: var(--t1-bg); color: var(--t1-fg); }
-.filter-tier-row .filter-chip.t-commercial.selected { background: var(--t2-bg); color: var(--t2-fg); }
-.filter-tier-row .filter-chip.t-common.selected     { background: var(--t3-bg); color: var(--t3-fg); }
-.filter-tier-row .filter-chip.t-like.selected       { background: var(--t4-bg); color: var(--t4-fg); }
-.filter-tier-row .filter-chip.t-recommend.selected  { background: var(--t5-bg); color: var(--t5-fg); }
-.filter-tier-row .filter-chip.t-amazing.selected    { background: var(--t6-bg); color: var(--t6-fg); }
-.filter-tier-row .filter-chip.t-godly.selected      { background: var(--t7-bg); color: var(--t7-fg); }
+.filter-tier-row .filter-chip.selected { border-color: transparent; background: var(--tier-bg); color: var(--tier-fg); }
 .filter-date-row {
     display: flex;
     align-items: center;
@@ -2141,6 +2139,8 @@ hr { border-color: var(--border); opacity: 0.7; }
     border-radius: 50%;
     font-size: 0.8rem;
     font-weight: 700;
+    background: var(--tier-bg);
+    color: var(--tier-fg);
 }
 .stats-dist-range {
     flex-shrink: 0;
@@ -2158,6 +2158,7 @@ hr { border-color: var(--border); opacity: 0.7; }
     min-width: 2px;
     height: 0.6rem;
     border-radius: var(--radius-sm);
+    background: var(--tier-bg);
 }
 .stats-dist-count {
     flex-shrink: 0;
@@ -2166,13 +2167,6 @@ hr { border-color: var(--border); opacity: 0.7; }
     font-weight: 700;
     font-variant-numeric: tabular-nums;
 }
-.stats-dist-medal.t-trash,      .stats-dist-bar.t-trash      { background: var(--t1-bg); color: var(--t1-fg); }
-.stats-dist-medal.t-commercial, .stats-dist-bar.t-commercial { background: var(--t2-bg); color: var(--t2-fg); }
-.stats-dist-medal.t-common,     .stats-dist-bar.t-common     { background: var(--t3-bg); color: var(--t3-fg); }
-.stats-dist-medal.t-like,       .stats-dist-bar.t-like       { background: var(--t4-bg); color: var(--t4-fg); }
-.stats-dist-medal.t-recommend,  .stats-dist-bar.t-recommend  { background: var(--t5-bg); color: var(--t5-fg); }
-.stats-dist-medal.t-amazing,    .stats-dist-bar.t-amazing    { background: var(--t6-bg); color: var(--t6-fg); }
-.stats-dist-medal.t-godly,      .stats-dist-bar.t-godly      { background: var(--t7-bg); color: var(--t7-fg); }
 .stats-trend {
     display: block;
     width: 100%;
@@ -2483,14 +2477,8 @@ hr { border-color: var(--border); opacity: 0.7; }
     text-align: center;
     white-space: nowrap;
 }
+.reveal-cup-medal:not(.is-empty) { background: var(--tier-bg); color: var(--tier-fg); }
 .reveal-cup-medal.is-empty { border: 1px dashed var(--border-strong); color: var(--text-muted); font-weight: 500; }
-.reveal-cup-medal.t-trash      { background: var(--t1-bg); color: var(--t1-fg); }
-.reveal-cup-medal.t-commercial { background: var(--t2-bg); color: var(--t2-fg); }
-.reveal-cup-medal.t-common     { background: var(--t3-bg); color: var(--t3-fg); }
-.reveal-cup-medal.t-like       { background: var(--t4-bg); color: var(--t4-fg); }
-.reveal-cup-medal.t-recommend  { background: var(--t5-bg); color: var(--t5-fg); }
-.reveal-cup-medal.t-amazing    { background: var(--t6-bg); color: var(--t6-fg); }
-.reveal-cup-medal.t-godly      { background: var(--t7-bg); color: var(--t7-fg); }
 .reveal-cup-bean { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .reveal-cup-bean.is-placeholder { color: var(--text-dim); }
 .reveal-cup-caret { color: var(--text-muted); transition: transform 0.15s ease; }
@@ -2850,17 +2838,17 @@ a.brew-plan-ref .brew-plan-summary-name { color: var(--accent); flex: 1; }
 .score-panel-save { display: none; }
 
 .score-bar {
-    --tier-color: var(--bg-muted);
-    --ring-color: var(--on-tier-dark);
-    --ring-track: var(--on-tier-dark-track);
+    /* 評完：等級的徽章色（.t-* 給 --tier-bg / --tier-fg），環和字用前景色 */
+    --ring-color: var(--tier-fg);
+    --ring-track: color-mix(in srgb, var(--tier-fg) 30%, transparent);
     display: flex;
     align-items: center;
     gap: 0.6rem;
     height: 56px;
     padding: 0 1rem 0 0.45rem;
     border-radius: 999px;
-    background: var(--tier-color);
-    color: var(--on-tier-dark);
+    background: var(--tier-bg);
+    color: var(--tier-fg);
     box-shadow: var(--shadow-md);
     min-width: 0;
 }
@@ -2870,7 +2858,6 @@ a.brew-plan-ref .brew-plan-summary-name { color: var(--accent); flex: 1; }
     --ring-color: var(--text-muted);
     --ring-track: var(--border-strong);
 }
-.score-bar.on-light { color: var(--text-primary); --ring-color: var(--text-primary); --ring-track: var(--on-tier-light-track); }
 .score-ring {
     flex: 0 0 auto;
     display: grid;
@@ -2886,7 +2873,7 @@ a.brew-plan-ref .brew-plan-summary-name { color: var(--accent); flex: 1; }
     width: 34px;
     height: 34px;
     border-radius: 50%;
-    background: var(--tier-color);
+    background: var(--tier-bg);
     font-weight: 700;
     font-size: 0.95rem;
 }
