@@ -1,10 +1,10 @@
 // Coffee Review — Service Worker
 // Cache strategy:
-//   • 整頁導航: network-first，離線才用快取（讓 Access 的重新登入能發生）
-//   • App shell + CDN libs: stale-while-revalidate
+//   • 整頁導航 + 同源 app shell: network-first，離線才用快取
+//   • CDN libs（網址帶版本號）: stale-while-revalidate
 //   • /api/* 與 /cdn-cgi/*: pass-through, always go to network
 
-const VERSION = 'v29';
+const VERSION = 'v30';
 const CACHE = `coffee-review-${VERSION}`;
 
 const APP_SHELL = [
@@ -55,14 +55,17 @@ function shouldBypass(url) {
 // app.js 的「重新載入」永遠碰不到 Access，/api/* 一直 302，使用者卡在擋板上。
 // 導航請求的 redirect mode 是 manual，所以拿到的是 opaqueredirect，原樣交回給
 // 瀏覽器，由它去跟隨。
-async function handleNavigate(request) {
+//
+// 同源的 app.js / styles.css 也走這條：若它們從快取回舊版，部署後第一次開會是
+// 新 index.html 配舊 app.js，模板對不上程式（例：沖煮表單沒有 #f-defects，儲存就炸）。
+async function networkFirst(request, fallbackUrl) {
     const cache = await caches.open(CACHE);
     try {
         const res = await fetch(request);
         if (res.ok && res.type === 'basic') cache.put(request, res.clone()).catch(() => {});
         return res;
     } catch {
-        const cached = await cache.match(request) || await cache.match('./index.html');
+        const cached = await cache.match(request) || (fallbackUrl && await cache.match(fallbackUrl));
         return cached || new Response(
             '離線且無快取',
             { status: 504, statusText: 'Gateway Timeout', headers: { 'Content-Type': 'text/plain; charset=utf-8' } }
@@ -75,7 +78,11 @@ self.addEventListener('fetch', event => {
     const url = new URL(event.request.url);
     if (shouldBypass(url)) return;
     if (event.request.mode === 'navigate') {
-        event.respondWith(handleNavigate(event.request));
+        event.respondWith(networkFirst(event.request, './index.html'));
+        return;
+    }
+    if (url.origin === self.location.origin) {
+        event.respondWith(networkFirst(event.request));
         return;
     }
 

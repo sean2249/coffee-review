@@ -287,20 +287,33 @@
                 <div class="card adjust-card">
                     <div class="card-body">
                         <h3 class="card-title"><i class="bi bi-bookmark-star-fill"></i>評分</h3>
-                        <p class="adjust-intro">每一項先問自己：比普通好，還是差？普通點數字（0），好就按 ＋，差就按 −。8 項都判斷完，分數 = 80 + 加總。</p>
                         <div class="adjust-list" id="adjustList"></div>
                         <p class="adjust-credit">計分方式參考 CFGC:2026.01（台灣咖啡研究室，CC BY-SA 4.0）</p>
                     </div>
                 </div>
             </div>
 
-            <!-- 負面風味：只記錄、不扣分（「瑕疵」只用在杯測） -->
             <div class="card">
                 <div class="card-body">
-                    <h3 class="card-title"><i class="bi bi-exclamation-diamond"></i>負面風味</h3>
-                    <div id="negativeFlavorSection"></div>
+                    <h3 class="card-title"><i class="bi bi-pencil"></i>備註</h3>
+                    <div class="notes-slot" data-notes-slot="f-notes">
+                        <button type="button" class="notes-toggle" data-notes-target="f-notes"
+                                aria-controls="f-notes-body" aria-expanded="false">
+                            <i class="bi bi-plus-circle"></i> 加上最終備註
+                        </button>
+                        <div id="f-notes-body" class="notes-body" hidden>
+                            <label for="f-notes" class="form-label">最終備註</label>
+                            <textarea id="f-notes" class="form-control" rows="3"
+                                      placeholder="請輸入額外的備註..."></textarea>
+                        </div>
+                    </div>
                 </div>
             </div>
+
+            <!-- 部署過渡（#179）：v29 service worker 在新版上線後的第一次載入仍會給舊 app.js，
+                 它會往這裡塞負面風味並讀 #f-defects。留一版，之後拿掉。放在備註卡後面，
+                 舊程式讀到的 #f-notes 才是上面看得到的那個。 -->
+            <div id="negativeFlavorSection" hidden></div>
 
             <!-- Action buttons -->
             <div class="action-bar record-action-bar">

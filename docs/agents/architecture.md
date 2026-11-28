@@ -14,18 +14,24 @@ is shared by this form and the 杯測場次 form; a binding that looks dead for 
 serve the other.
 
 **Scoring model — 沖煮 / 品鑑** (#169, critical to preserve; terms in `GLOSSARY.md`「評分」):
-- 8 `adjustmentFields` (香氣、風味、尾韻、酸 / 鹹、甜 / 苦、口感、平衡 / 和諧、清晰度), each an
+- 8 `adjustmentFields` in drinking order (香氣、風味、清晰度、酸 / 鹹、甜 / 苦、口感、尾韻、平衡 / 和諧), each an
   **調整分** starting at null (未判斷): −1, 0, 0.5, 1 … (0.5 steps, no cap, **no −0.5**) —
   rules in `stepAdjustment`. 分數 = `80 + Σ` (`scoreFromAdjustments`), stored in
   `coe_total`; `coe_tier_id = tierFromScore(coe_total).id`. Saving is blocked until all 8
   are judged, so new 沖煮 / 品鑑 records always have a score. No picker, no 預估總分.
-- New records: `evaluations[key] = { score, notes, flavors? }` (flavors only on aroma /
-  flavor), `observation: {}`, `schema_version` ≥ `ADJUSTMENT_SCHEMA` (cupping 4, tasting 6).
+- New records: `evaluations[key] = { score, notes, flavors?, …chips }` (flavors only on
+  aroma / flavor), `observation: {}`, `schema_version` ≥ `ADJUSTMENT_SCHEMA` (cupping 4,
+  tasting 6). Each row's expanded area carries the pre-#169 descriptive chips
+  (`adjustChipSpec`: `evaluationOptions[key]`, aroma → `observationOptions.aroma`; no
+  `overall`), record-only, never part of the score. Notes sit collapsed behind 「加上備註」.
 - **Old records keep their entered `coe_total`** (stats mix old and new on purpose). Their
   4–8 reference scores are converted **at display time** by `recordAdjustments`
   (old − 5, anything below 0 → −1, aroma 0, `overall` dropped); the DB is never rewritten.
-- On-screen wording: 分數 (never "CoE"); 「負面風味」 for 沖煮 / 品鑑 `defects`, 「瑕疵」 only
-  in 杯測. Field / code names (`coe_total`, `coeState`, …) stay.
+- On-screen wording: 分數 (never "CoE"); 「瑕疵」 only in 杯測. Field / code names
+  (`coe_total`, `coeState`, …) stay.
+- The 沖煮 / 品鑑 form no longer records 負面風味: no `defects` / `defects_tags` input, and
+  the payload omits both (DB defaults). The form keeps 最終備註 in its own 「備註」 card. Old
+  records' `defects` still show on the detail page as 「負面風味」.
 - Leaving a 沖煮 / 品鑑 form with input asks 「尚未儲存，確定離開？」 (`onHashChange` +
   `beforeunload`); no drafts (#137).
 

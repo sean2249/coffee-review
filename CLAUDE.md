@@ -211,6 +211,13 @@ Area details live in `docs/agents/architecture.md`. Read its section before chan
 - **Indent 4 spaces**, single quotes in JS, trailing commas where ESLint allows.
 - HTML class attributes use Bootstrap utilities + custom classes from `styles.css`.
 - Always `escapeHtml(...)` user/DB strings before interpolating into `innerHTML`.
+- **Never show internal error text to the user.** A caught `e.message` (JS errors like
+  `null is not an object…`, Worker / D1 messages like `UNIQUE constraint failed`) must
+  not reach a toast or the page. It goes to `console.error`. The screen says which
+  action failed and what to do, in zh-TW: `showFailureToast('儲存', e)` →
+  「儲存失敗，請再試一次」, and 「讀取失敗，請重新整理再試一次」 for inline load errors.
+  Only text app.js itself wrote for the user may be shown, via `err.userMessage`.
+  `tests/no-internal-errors.test.js` scans app.js for leaks.
 - DOM ids in forms are prefixed `f-` for top-level inputs and `<key>_<suffix>` for
   evaluation widgets (e.g. `flavor_score`, `aroma_dryAroma`).
 - CSS section banners use the `/* ───── Title ──── */` style — keep new sections

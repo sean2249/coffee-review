@@ -213,6 +213,16 @@ describe('renderRecordDetail', () => {
         expect(flavorRow.querySelector('.detail-adjust-value').textContent).toBe('2.5');
         expect(el.textContent).toContain('很甜');
     });
+
+    it('新制紀錄：描述標籤也顯示', () => {
+        const evaluations = Object.fromEntries(KEYS.map(k => [k, { score: 0 }]));
+        evaluations.acidity = { score: 0.5, intensity: '明亮', types: ['醋酸'] };
+        const text = mount(win.renderRecordDetail('tasting', {
+            id: 'r3', schema_version: 6, coe_total: 80.5, coe_tier_id: 'common', evaluations, observation: {},
+        })).textContent;
+        expect(text).toContain('明亮');
+        expect(text).toContain('醋酸');
+    });
 });
 
 // ─── 表單（走真的 router，只 stub apiFetch） ────────────────────────────────
@@ -260,11 +270,18 @@ describe.each(['cupping', 'tasting'])('%s 表單', mode => {
         await boot();
         expect($$('.adjust-item .adjust-value').map(b => b.textContent.trim())).toEqual(Array(8).fill('—'));
         expect($('#scoreBar').textContent).toContain('未評分 · 0/8');
+        // 順序照喝的感受：先聞 → 入口 → 口腔 → 吞下後 → 整體。
+        expect($$('.adjust-item .adjust-label').map(l => l.textContent)).toEqual(
+            ['香氣', '風味', '清晰度', '酸 / 鹹', '甜 / 苦', '口感', '尾韻', '平衡 / 和諧']);
         const text = $('#app').textContent;
         expect(text).not.toContain('CoE');
         expect(text).not.toContain('預估總分');
         expect(text).not.toContain('瑕疵');
-        expect(text).toContain('負面風味');
+        // 沖煮 / 品鑑不再記負面風味；最終備註留著。
+        expect(text).not.toContain('負面風味');
+        expect($('#f-defects')).toBeNull();
+        expect($('[data-chip-name="defects_tags"]')).toBeNull();
+        expect($('#f-notes')).not.toBeNull();
         expect(text).toContain('CFGC:2026.01');
     });
 
@@ -314,6 +331,48 @@ describe.each(['cupping', 'tasting'])('%s 表單', mode => {
         expect(body.evaluations.flavor.score).toBe(1.5);
         expect(body.evaluations.cleanness.score).toBe(-1);
         expect(body.observation).toEqual({});
+        // 不再記負面風味（#179）
+        expect(body).not.toHaveProperty('defects');
+        expect(body).not.toHaveProperty('defects_tags');
+    });
+
+    it('部署過渡：模板留著隱藏的 #negativeFlavorSection，排在看得到的 #f-notes 後面', async () => {
+        await boot();
+        const placeholder = $('#negativeFlavorSection');
+        expect(placeholder.hidden).toBe(true);
+        const notes = $('#f-notes');
+        expect(notes.compareDocumentPosition(placeholder) & fwin.Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+
+    it('展開後有原本的描述標籤（不影響分數），筆記收在「加上備註」後面', async () => {
+        await boot();
+        const labels = key => [...row(key).querySelectorAll('.chip-group-label')].map(l => l.textContent);
+        expect(labels('aroma')).toEqual(['強度', '持久度', '乾濕對比']);
+        expect(labels('acidity')).toEqual(['強度', '類型', '質地']);
+        expect(labels('mouthfeel')).toEqual(['重量級別', '質地描述', '黏稠度', '觸感']);
+        expect($('[data-chip-name^="overall_"]')).toBeNull();
+        expect(fdoc.getElementById('flavor_notes_body').hidden).toBe(true);
+    });
+
+    it('選的標籤跟著存進 evaluations；single 只留一個、multi 可多選', async () => {
+        await boot();
+        fillRequired();
+        KEYS.forEach(k => press(k, 'zero'));
+        const chip = (name, v) => $(`.chip-group[data-chip-name="${name}"] [data-chip-value="${v}"]`);
+        chip('acidity_intensity', '微弱').click();
+        chip('acidity_intensity', '明亮').click();
+        chip('acidity_types', '醋酸').click();
+        chip('acidity_types', '發酵酸').click();
+        chip('aroma_intensity', '飽滿').click();
+        expect($('#scoreBar').textContent).toContain('80.0');
+
+        $('#f-save').click();
+        await settle();
+        const ev = calls.find(c => c.method === 'POST').body.evaluations;
+        expect(ev.acidity.intensity).toBe('明亮');
+        expect(ev.acidity.types).toEqual(['醋酸', '發酵酸']);
+        expect(ev.aroma.intensity).toBe('飽滿');
+        expect(ev.mouthfeel.texture).toEqual([]);
     });
 
     it('有輸入時換頁會跳確認；取消留在表單，確認才離開', async () => {
