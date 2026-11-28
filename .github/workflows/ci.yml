@@ -28,7 +28,8 @@ jobs:
   # End-to-end（#173 / #183）：真的 Chromium 對本機 wrangler dev（空的 D1 + 假資料），
   # 檢查徽章顏色、杯測流程等 jsdom 看不到的行為。不需要任何 secret。
   e2e:
-    runs-on: ubuntu-latest
+    # Playwright 1.56 has no Chromium build for ubuntu-latest (26.04) yet; pin until it does.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
