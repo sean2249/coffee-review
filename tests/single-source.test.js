@@ -43,10 +43,25 @@ describe('錯誤 / 危險色', () => {
 
     it('Bootstrap 的紅（.btn-danger、.btn-outline-danger、.text-danger）也讀 --danger', () => {
         expect(CSS).toMatch(/--bs-danger:\s*var\(--danger\)/);
-        expect(CSS).toMatch(/--bs-danger-rgb:\s*180,\s*35,\s*24/);
-        expect(CSS).toMatch(/\.btn-danger\s*\{[^}]*--bs-btn-bg:\s*var\(--danger\)/);
-        expect(CSS).toMatch(/\.btn-outline-danger\s*\{[^}]*--bs-btn-color:\s*var\(--danger\)/);
-        expect(CSS_OUTSIDE_ROOT).not.toMatch(/var\(--bs-danger\b/);
+        // --bs-danger-rgb 只能寫成數字：要和 --danger 的色碼一致。
+        const hex = CSS.match(/--danger:\s*#([0-9a-fA-F]{6})/)[1];
+        const rgb = [0, 2, 4].map(i => parseInt(hex.slice(i, i + 2), 16));
+        const triple = CSS.match(/--bs-danger-rgb:\s*(\d+),\s*(\d+),\s*(\d+)/).slice(1).map(Number);
+        expect(triple).toEqual(rgb);
+        const rule = sel => CSS.match(new RegExp(`\\n\\.${sel}\\s*\\{[^}]*\\}`))?.[0] || '';
+        for (const v of ['bg', 'border-color', 'hover-bg', 'hover-border-color', 'active-bg',
+            'active-border-color', 'disabled-bg', 'disabled-border-color']) {
+            expect(rule('btn-danger'), v).toMatch(new RegExp(`--bs-btn-${v}:\\s*var\\(--danger`));
+        }
+        for (const v of ['color', 'border-color', 'hover-bg', 'hover-border-color', 'active-bg',
+            'active-border-color', 'disabled-color', 'disabled-border-color']) {
+            expect(rule('btn-outline-danger'), v).toMatch(new RegExp(`--bs-btn-${v}:\\s*var\\(--danger`));
+        }
+        for (const sel of ['btn-danger', 'btn-outline-danger']) {
+            expect(rule(sel), sel).toMatch(/--bs-btn-focus-shadow-rgb:\s*var\(--bs-danger-rgb\)/);
+        }
+        // 元件直接讀 --danger；var(--bs-danger) 只留給 Bootstrap 自己（-rgb 給 focus ring 用）。
+        expect(CSS_OUTSIDE_ROOT).not.toMatch(/var\(--bs-danger\)/);
     });
 });
 

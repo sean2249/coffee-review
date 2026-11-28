@@ -113,9 +113,12 @@ Places that show a tier today (keep this list current):
 
 `tests/tier-palette.test.js` fails if a tier gets a color property, if `app.js` reads
 `tier.color`, if `--t*-bg` / `--t*-fg` is referenced outside the palette block (fallback forms
-included), if a palette hex value is copied outside `:root`, or if one of the components above
-stops reading `--tier-bg`. jsdom computes no styles, so it checks the rules, not rendered
-colors: a new component still needs a line in that test.
+included), if a palette background is copied outside `:root` (as hex or `rgb()`/`rgba()`), if a
+`.t-*` class appears anywhere but its palette line (so no component colors one tier itself), or
+if one of the components above stops reading `--tier-bg`. jsdom computes no styles, so it
+checks the rules, not rendered colors: a new component still needs a line in that test.
+`tests/single-source.test.js` ties Bootstrap's danger variables (and `--bs-danger-rgb`'s
+numbers) to `--danger`.
 
 ## Flavor wheel
 

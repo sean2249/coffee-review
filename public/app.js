@@ -63,7 +63,7 @@ function tierFromScore(score) {
 // tier 一定要是 totalScoreTiers 裡的一項（tierById / tierFromScore 的結果）：cssClass 不經 escape。
 // tier 為 null = 未評分：灰色膠囊。
 function tierBadgeHtml(tier, text = tier ? tier.badgeName : '未評分') {
-    return `<span class="tier-badge${tier ? ` ${tier.cssClass}` : ''}">${escapeHtml(text)}</span>`;
+    return `<span class="tier-badge${tier ? ` ${escapeHtml(tier.cssClass)}` : ''}">${escapeHtml(text)}</span>`;
 }
 
 function tierById(id) {
@@ -6002,7 +6002,7 @@ function refreshSessionSummaries() {
     if (score && cup) {
         score.innerHTML = typeof cup.coe_total === 'number'
             ? `評分 ${escapeHtml(formatCupScore(cup))} ${tierBadgeHtml(cupTier(cup), cupTier(cup).medal)}`
-            : '評分 未評分';
+            : `評分 ${tierBadgeHtml(null)}`;
     }
 }
 
@@ -6422,7 +6422,7 @@ function renderSessionCupDetail(c) {
                     <span class="session-cup-title">${escapeHtml(c.bean_name || '(未填豆名)')}</span>
                     ${scored
                         ? `<span class="session-cup-score">${c.coe_total.toFixed(1)}${tier ? ` ${tierBadgeHtml(tier)}` : ''}</span>`
-                        : '<span class="text-muted">未評分</span>'}
+                        : tierBadgeHtml(null)}
                 </div>
                 ${shop ? `<div class="detail-meta">${shopLinkable
                     ? `<a class="detail-meta-shop" href="#/shops/${c.shop_id}"><i class="bi bi-shop"></i>${escapeHtml(shop)}</a>`

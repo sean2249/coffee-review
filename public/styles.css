@@ -299,6 +299,7 @@ button.card-title {
     --bs-btn-active-border-color: var(--danger-strong);
     --bs-btn-disabled-bg: var(--danger);
     --bs-btn-disabled-border-color: var(--danger);
+    --bs-btn-focus-shadow-rgb: var(--bs-danger-rgb);
 }
 .btn-outline-danger {
     --bs-btn-color: var(--danger);
@@ -309,6 +310,7 @@ button.card-title {
     --bs-btn-active-border-color: var(--danger-strong);
     --bs-btn-disabled-color: var(--danger);
     --bs-btn-disabled-border-color: var(--danger);
+    --bs-btn-focus-shadow-rgb: var(--bs-danger-rgb);
 }
 
 /* ───── New record mode picker ─────────────────────────────────────────── */

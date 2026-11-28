@@ -44,12 +44,25 @@ describe('等級顏色只有一個來源', () => {
         }
     });
 
-    it('色盤的色碼只出現在 :root（元件沒有抄一份）', () => {
+    // 色碼或 rgb()/rgba() 都算抄（#181 抓到的類型色就是 rgba(192, 140, 42, …)）。
+    it('色盤的底色只出現在 :root（元件沒有抄一份，hex 或 rgb 都不行）', () => {
         const rootBlock = CSS.match(/:root\s*\{[^}]*\}/)[0];
-        const palette = [...rootBlock.matchAll(/--t\d-bg:\s*(#[0-9a-fA-F]{6})/g)].map(m => m[1].toLowerCase());
+        const palette = [...rootBlock.matchAll(/--t\d-bg:\s*#([0-9a-fA-F]{6})/g)].map(m => m[1].toLowerCase());
         expect(palette).toHaveLength(7);
         const outside = CSS.replace(/:root\s*\{[^}]*\}/g, '').toLowerCase();
-        for (const hex of palette) expect(outside, hex).not.toContain(hex);
+        for (const hex of palette) {
+            expect(outside, hex).not.toContain(`#${hex}`);
+            const [r, g, b] = [0, 2, 4].map(i => parseInt(hex.slice(i, i + 2), 16));
+            expect(outside, `rgb ${r},${g},${b}`).not.toMatch(new RegExp(`rgba?\\(\\s*${r}\\s*,\\s*${g}\\s*,\\s*${b}\\b`));
+        }
+    });
+
+    // 元件不能自己對某一級上色（.tier-badge.t-like { … } 這種覆寫），巢狀在 @media 裡也一樣。
+    it('每個 .t-* 只出現在對照表那一行', () => {
+        for (const t of win.eval('totalScoreTiers')) {
+            const hits = CSS.match(new RegExp(`\\.${t.cssClass}(?![\\w-])`, 'g')) || [];
+            expect(hits, t.cssClass).toHaveLength(1);
+        }
     });
 
     // jsdom 算不出樣式，所以直接看規則：每個顯示等級的元件都要讀 --tier-bg。

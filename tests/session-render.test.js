@@ -122,6 +122,7 @@ describe('renderSessionDetail', () => {
         // 等級用徽章色的 .tier-badge（顏色在 styles.css 的 tier palette），不是行內顏色。
         expect(heads[0].querySelector(`.session-cup-score .tier-badge.${win.tierFromScore(90).cssClass}`)).not.toBeNull();
         expect(heads[1].textContent).toContain('未評分');
+        expect(heads[1].querySelector('.tier-badge:not([class*=" t-"])')).not.toBeNull();
         expect(heads[1].textContent).toContain('(未填豆名)');
         expect(el.querySelector('a.detail-meta-shop[href="#/shops/shop-a"]')).not.toBeNull();
         // 已刪除的店家不給連結
