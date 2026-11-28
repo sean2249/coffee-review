@@ -5537,6 +5537,15 @@ function refreshSessionCups() {
 function bindSessionHandlers() {
     const form = document.querySelector('.session-form');
 
+    // 頂端的階段列本身是黏住的：分數列要黏在它下面，不然捲動時會被它蓋住（作者 2026-11-28）。
+    // 階段列的高度會變（杯號分頁、暫存時間），所以量實際高度寫進 --sticky-offset。
+    const stageBar = document.getElementById('session-stage-bar');
+    if (stageBar && 'ResizeObserver' in window) {
+        new ResizeObserver(() => {
+            form.style.setProperty('--sticky-offset', `${stageBar.offsetHeight}px`);
+        }).observe(stageBar);
+    }
+
     document.getElementById('f-code-style').addEventListener('change', e => onCodeStyleChange(e.target.value));
     document.getElementById('f-cup-count').addEventListener('change', async e => {
         const current = state.currentForm;

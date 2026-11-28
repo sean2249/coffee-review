@@ -29,6 +29,17 @@ test('建立場次 → 評兩杯、留一杯未評分 → 揭曉 → 排名與�
     await judgeAll(page);
     await press(page, 'flavor', 'plus', 10);
     await expect(page.locator('#scoreBar')).toContainText('85.0');
+
+    // 分數列置頂：捲到最後一項時，分數列黏在頂端階段列的下面、整條看得到（作者 2026-11-28）
+    // 平滑捲動是動畫，量位置前要立即捲到底
+    await page.evaluate(() => window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'instant' }));
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(100);
+    const stageBar = await page.locator('.session-stage-bar').boundingBox();
+    const panel = await page.locator('.score-panel').boundingBox();
+    expect(stageBar.y).toBeLessThanOrEqual(1); // 階段列黏在最上面
+    expect(panel.y, 'score panel sits below the stage bar').toBeGreaterThanOrEqual(stageBar.y + stageBar.height - 1);
+    expect(panel.y, 'score panel stays near the top').toBeLessThan(stageBar.y + stageBar.height + 24);
+    await expect(page.locator('#session-autosave-status')).toHaveText('');
     // 第 2 杯：90（A，光暈）
     await tabs.nth(1).click();
     await expect(page.locator('#scoreBar')).toContainText('未評分 · 0/8');

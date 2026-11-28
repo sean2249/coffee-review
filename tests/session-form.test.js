@@ -656,10 +656,10 @@ describe('② 自動暫存', () => {
         try { await fn(); } finally { win.console.error = realError; }
     };
 
-    it('② 顯示「切到別杯時會自動暫存」；①、③ 不顯示', async () => {
+    // 作者 2026-11-28：不放「切到別杯時會自動暫存」的提示；暫存過才顯示時間。
+    it('② 平常沒有提示文字；①、③ 不顯示', async () => {
         await mount([cupA, cupB], { recordId: 's1' });
-        expect(status().textContent).toBe('切到別杯時會自動暫存');
-        expect(visible(status())).toBe(true);
+        expect(status().textContent).toBe('');
         win.setSessionStage('reveal');
         expect(visible(status())).toBe(false);
         win.setSessionStage('setup');
@@ -688,7 +688,7 @@ describe('② 自動暫存', () => {
         clickTab(0);
         await flush();
         expect(calls).toHaveLength(0);
-        expect(status().textContent).toBe('切到別杯時會自動暫存');
+        expect(status().textContent).toBe('');
 
         scoreCupB();
         clickTab(0);
@@ -713,7 +713,7 @@ describe('② 自動暫存', () => {
         expect(form().activeIndex).toBe(0);
         expect(toast().textContent).toBe('暫存失敗，請再試一次');
         expect(toast().classList.contains('error')).toBe(true);
-        expect(status().textContent).toBe('切到別杯時會自動暫存');
+        expect(status().textContent).toBe('');
 
         offline = false;
         clickTab(1);
