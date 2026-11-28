@@ -204,6 +204,8 @@ Area details live in `docs/agents/architecture.md`. Read its section before chan
   leave prompt, the shared `bindFormHandlers`.
 - **杯測場次 form and session save**: `#tpl-session-form`, per-cup widgets, `PUT /api/sessions/:id`.
 - **Flavor wheel**: the persisted flavor-id shape.
+- **Shared visuals**: one source per shared meaning (tier / record-type / danger colors,
+  adjustment levels, flavor colors, type names), plus every place that shows a tier.
 - **State** and the **Google Places proxy**.
 
 ## Conventions

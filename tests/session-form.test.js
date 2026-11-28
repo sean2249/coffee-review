@@ -101,7 +101,8 @@ describe('② 評分：切換杯', () => {
         expect($$('input[name="roast"]:checked')).toHaveLength(0);
         expect($$('.bean-type-chip-row .bean-type-chip.selected')).toHaveLength(0);
         expect($('#coeTotalDisplay').textContent).toBe('—');
-        expect($('#coeTotalTierBadge').textContent).toBe('[ 未評分 ]');
+        expect($('#coeTotalTierBadge').textContent).toBe('未評分');
+        expect($('#coeTotalTierBadge .tier-badge:not([class*=" t-"])')).not.toBeNull();
         expect($$('.tier-medal.selected')).toHaveLength(0);
         expect($$('#evaluationAccordion [aria-pressed="true"]')).toHaveLength(0);
         expect($$('.flavor-tag.selected')).toHaveLength(0);
@@ -406,6 +407,7 @@ describe('③ 揭曉：杯卡', () => {
         expect(visible($('#cup-score-toggle'))).toBe(true);
         expect(visible($('#coeTotalDisplay'))).toBe(false);
         expect($('#cup-score-summary').textContent).toBe('評分 84.0 銀');
+        expect($('#cup-score-summary .tier-badge.t-like')).not.toBeNull();
 
         openCard('C');
         expect($$('#reveal-cup-cards .reveal-cup.is-open')).toHaveLength(0);

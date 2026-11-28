@@ -66,6 +66,60 @@ PUTting a session id that belongs to someone else is rejected as 404 before the 
 half-loaded.
 Cups reference sessions through the composite FK `(session_id, user_id)` with cascade.
 
+## Shared visuals
+
+Every meaning shared across pages has **one source**; a page reads it, never copies its value
+(#181). Before adding or changing a place that shows one, check this section so no page is
+left on an old copy. `tests/tier-palette.test.js` and `tests/single-source.test.js` fail when a
+second copy appears.
+
+| Meaning | Source | Read it with |
+|---|---|---|
+| Tier (徽章) colors | `--t1-bg` … `--t7-bg` / `--t*-fg` + the tier palette block in `styles.css` | `tier.cssClass` → `var(--tier-bg)` / `var(--tier-fg)` |
+| Record-type colors (沖煮 / 品鑑 / 杯測) | `--type-*-bg` / `--type-*-fg` in `:root` | `.record-card-type-badge.type-*` |
+| Error / danger red | `--danger`, `--danger-strong`, `--danger-bg`, `--danger-border` in `:root` | `var(--danger*)` |
+| Adjustment-score levels | `--adj-*` in `:root` | `adjustmentLevel(value)` → `data-level` |
+| Flavor colors | the `flavors` constant | `decodeFlavorMeta(id).color` |
+| Record-type names | `TYPE_LABELS` | `TYPE_LABELS[type]` (filter chips, new-record picker, badges) |
+| Tier names and descriptions | `totalScoreTiers` | README's badge table copies it, guarded by a test |
+
+Values that only happen to be equal are not copies: `--adj-neg` and `--brew-temp` are both
+`#b4532a` but mean "worse than normal" and "water temperature".
+
+**Tier (徽章) colors.** The palette is `--t1-bg` … `--t7-bg` / `--t*-fg` in `styles.css`
+`:root`; the **tier palette** block right after it maps each `tier.cssClass` (`.t-trash` …
+`.t-godly`) to `--tier-bg` / `--tier-fg`. Tiers in `totalScoreTiers` carry `cssClass` and
+no color. To show a tier:
+
+- an element styled by the tier: add `tier.cssClass` and read `var(--tier-bg)` /
+  `var(--tier-fg)` in its CSS (with a fallback when the element can be tier-less);
+- a tier name inside text: `tierBadgeHtml(tier)` (its `badgeName`; pass a second argument
+  for other text, e.g. the medal char; `tierBadgeHtml(null)` is the gray 未評分 pill).
+
+Places that show a tier today (keep this list current):
+
+| Where | Function | Element |
+|---|---|---|
+| Records list card | `renderRecordCard` | `.record-card-medal` |
+| Advanced filter (等級) | `openFilterDrawer` | `.filter-tier-row .filter-chip` |
+| Stats: score distribution | `statsDistMarkup` | `.stats-dist-medal`, `.stats-dist-bar` |
+| 沖煮 / 品鑑 form score bar / panel | `renderScoreBar` | `#scoreBar.score-bar` |
+| 沖煮 / 品鑑 detail page | `renderRecordDetail` | `.tier-badge` |
+| 杯測 form: tier picker, score chips, total | `renderTierMedals`, `renderScoreChips`, `refreshTotalDisplay` | `.tier-medal`, `.score-chip-row`, `#coeTotalTierBadge` |
+| 杯測 form / detail: 預估總分 | `updateEstimatedTotalDisplay`, `renderEstimatedTotalBlock` | `.evaluation-estimated-tier` |
+| 杯測 form: collapsed cup score summary | `refreshSessionSummaries` | `#cup-score-summary` |
+| 杯測 detail: per-cup score, ranking | `renderSessionCupDetail`, `renderCupRanking` | `.session-cup-score`, `.cup-ranking-score` |
+| 杯測 reveal cards | `renderRevealCardHead` | `.reveal-cup-medal` |
+
+`tests/tier-palette.test.js` fails if a tier gets a color property, if `app.js` reads
+`tier.color`, if `--t*-bg` / `--t*-fg` is referenced outside the palette block (fallback forms
+included), if a palette background is copied outside `:root` (as hex or `rgb()`/`rgba()`), if a
+`.t-*` class appears anywhere but its palette line (so no component colors one tier itself), or
+if one of the components above stops reading `--tier-bg`. jsdom computes no styles, so it
+checks the rules, not rendered colors: a new component still needs a line in that test.
+`tests/single-source.test.js` ties Bootstrap's danger variables (and `--bs-danger-rgb`'s
+numbers) to `--danger`.
+
 ## Flavor wheel
 
 **Flavor wheel**: up to 3 levels in the `flavors` constant. The persisted ids in
