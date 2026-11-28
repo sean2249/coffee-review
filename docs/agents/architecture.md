@@ -99,7 +99,7 @@ Values that only happen to be equal are not copies: they mean different things a
 independently.
 
 **Tier (徽章) colors.** The palette is `--t1-*` … `--t7-*` in `styles.css` `:root` (色調
-「深沉」, #173): `bg` (solid), `fg` (text on solid), `tint` (light background). The **tier
+「深沉」 lightened by OKLCH L +0.08 and chroma ×0.75, author 2026-11-28; #173): `bg` (solid), `fg` (text on solid), `tint` (light background). The **tier
 palette** block right after it maps each `tier.cssClass` (`.t-f` … `.t-ss`) to `--tier-bg`,
 `--tier-fg`, `--tier-tint`, and for F (too pale to write with) `--tier-ink`; text on white or
 on the tint reads `var(--tier-ink, var(--tier-bg))`. Tiers in `totalScoreTiers` carry

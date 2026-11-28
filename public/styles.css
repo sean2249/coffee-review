@@ -41,15 +41,16 @@
 
     --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
 
-    /* 等級色盤：寶物稀有度，色調「深沉」（#173）。OKLCH 同亮度、同彩度，只轉色相
-       灰 → 綠 → 藍 → 紫 → 橘 → 紅；F 是淺灰配深字。tint = 同色相的淡色（淺底、未選取）。 */
+    /* 等級色盤：寶物稀有度（#173）。從色調「深沉」再調亮、調淡（作者 2026-11-28）：OKLCH
+       亮度 +0.08、彩度 ×0.75，色相不變，灰 → 綠 → 藍 → 紫 → 橘 → 紅；F 是淺灰配深字、不調。
+       tint = 同色相的淡色（淺底、未選取），彩度同樣 ×0.75。白字對比 ≥ 5.3，淡底上的色字 ≥ 4.5。 */
     --t1-bg: #dcdcdf; --t1-fg: #374151; --t1-tint: #f0f0f2;
-    --t2-bg: #4a545d; --t2-fg: #ffffff; --t2-tint: #e2edf8;
-    --t3-bg: #286037; --t3-fg: #ffffff; --t3-tint: #d5f5da;
-    --t4-bg: #1f5781; --t4-fg: #ffffff; --t4-tint: #d0f0ff;
-    --t5-bg: #5a467d; --t5-fg: #ffffff; --t5-tint: #f0e4ff;
-    --t6-bg: #78431b; --t6-fg: #ffffff; --t6-tint: #ffe3cc;
-    --t7-bg: #823834; --t7-fg: #ffffff; --t7-tint: #ffdfda;
+    --t2-bg: #626a71; --t2-fg: #ffffff; --t2-tint: #e4edf5;
+    --t3-bg: #4c7454; --t3-fg: #ffffff; --t3-tint: #dbf3de;
+    --t4-bg: #476d8e; --t4-fg: #ffffff; --t4-tint: #d7effa;
+    --t5-bg: #6e608b; --t5-fg: #ffffff; --t5-tint: #eee6fa;
+    --t6-bg: #885e43; --t6-fg: #ffffff; --t6-tint: #fae4d3;
+    --t7-bg: #905752; --t7-fg: #ffffff; --t7-tint: #f9e1dd;
 
     /* Tabbar height — reserved at bottom of page so content isn't covered */
     --tabbar-height: 64px;

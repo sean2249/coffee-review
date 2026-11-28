@@ -1,13 +1,14 @@
-// End-to-end 共用：#173 brief 定案的色盤（期望值直接照規格寫，不從 CSS 讀回來），
+// End-to-end 共用：#173 定案的色盤（作者 2026-11-28 調亮、調淡後的值；期望值直接照規格寫，
+// 不從 CSS 讀回來），
 // 以及用 API 塞假資料的小工具。
 export const PALETTE = {
     F: { bg: '#dcdcdf', fg: '#374151', tint: '#f0f0f2', ink: '#374151' },
-    D: { bg: '#4a545d', fg: '#ffffff', tint: '#e2edf8', ink: '#4a545d' },
-    C: { bg: '#286037', fg: '#ffffff', tint: '#d5f5da', ink: '#286037' },
-    B: { bg: '#1f5781', fg: '#ffffff', tint: '#d0f0ff', ink: '#1f5781' },
-    A: { bg: '#5a467d', fg: '#ffffff', tint: '#f0e4ff', ink: '#5a467d' },
-    S: { bg: '#78431b', fg: '#ffffff', tint: '#ffe3cc', ink: '#78431b' },
-    SS: { bg: '#823834', fg: '#ffffff', tint: '#ffdfda', ink: '#823834' },
+    D: { bg: '#626a71', fg: '#ffffff', tint: '#e4edf5', ink: '#626a71' },
+    C: { bg: '#4c7454', fg: '#ffffff', tint: '#dbf3de', ink: '#4c7454' },
+    B: { bg: '#476d8e', fg: '#ffffff', tint: '#d7effa', ink: '#476d8e' },
+    A: { bg: '#6e608b', fg: '#ffffff', tint: '#eee6fa', ink: '#6e608b' },
+    S: { bg: '#885e43', fg: '#ffffff', tint: '#fae4d3', ink: '#885e43' },
+    SS: { bg: '#905752', fg: '#ffffff', tint: '#f9e1dd', ink: '#905752' },
 };
 
 export function rgb(hex) {
