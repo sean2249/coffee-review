@@ -75,6 +75,13 @@ test('建立場次 → 評兩杯、留一杯未評分 → 揭曉 → 排名與�
     expect(await style(firstScore, 'backgroundColor')).toBe(rgb(PALETTE.A.bg));
     await expect(ranking.nth(2).locator('.cup-ranking-rank')).toHaveText('—');
     await expect(page.locator('.session-cup .detail-adjust-row').first()).toBeVisible();
+    // 詳情頁的 8 項同一套等級色（#173）：85 分那杯風味 +5.0 = SS、香氣 0 = D
+    const cup85 = page.locator('.session-cup').filter({ hasText: '85.0' });
+    const detailRow = label => cup85.locator('.detail-adjust-row')
+        .filter({ has: page.locator('.detail-adjust-label', { hasText: label }) });
+    await expect(detailRow('風味').locator('.detail-adjust-value')).toHaveText('5.0');
+    expect(await style(detailRow('風味').locator('.adjust-dot'), 'backgroundColor')).toBe(rgb(PALETTE.SS.bg));
+    expect(await style(detailRow('香氣').locator('.adjust-dot'), 'backgroundColor')).toBe(rgb(PALETTE.D.bg));
 });
 
 test('舊杯：評分唯讀、改備註存檔不改寫評分；重新評分後改用新制', async ({ page, request }) => {

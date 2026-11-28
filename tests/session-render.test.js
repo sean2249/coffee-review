@@ -152,6 +152,19 @@ describe('renderSessionDetail', () => {
         expect(valueOf(cups[1], '尾韻')).toBe('—');
     });
 
+    // review #183：沒評分的舊杯存著 8 個預設 5（以前的表單每次都存），詳情頁不能顯示成 8 個 0.0。
+    it('沒評分的舊杯：8 項都是「—」', () => {
+        const defaults = Object.fromEntries(
+            ['flavor', 'acidity', 'sweetness', 'mouthfeel', 'aftertaste', 'cleanness', 'balance', 'overall']
+                .map(k => [k, { score: 5, notes: '' }]));
+        const el = toDom(win.renderSessionDetail({
+            ...session,
+            cups: [{ id: 'k1', code: 'A', schema_version: 1, coe_total: null, evaluations: defaults }],
+        }));
+        const values = [...el.querySelectorAll('.session-cup .detail-adjust-value')].map(v => v.textContent);
+        expect(values).toEqual(Array(8).fill('—'));
+    });
+
     it('場次名稱、筆記與杯編號都會被 escape', () => {
         const html = win.renderSessionDetail({
             ...session,

@@ -83,7 +83,7 @@
     --type-session-bg: #ebe9f4;
     --type-session-fg: #4c3d8f;
 
-    /* 調整分 5 階（#169）：−1 磚紅、0 灰、0.5–1 淺綠、1.5–2 深綠、2 以上紫 */
+    /* 調整分「未判斷」的空心灰；判斷過的顏色用等級（見 tier palette，#173） */
     --adj-none: #c4c8ce;
 }
 
@@ -1519,12 +1519,6 @@ hr { border-color: var(--border); opacity: 0.7; }
     color: var(--text-primary);
 }
 .detail-eval-section-label { flex: 1; }
-.detail-eval-score {
-    font-family: var(--font-mono);
-    font-weight: 700;
-    color: var(--accent);
-    font-variant-numeric: tabular-nums;
-}
 .detail-eval-row {
     display: flex;
     gap: 0.55rem;

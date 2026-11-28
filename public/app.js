@@ -146,16 +146,10 @@ const defectsOptions = [
     '霉味', '土味', '化學味', '澀感', '雜味', '金屬味', '發酵過度',
 ];
 
+// 舊制的 8 項參考分（4–8）的 key，只用來判斷舊紀錄 / 舊杯評過沒有。
 const referenceFields = [
-    { key: 'flavor',     label: '風味 Flavor',      icon: 'bi-droplet-half',     hasFlavorWheel: true },
-    { key: 'acidity',    label: '酸質 Acidity',     icon: 'bi-lightning-charge' },
-    { key: 'sweetness',  label: '甜度 Sweetness',   icon: 'bi-heart' },
-    { key: 'mouthfeel',  label: '口感 Mouthfeel',   icon: 'bi-circle-half' },
-    { key: 'aftertaste', label: '尾韻 Aftertaste',  icon: 'bi-soundwave' },
-    { key: 'cleanness',  label: '乾淨度 Clean Cup', icon: 'bi-stars' },
-    { key: 'balance',    label: '平衡 Balance',     icon: 'bi-arrow-left-right' },
-    { key: 'overall',    label: '整體 Overall',     icon: 'bi-trophy' },
-];
+    'flavor', 'acidity', 'sweetness', 'mouthfeel', 'aftertaste', 'cleanness', 'balance', 'overall',
+].map(key => ({ key }));
 
 // ─── 調整分（沖煮 / 品鑑的評分，#169）──────────────────────────────────────────
 // 計分參考 CFGC:2026.01（台灣咖啡研究室，CC BY-SA 4.0）。每項從「未判斷」(null) 出發，
@@ -214,10 +208,13 @@ function isAdjustmentRecord(mode, r) {
 // 一筆沖煮 / 品鑑紀錄 8 項的調整分（顯示用；舊紀錄在這裡換算，資料庫不改寫）。
 // 舊紀錄的香氣沒有分數 → 0；「整體」不在 adjustmentFields 裡，自然不出現。
 // 舊紀錄一項參考分都沒有 = 從沒評過 → 8 項都是未判斷；只缺幾項 → 缺的當舊預設 5（= 0）。
+// 舊杯：以前的表單每次都存 8 項參考分（沒動就是預設 5），所以看 coe_total——沒有總分 = 沒評過。
 function recordAdjustments(mode, r) {
     const legacy = !isAdjustmentRecord(mode, r);
     const scoreOf = key => r?.evaluations?.[key]?.score;
-    const legacyRated = legacy && referenceFields.some(f => typeof scoreOf(f.key) === 'number');
+    const legacyRated = legacy
+        && (mode !== 'session_cup' || typeof r?.coe_total === 'number')
+        && referenceFields.some(f => typeof scoreOf(f.key) === 'number');
     const out = {};
     for (const f of adjustmentFields) {
         const score = scoreOf(f.key);
@@ -3834,12 +3831,13 @@ function openShopPicker({ currentId = '', allowEmpty = true, emptyLabel = '— �
 // #tpl-form 每次掛載呼叫一次 initAdjustmentWidget。8 項的值在 adjustState.values
 // （null = 未判斷），筆記與風味輪（只有香氣、風味）收在各列的展開區；最終備註
 // 在下面另一張卡。沖煮 / 品鑑不再記負面風味（舊紀錄的照樣顯示）。杯測場次不用這套。
-// legacyCup：杯測裡正在看的舊杯（改版前評的、有分數）。評分唯讀、分數用它當時的，
-// 存檔時評分欄位原樣寫回；按「重新評分」才清掉、改用新制（#183）。
+// legacyCup：杯測裡正在看的舊杯（改版前存的，不論當時有沒有評分）。評分唯讀、分數用它當時的
+// （沒評過就維持未評分），存檔時評分欄位原樣寫回；按「重新評分」才清掉、改用新制（#183）。
 const adjustState = { values: {}, legacyCup: null };
 
+// 剛在表單新增、還沒存過的杯沒有 schema_version，不算舊杯。
 function isLegacyCup(c) {
-    return (c?.schema_version ?? 0) < ADJUSTMENT_SCHEMA.session_cup && typeof c?.coe_total === 'number';
+    return typeof c?.schema_version === 'number' && c.schema_version < ADJUSTMENT_SCHEMA.session_cup;
 }
 
 // 舊杯的提示列：顯示保留的原分數，提供「重新評分」。
@@ -3849,8 +3847,9 @@ function renderAdjustLegacy() {
     const legacy = adjustState.legacyCup;
     box.hidden = !legacy;
     if (legacy) {
-        document.getElementById('adjustLegacyText').textContent =
-            `舊制評分，保留原分數 ${legacy.coe_total.toFixed(1)}`;
+        document.getElementById('adjustLegacyText').textContent = typeof legacy.coe_total === 'number'
+            ? `舊制評分，保留原分數 ${legacy.coe_total.toFixed(1)}`
+            : '舊制的杯，當時沒有評分';
     }
 }
 
@@ -3912,6 +3911,7 @@ function initAdjustmentWidget() {
     const list = document.getElementById('adjustList');
     if (!list) return;
     adjustState.values = Object.fromEntries(adjustmentFields.map(f => [f.key, null]));
+    adjustState.legacyCup = null; // 上一個表單（杯測的舊杯）留下的，不能帶進新表單
     list.innerHTML = adjustmentFields.map(adjustRowHtml).join('');
 
     adjustmentFields.forEach(f => {
@@ -4003,8 +4003,9 @@ function renderScoreBar() {
     if (!bar) return;
     const total = adjustmentFields.length;
     const legacy = adjustState.legacyCup;
-    const done = legacy ? total : adjustmentFields.filter(f => typeof adjustState.values[f.key] === 'number').length;
-    const score = legacy ? legacy.coe_total : scoreFromAdjustments(adjustState.values);
+    const score = legacy ? (legacy.coe_total ?? null) : scoreFromAdjustments(adjustState.values);
+    const done = legacy ? (score == null ? 0 : total)
+        : adjustmentFields.filter(f => typeof adjustState.values[f.key] === 'number').length;
     if (score == null) {
         bar.className = 'score-bar is-unscored';
         bar.style.setProperty('--ring', String(done / total));

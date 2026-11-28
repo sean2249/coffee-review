@@ -32,15 +32,23 @@ const cupA = {
     id: 'k1', code: 'A', position: 0, user_id: 'u1', session_id: 's1', created_at: '2026-09-01T00:00:00Z',
     shop_id: null, bean_name: '耶加', bean_type: 'single', origin: '衣索比亞', process: '日曬',
     blend_composition: null, roast: '淺焙', defects: '有點澀', defects_tags: ['澀感'], notes: '好喝',
-    coe_total: 87, coe_tier_id: 'recommend',
+    coe_total: 87, coe_tier_id: 'recommend', schema_version: 1,
     evaluations: {
         flavor: { score: 7, notes: '檸檬皮', intensity: '濃郁', flavors: FLAVOR_LEMON },
         acidity: { score: 6.5, textures: ['活潑', '多汁'] },
     },
     observation: { aroma: { dryAroma: '花香', wetAroma: '柑橘', notes: '' } },
 };
-const cupB = { id: 'k2', code: 'B', position: 1, coe_total: null, coe_tier_id: null, evaluations: {}, observation: {} };
-const cupC = { id: 'k3', code: 'C', position: 2, coe_total: 84, coe_tier_id: 'like', evaluations: {}, observation: {} };
+const cupB = { id: 'k2', code: 'B', position: 1, coe_total: null, coe_tier_id: null, schema_version: 2, evaluations: {}, observation: {} };
+// 以前的表單每次都存 8 項參考分，沒動就是預設 5；沒評分的舊杯長這樣（coe_total null）。
+const DEFAULT_REFERENCE = Object.fromEntries(
+    ['flavor', 'acidity', 'sweetness', 'mouthfeel', 'aftertaste', 'cleanness', 'balance', 'overall']
+        .map(k => [k, { score: 5, notes: '' }]));
+const cupOldUnscored = {
+    id: 'k4', code: 'D', position: 3, coe_total: null, coe_tier_id: null, schema_version: 1,
+    evaluations: DEFAULT_REFERENCE, observation: { aroma: { notes: '舊的香氣筆記' } },
+};
+const cupC = { id: 'k3', code: 'C', position: 2, coe_total: 84, coe_tier_id: 'like', schema_version: 1, evaluations: {}, observation: {} };
 
 let win, doc;
 
@@ -394,6 +402,33 @@ describe('8 項調整分（#183）', () => {
         expect(cup.coe_total).toBeNull();
         expect(cup.schema_version).toBe(2);
         expect(cup.bean_name).toBe('耶加');
+    });
+
+    // review #183：以前沒評分的舊杯存著 8 個預設 5，不能被換算成 8 個 0、變成 80 分進排名。
+    it('沒評分的舊杯（參考分都是預設 5）：維持未評分、唯讀，存檔原樣寫回、不進排名', async () => {
+        await mount([cupA, cupOldUnscored], { recordId: 's1' });
+        clickTab(1);
+        expect(KEYS.map(adjValue)).toEqual(Array(8).fill('—'));
+        expect(row('flavor').querySelector('[data-adjust="zero"]').disabled).toBe(true);
+        expect($('#scoreBar').textContent).toContain('未評分 · 0/8');
+        expect($('#adjustLegacyText').textContent).toBe('舊制的杯，當時沒有評分');
+        typeInto($('#f-notes'), '補個備註');
+        const cup = form().cups[1];
+        expect(cup.coe_total).toBeNull();
+        expect(cup.coe_tier_id).toBeNull();
+        expect(cup.schema_version).toBe(1);
+        expect(cup.evaluations).toEqual(cupOldUnscored.evaluations);
+        expect(cup.observation).toEqual(cupOldUnscored.observation);
+        expect(win.rankCups(form().cups).map(r => r.rank)).toEqual([1, null]);
+    });
+
+    // review #183：舊杯的唯讀狀態不能帶進下一個表單（例如接著去新增沖煮）。
+    it('重新掛載評分元件 → 不再是舊杯、按鍵可以按', () => {
+        expect(row('flavor').querySelector('[data-adjust="plus"]').disabled).toBe(true);
+        win.initAdjustmentWidget(); // 下一個表單掛載時做的事（這裡不點按鍵，不在意 listener 疊加）
+        expect(win.eval('adjustState.legacyCup')).toBeNull();
+        expect(row('flavor').querySelector('[data-adjust="plus"]').disabled).toBe(false);
+        expect($('#scoreBar').textContent).toContain('未評分 · 0/8');
     });
 
     it('舊杯沒有任何參考分：8 項是「—」但仍唯讀，分數列是當時的分數', async () => {

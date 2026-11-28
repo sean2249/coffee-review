@@ -57,14 +57,19 @@ The bulk upsert needs identical key sets. `initAdjustmentWidget` runs once per m
 second call stacks listeners). Every non-submit `<button>` must be `type="button"`, or
 tapping it saves the whole session.
 
-**Old cups are read-only** (#183, author 2026-11-28). A cup with `schema_version` below
-`ADJUSTMENT_SCHEMA.session_cup` and a numeric `coe_total` is `adjustState.legacyCup`: its 8
+**Old cups are read-only** (#183, author 2026-11-28). A saved cup with a numeric
+`schema_version` below `ADJUSTMENT_SCHEMA.session_cup` is `adjustState.legacyCup`, scored
+or not (a cup added in the form has no `schema_version` yet). Its 8
 items show the converted values with the buttons disabled and the rows' expand buttons
 hidden, the score bar shows its stored score, and `readCupFromForm` writes its scoring
 fields (`coe_total`, `coe_tier_id`, `evaluations`, `observation`, `schema_version`) back
 unchanged — every session save re-inserts every cup, so anything else would rewrite the
 old score. Bean info, 瑕疵 and notes stay editable. 「重新評分」 (`resetAdjustments`) clears
-the 8 items and switches that cup to the new format.
+the 8 items and switches that cup to the new format. The old form saved all 8 reference
+scores every time (default 5), so an old cup without a `coe_total` was never scored:
+`recordAdjustments('session_cup', …)` shows its 8 items as 未判斷, not as eight 0s
+(which would make it 80 and rank it). `initAdjustmentWidget` clears `legacyCup`, so it
+never carries into the next form.
 
 **Session save**: `PUT /api/sessions/:id` serves both create and edit with
 client-generated UUIDs, and the whole request is re-sendable. It validates cup codes
