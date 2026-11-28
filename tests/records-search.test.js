@@ -114,14 +114,14 @@ describe('杯測場次', () => {
 
 describe('與其他篩選 AND', () => {
     const rows = [
-        { id: 'a', _type: 'cupping', bean_name: 'Geisha', coe_tier_id: 'recommend', created_at: '2026-06-10T00:00:00Z' },
-        { id: 'b', _type: 'cupping', bean_name: 'Geisha', coe_tier_id: 'common', created_at: '2026-06-10T00:00:00Z' },
-        { id: 'c', _type: 'cupping', bean_name: 'Bourbon', coe_tier_id: 'recommend', created_at: '2026-06-10T00:00:00Z' },
-        { id: 'd', _type: 'cupping', bean_name: 'Geisha', coe_tier_id: 'recommend', created_at: '2026-05-01T00:00:00Z' },
+        { id: 'a', _type: 'cupping', bean_name: 'Geisha', coe_total: 87, created_at: '2026-06-10T00:00:00Z' },
+        { id: 'b', _type: 'cupping', bean_name: 'Geisha', coe_total: 81, created_at: '2026-06-10T00:00:00Z' },
+        { id: 'c', _type: 'cupping', bean_name: 'Bourbon', coe_total: 87, created_at: '2026-06-10T00:00:00Z' },
+        { id: 'd', _type: 'cupping', bean_name: 'Geisha', coe_total: 87, created_at: '2026-05-01T00:00:00Z' },
     ];
 
     it('搜尋字 + 徽章 + 日期', () => {
-        win.hydrateFilterFromQuery({ q: 'geisha', tier: 'recommend', from: '2026-06-01' });
+        win.hydrateFilterFromQuery({ q: 'geisha', tier: 'b', from: '2026-06-01' });
         expect(win.applyAdvancedFilters(rows).map(r => r.id)).toEqual(['a']);
     });
 });
@@ -298,7 +298,7 @@ describe('列表頁', () => {
 
     it('搜尋無結果：專屬空畫面，清除搜尋只清 q', async () => {
         stubApi(byFlag);
-        await win.viewRecordsList(root(), { type: 'cupping', q: '<無此豆>', tier: 'recommend', sort: 'score-asc' });
+        await win.viewRecordsList(root(), { type: 'cupping', q: '<無此豆>', tier: 'b', sort: 'score-asc' });
         const empty = doc.querySelector('.empty-state');
         expect(empty.querySelector('.bi-search')).not.toBeNull();
         expect(empty.textContent).toContain('找不到含「<無此豆>」的記錄');
@@ -307,7 +307,7 @@ describe('列表頁', () => {
         doc.getElementById('records-clear-search').click();
         expect(doc.getElementById('filter-q').value).toBe('');
         expect(doc.activeElement).toBe(doc.getElementById('filter-q'));
-        expect(win.location.hash).toBe('#/records?type=cupping&tier=recommend&sort=score-asc');
+        expect(win.location.hash).toBe('#/records?type=cupping&tier=b&sort=score-asc');
         expect(doc.querySelector('.empty-state').textContent).toContain('找不到符合條件的記錄');
     });
 
@@ -322,7 +322,7 @@ describe('列表頁', () => {
     it('進階篩選「清除全部」清空搜尋字，保留排序 / 分組', async () => {
         if (!win.requestAnimationFrame) win.requestAnimationFrame = cb => setTimeout(cb, 0);
         stubApi(byFlag);
-        await win.viewRecordsList(root(), { q: 'geisha', tier: 'common', sort: 'score-asc', group: 'shop' });
+        await win.viewRecordsList(root(), { q: 'geisha', tier: 'd', sort: 'score-asc', group: 'shop' });
         doc.getElementById('filter-adv-btn').click();
         doc.getElementById('filter-clear-all').click();
         expect(doc.getElementById('filter-q').value).toBe('');

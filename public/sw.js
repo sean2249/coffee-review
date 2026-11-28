@@ -4,7 +4,7 @@
 //   • CDN libs（網址帶版本號）: stale-while-revalidate
 //   • /api/* 與 /cdn-cgi/*: pass-through, always go to network
 
-const VERSION = 'v31';
+const VERSION = 'v39';
 const CACHE = `coffee-review-${VERSION}`;
 
 const APP_SHELL = [

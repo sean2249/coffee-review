@@ -2,96 +2,78 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import { loadApp } from './load-app.js';
 
 let win;
+const tiers = () => win.eval('totalScoreTiers');
 
 beforeAll(async () => {
     ({ window: win } = await loadApp());
 });
 
-// totalScoreTiers (app.js:25) — half-open ranges keyed by min/max in 0.5 steps:
-//   trash      74    – 76.5
-//   commercial 77    – 79.5
-//   common     80    – 82.5   <-- fallback for NaN only
-//   like       83    – 85.5
-//   recommend  86    – 88.5
-//   amazing    89    – 91.5
-//   godly      92    – 96
-describe('tierFromScore', () => {
-    it('returns trash at the low boundary (74)', () => {
-        expect(win.tierFromScore(74).id).toBe('trash');
-    });
-
-    it('returns trash at the half-step upper edge (76.5)', () => {
-        expect(win.tierFromScore(76.5).id).toBe('trash');
-    });
-
-    it('jumps to commercial at 77', () => {
-        expect(win.tierFromScore(77).id).toBe('commercial');
-    });
-
-    it('returns godly at the bottom of the top tier (92)', () => {
-        expect(win.tierFromScore(92).id).toBe('godly');
-    });
-
-    it('returns godly at the maximum allowed score (96)', () => {
-        expect(win.tierFromScore(96).id).toBe('godly');
-    });
-
-    // 新尺度（#169）最低 72、沒有上限：範圍外的分數歸到最低 / 最高級，
-    // 落在兩級之間的空隙（只有舊資料才可能）歸到下面那一級。
-    it('maps a score inside a gap (76.6) to the tier below', () => {
-        expect(win.tierFromScore(76.6).id).toBe('trash');
-    });
-
-    it('maps out-of-range low scores to the lowest tier (72, 73)', () => {
-        expect(win.tierFromScore(72).id).toBe('trash');
-        expect(win.tierFromScore(73).id).toBe('trash');
-    });
-
-    it('maps out-of-range high scores to the highest tier (96.5, 100)', () => {
-        expect(win.tierFromScore(96.5).id).toBe('godly');
-        expect(win.tierFromScore(100).id).toBe('godly');
-    });
-
-    it('falls back to common for NaN input', () => {
-        expect(win.tierFromScore(NaN).id).toBe('common');
-    });
-});
-
-describe('tierById', () => {
-    it('returns the matching tier', () => {
-        expect(win.tierById('godly').medal).toBe('神');
-        expect(win.tierById('trash').medal).toBe('劣');
-    });
-
-    it('falls back to common for an unknown id', () => {
-        expect(win.tierById('not-a-tier').id).toBe('common');
-    });
-
-    it('falls back to common for null / undefined', () => {
-        expect(win.tierById(null).id).toBe('common');
-        expect(win.tierById(undefined).id).toBe('common');
-    });
-});
-
-describe('scoresInTier', () => {
-    it('walks the trash tier in 0.5 increments inclusive of both ends', () => {
-        const trash = win.tierById('trash');
-        expect(win.scoresInTier(trash)).toEqual([74, 74.5, 75, 75.5, 76, 76.5]);
-    });
-
-    it('walks the godly tier (92 — 96) without drifting past the upper bound', () => {
-        const godly = win.tierById('godly');
-        expect(win.scoresInTier(godly)).toEqual([
-            92, 92.5, 93, 93.5, 94, 94.5, 95, 95.5, 96,
+// 寶物稀有度（#173）：80 = D 普通（8 項全 0），每 3 分一級；最低、最高兩級沒有邊界。
+describe('totalScoreTiers', () => {
+    it('七級：字母、名稱、說明照 #173 定案', () => {
+        expect(tiers().map(t => [t.medal, t.badgeName, t.description])).toEqual([
+            ['F', '破損', '有明顯缺點'],
+            ['D', '普通', '可接受的日常一杯'],
+            ['C', '優良', '比日常好一點'],
+            ['B', '稀有', '值得記住'],
+            ['A', '史詩', '會想再喝'],
+            ['S', '傳說', '專程也要喝'],
+            ['SS', '神話', '念念不忘'],
         ]);
     });
 
-    it('rounds floating-point accumulation so values stay on .0/.5', () => {
-        // 74 + 0.5*n in JS produces drift like 75.00000000000001 around n=2.
-        // The implementation guards against this with Math.round(s*10)/10.
-        const trash = win.tierById('trash');
-        for (const s of win.scoresInTier(trash)) {
-            expect(Number((s * 2).toFixed(0)) / 2).toBe(s);
-        }
+    // 作者 2026-11-28：不用光暈，等級資料也不帶這個欄位。
+    it('沒有光暈欄位', () => {
+        expect(tiers().some(t => 'glow' in t)).toBe(false);
+    });
+});
+
+describe('tierFromScore', () => {
+    it.each([
+        [72, 'F'], [79.5, 'F'],
+        [80, 'D'], [82.5, 'D'],
+        [83, 'C'], [85.5, 'C'],
+        [86, 'B'], [88.5, 'B'],
+        [89, 'A'], [91.5, 'A'],
+        [92, 'S'], [94.5, 'S'],
+        [95, 'SS'], [100, 'SS'],
+    ])('%s → %s', (score, medal) => {
+        expect(win.tierFromScore(score).medal).toBe(medal);
+    });
+
+    it('低於 72、高於 100 也歸最低 / 最高級', () => {
+        expect(win.tierFromScore(60).medal).toBe('F');
+        expect(win.tierFromScore(130).medal).toBe('SS');
+    });
+
+    it('不是數字 → null（沒有分數就沒有等級）', () => {
+        expect(win.tierFromScore(NaN)).toBeNull();
+        expect(win.tierFromScore(undefined)).toBeNull();
+    });
+});
+
+// 舊紀錄存的 coe_tier_id 是舊等級（例如 84 存成 'like' 銀牌）；顯示一律依分數重新歸級。
+describe('scoreTier', () => {
+    it('依 coe_total 歸級，不看存下來的 coe_tier_id', () => {
+        expect(win.scoreTier({ coe_total: 84, coe_tier_id: 'like' }).medal).toBe('C');
+        expect(win.scoreTier({ coe_total: 80, coe_tier_id: 'common' }).medal).toBe('D');
+    });
+
+    it('沒有分數 → null', () => {
+        expect(win.scoreTier({ coe_total: null, coe_tier_id: 'like' })).toBeNull();
+        expect(win.scoreTier({})).toBeNull();
+    });
+});
+
+// 8 項調整分的顏色用等級（#173，作者 2026-11-28）：−1 F … 2 S，+2.5 起 SS。
+describe('adjustmentTier', () => {
+    it.each([
+        [-1, 'F'], [0, 'D'], [0.5, 'C'], [1, 'B'], [1.5, 'A'], [2, 'S'], [2.5, 'SS'], [3, 'SS'], [6, 'SS'],
+    ])('%s → %s', (value, medal) => {
+        expect(win.adjustmentTier(value).medal).toBe(medal);
+    });
+
+    it('未判斷 → null', () => {
+        expect(win.adjustmentTier(null)).toBeNull();
     });
 });

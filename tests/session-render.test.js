@@ -29,7 +29,7 @@ describe('renderRecordCard — 杯測場次', () => {
     it('獎牌與分數取最高分那杯，連到場次，顯示杯數與最佳杯', () => {
         const card = toDom(win.renderRecordCard(session)).querySelector('.record-card');
         expect(card.getAttribute('href')).toBe('#/session/s1');
-        expect(card.querySelector('.record-card-medal-text').textContent).toBe('金');
+        expect(card.querySelector('.record-card-medal-text').textContent).toBe('B'); // 87 = B 稀有（#173）
         expect(card.querySelector('.record-card-medal-score').textContent).toBe('87.0');
         expect(card.querySelector('.record-card-type-badge').textContent).toBe('杯測');
         expect(card.querySelector('.record-card-type-badge').classList.contains('type-session')).toBe(true);
@@ -130,27 +130,54 @@ describe('renderSessionDetail', () => {
         expect(el.querySelector('a[href="#/shops/gone"]')).toBeNull();
     });
 
-    it('未評分的杯：預估總分只給數字，不掛等級徽章', () => {
+    // #183：杯測和沖煮 / 品鑑同一套 8 項調整分；沒有預估總分。舊杯的參考分在顯示時換算。
+    it('每杯顯示 8 項調整分，沒有預估總分；舊杯照換算規則', () => {
         const el = toDom(win.renderSessionDetail({
             ...session,
             cups: [
-                // 8 項都沒動過（預設 5）→ 估算 76；有評分的杯才掛徽章
-                { id: 'k1', code: 'A', coe_total: null, coe_tier_id: null, evaluations: { flavor: { score: 5 } } },
-                { id: 'k2', code: 'B', coe_total: 82, coe_tier_id: 'common', evaluations: { flavor: { score: 5 } } },
+                { id: 'k1', code: 'A', schema_version: 1, coe_total: 84, evaluations: { flavor: { score: 7 } } },
+                { id: 'k2', code: 'B', schema_version: 2, coe_total: 81,
+                  evaluations: { flavor: { score: 1 }, aroma: { score: 0 } } },
             ],
         }));
-        const blocks = [...el.querySelectorAll('.evaluation-estimated-total')];
-        expect(blocks).toHaveLength(2);
-        expect(blocks[0].textContent).toContain('76.0');
-        expect(blocks[0].querySelector('.evaluation-estimated-tier')).toBeNull();
-        // 有評分的杯照舊掛徽章（徽章來自估算值 76，不是 coe_total）
-        expect(blocks[1].querySelector('.evaluation-estimated-tier').textContent)
-            .toContain(win.tierFromScore(76).badgeName);
+        expect(el.textContent).not.toContain('預估總分');
+        expect(el.querySelector('.evaluation-estimated-total')).toBeNull();
+        const cups = [...el.querySelectorAll('.session-cup')];
+        const valueOf = (cup, label) => [...cup.querySelectorAll('.detail-adjust-row')]
+            .find(r => r.querySelector('.detail-adjust-label').textContent === label)
+            .querySelector('.detail-adjust-value').textContent;
+        expect(cups[0].querySelectorAll('.detail-adjust-row')).toHaveLength(8);
+        expect(valueOf(cups[0], '風味')).toBe('2.0'); // 舊 7 → +2
+        expect(valueOf(cups[1], '風味')).toBe('1.0');
+        expect(valueOf(cups[1], '尾韻')).toBe('—');
     });
 
-    it('沖煮 / 品鑑（分數一定有）的預估總分仍然掛徽章', () => {
-        const el = toDom(win.renderEstimatedTotalBlock({ coe_total: 82, evaluations: { flavor: { score: 8 } } }));
-        expect(el.querySelector('.evaluation-estimated-tier')).not.toBeNull();
+    // review #183：沒評分的舊杯存著 8 個預設 5（以前的表單每次都存），詳情頁不能顯示成 8 個 0.0。
+    it('沒評分的舊杯：8 項都是「—」', () => {
+        const defaults = Object.fromEntries(
+            ['flavor', 'acidity', 'sweetness', 'mouthfeel', 'aftertaste', 'cleanness', 'balance', 'overall']
+                .map(k => [k, { score: 5, notes: '' }]));
+        const el = toDom(win.renderSessionDetail({
+            ...session,
+            cups: [{ id: 'k1', code: 'A', schema_version: 1, coe_total: null, evaluations: defaults }],
+        }));
+        const values = [...el.querySelectorAll('.session-cup .detail-adjust-value')].map(v => v.textContent);
+        expect(values).toEqual(Array(8).fill('—'));
+    });
+
+    // review #183 round 2：沒有總分但動過參考分的舊杯，參考分照換算顯示（分數仍是未評分）。
+    it('沒有總分、但動過參考分的舊杯：照換算顯示，標題仍是未評分', () => {
+        const el = toDom(win.renderSessionDetail({
+            ...session,
+            cups: [{ id: 'k1', code: 'A', schema_version: 1, coe_total: null,
+                evaluations: { flavor: { score: 7 }, acidity: { score: 5 } } }],
+        }));
+        const row = label => [...el.querySelectorAll('.session-cup .detail-adjust-row')]
+            .find(r => r.querySelector('.detail-adjust-label').textContent === label)
+            .querySelector('.detail-adjust-value').textContent;
+        expect(row('風味')).toBe('2.0');
+        expect(row('酸 / 鹹')).toBe('0.0');
+        expect(el.querySelector('.session-cup').textContent).toContain('未評分');
     });
 
     it('場次名稱、筆記與杯編號都會被 escape', () => {

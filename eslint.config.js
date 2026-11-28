@@ -42,11 +42,20 @@ export default [
         },
     },
     {
-        files: ['eslint.config.js', 'vitest.config.ts', 'scripts/**/*.mjs'],
+        files: ['eslint.config.js', 'vitest.config.ts', 'playwright.config.js', 'scripts/**/*.mjs'],
         languageOptions: {
             ecmaVersion: 'latest',
             sourceType: 'module',
             globals: { ...globals.node },
+        },
+    },
+    {
+        // Playwright：Node 跑測試，page.evaluate 的回呼在瀏覽器裡跑。
+        files: ['e2e/**/*.js'],
+        languageOptions: {
+            ecmaVersion: 'latest',
+            sourceType: 'module',
+            globals: { ...globals.node, ...globals.browser },
         },
     },
     {

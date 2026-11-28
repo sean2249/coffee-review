@@ -5,3 +5,5 @@ node_modules/
 .claude/*
 !.claude/settings.json
 .claude.local.md
+test-results/
+playwright-report/

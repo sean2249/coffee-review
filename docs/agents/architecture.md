@@ -13,20 +13,28 @@ flips visibility via `data-mode-only="cupping|tasting"` and `data-mode-text="...
 is shared by this form and the 杯測場次 form; a binding that looks dead for one form may
 serve the other.
 
-**Scoring model — 沖煮 / 品鑑** (#169, critical to preserve; terms in `GLOSSARY.md`「評分」):
+**Scoring model — 沖煮 / 品鑑 and every 杯測 cup** (#169, #183; critical to preserve; terms in
+`GLOSSARY.md`「評分」):
 - 8 `adjustmentFields` in drinking order (香氣、風味、清晰度、酸 / 鹹、甜 / 苦、口感、尾韻、平衡 / 和諧), each an
   **調整分** starting at null (未判斷): −1, 0, 0.5, 1 … (0.5 steps, no cap, **no −0.5**) —
   rules in `stepAdjustment`. 分數 = `80 + Σ` (`scoreFromAdjustments`), stored in
-  `coe_total`; `coe_tier_id = tierFromScore(coe_total).id`. Saving is blocked until all 8
-  are judged, so new 沖煮 / 品鑑 records always have a score. No picker, no 預估總分.
+  `coe_total`; `coe_tier_id = tierFromScore(coe_total).id`. Saving a 沖煮 / 品鑑 record is
+  blocked until all 8 are judged; a 杯測 cup may stay 未評分 (fewer than 8 judged, no score,
+  left out of the ranking). No picker, no 預估總分 anywhere.
 - New records: `evaluations[key] = { score, notes, flavors?, …chips }` (flavors only on
   aroma / flavor), `observation: {}`, `schema_version` ≥ `ADJUSTMENT_SCHEMA` (cupping 4,
-  tasting 6). Each row's expanded area carries the pre-#169 descriptive chips
+  tasting 6, session_cup 2). Each row's expanded area carries the pre-#169 descriptive chips
   (`adjustChipSpec`: `evaluationOptions[key]`, aroma → `observationOptions.aroma`; no
   `overall`), record-only, never part of the score. Notes sit collapsed behind 「加上備註」.
-- **Old records keep their entered `coe_total`** (stats mix old and new on purpose). Their
-  4–8 reference scores are converted **at display time** by `recordAdjustments`
-  (old − 5, anything below 0 → −1, aroma 0, `overall` dropped); the DB is never rewritten.
+- **Old records and old cups keep their entered `coe_total`** (stats mix old and new on
+  purpose). Their 4–8 reference scores are converted **at display time** by
+  `recordAdjustments` (old − 5, anything below 0 → −1, aroma 0, `overall` dropped); the DB is
+  never rewritten. The **tier** is always derived from `coe_total` (`scoreTier`), never from a
+  stored `coe_tier_id`: old rows store pre-#173 tier ids.
+- **Tiers** (#173): 寶物稀有度 F 破損 · D 普通 · C 優良 · B 稀有 · A 史詩 · S 傳說 · SS 神話,
+  80 = D (all 8 judged 0), 3 points per tier, open at both ends (`totalScoreTiers`,
+  `tierFromScore`). The 8 adjustment values use the same tiers for their colors
+  (`adjustmentTier`: −1 F, 0 D, 0.5 C, 1 B, 1.5 A, 2 S, ≥ 2.5 SS).
 - On-screen wording: 分數 (never "CoE"); 「瑕疵」 only in 杯測. Field / code names
   (`coe_total`, `coeState`, …) stay.
 - The 沖煮 / 品鑑 form no longer records 負面風味: no `defects` / `defects_tags` input, and
@@ -35,24 +43,35 @@ serve the other.
 - Leaving a 沖煮 / 品鑑 form with input asks 「尚未儲存，確定離開？」 (`onHashChange` +
   `beforeunload`); no drafts (#137).
 
-**Scoring model — 杯測場次 (unchanged by #169)**: `coe_total` is still picked directly with
-the two-stage tier → score-chip picker (`coeState`, `selectTier` / `selectScore`); the 8
-`referenceFields` (4–8, default 5) are stored but don't compute it; `observationFields`
-(`aroma`) is observation-only; `renderEstimatedTotalBlock` shows the 36 + Σ estimate.
 
 ## 杯測場次 form and session save
 
-**杯測場次 form** (`#tpl-session-form`, `viewSessionForm`) is separate from `#tpl-form`. It
-is now the only user of the tier/score picker + `#evaluationAccordion` (`#tpl-form` uses the
-adjustment widget, `initAdjustmentWidget`), and only **one cup's widgets are in the DOM at a
-time**. The other cups live in `state.currentForm.cups`; call `syncActiveCup()` before
-reading `cups` (switch / save / overview). `writeCupToForm` must *reset* every
-widget (`applyEvaluationsToForm` resets missing keys to defaults). Every cup holds exactly
+**杯測場次 form** (`#tpl-session-form`, `viewSessionForm`) is separate from `#tpl-form` but
+uses the same adjustment widget (`initAdjustmentWidget`, #183), plus its own 瑕疵與備註 card
+(`initCupDefects`). Only **one cup's widgets are in the DOM at a time**. The other cups
+live in `state.currentForm.cups`; call `syncActiveCup()` before reading `cups` (switch /
+save / overview). `writeCupToForm` must *reset* every widget (`applyAdjustmentsToForm`
+resets missing keys to 未判斷, empty notes, no chips or flavors). Every cup holds exactly
 `id` + `readCupFromForm()` keys: never `created_at`, `user_id`, `session_id` or `position`.
-The bulk upsert needs identical key sets. `initEvaluationAccordion` runs once per mount
-(a second call stacks listeners). In this form `coeState.coeTotal` / `selectedTierId` can
-be `null` (= 未評分; `selectTier` / `selectScore` / `refreshTotalDisplay` guard it). Every
-non-submit `<button>` must be `type="button"`, or tapping it saves the whole session.
+The bulk upsert needs identical key sets. `initAdjustmentWidget` runs once per mount (a
+second call stacks listeners). Every non-submit `<button>` must be `type="button"`, or
+tapping it saves the whole session.
+
+**Old cups are read-only** (#183, author 2026-11-28). A saved cup with a numeric
+`schema_version` below `ADJUSTMENT_SCHEMA.session_cup` is `adjustState.legacyCup`, scored
+or not (a cup added in the form has no `schema_version` yet). Its 8
+items show the converted values with the buttons disabled and the rows' expand buttons
+hidden, the score bar shows its stored score, and `readCupFromForm` writes its scoring
+fields (`coe_total`, `coe_tier_id`, `evaluations`, `observation`, `schema_version`) back
+unchanged — every session save re-inserts every cup, so anything else would rewrite the
+old score. Bean info, 瑕疵 and notes stay editable. 「重新評分」 (`resetAdjustments`) clears
+the 8 items and switches that cup to the new format. The old form saved all 8 reference
+scores every time (default 5), so an old cup with no `coe_total` and every reference at 5
+was never scored: `recordAdjustments('session_cup', …)` shows its 8 items as 未判斷, not
+as eight 0s (整體 is ignored here, it is not one of the 8). One with no `coe_total` but
+changed references shows them converted; it stays 未評分 either way (the score only ever
+comes from `coe_total`). `initAdjustmentWidget` clears `legacyCup`, so it never carries
+into the next form.
 
 **Session save**: `PUT /api/sessions/:id` serves both create and edit with
 client-generated UUIDs, and the whole request is re-sendable. It validates cup codes
@@ -75,26 +94,34 @@ second copy appears.
 
 | Meaning | Source | Read it with |
 |---|---|---|
-| Tier (徽章) colors | `--t1-bg` … `--t7-bg` / `--t*-fg` + the tier palette block in `styles.css` | `tier.cssClass` → `var(--tier-bg)` / `var(--tier-fg)` |
+| Tier (徽章) colors | `--t1-*` … `--t7-*` (`bg`, `fg`, `tint`) + the tier palette block in `styles.css` | `tier.cssClass` → `var(--tier-bg)` / `--tier-fg` / `--tier-tint` / `--tier-ink` |
 | Record-type colors (沖煮 / 品鑑 / 杯測) | `--type-*-bg` / `--type-*-fg` in `:root` | `.record-card-type-badge.type-*` |
 | Error / danger red | `--danger`, `--danger-strong`, `--danger-bg`, `--danger-border` in `:root` | `var(--danger*)` |
-| Adjustment-score levels | `--adj-*` in `:root` | `adjustmentLevel(value)` → `data-level` |
+| Adjustment-score colors | the tier palette | `adjustmentTier(value).cssClass` on the row |
 | Flavor colors | the `flavors` constant | `decodeFlavorMeta(id).color` |
 | Record-type names | `TYPE_LABELS` | `TYPE_LABELS[type]` (filter chips, new-record picker, badges) |
 | Tier names and descriptions | `totalScoreTiers` | README's badge table copies it, guarded by a test |
 
-Values that only happen to be equal are not copies: `--adj-neg` and `--brew-temp` are both
-`#b4532a` but mean "worse than normal" and "water temperature".
+Values that only happen to be equal are not copies: they mean different things and change
+independently.
 
-**Tier (徽章) colors.** The palette is `--t1-bg` … `--t7-bg` / `--t*-fg` in `styles.css`
-`:root`; the **tier palette** block right after it maps each `tier.cssClass` (`.t-trash` …
-`.t-godly`) to `--tier-bg` / `--tier-fg`. Tiers in `totalScoreTiers` carry `cssClass` and
-no color. To show a tier:
+**Tier (徽章) colors.** The palette is `--t1-*` … `--t7-*` in `styles.css` `:root` (色調
+「深沉」 lightened by OKLCH L +0.08 and chroma ×0.75, author 2026-11-28; #173): `bg` (solid), `fg` (text on solid), `tint` (light background). The **tier
+palette** block right after it maps each `tier.cssClass` (`.t-f` … `.t-ss`) to `--tier-bg`,
+`--tier-fg`, `--tier-tint`, and for F (too pale to write with) `--tier-ink`; text on white or
+on the tint reads `var(--tier-ink, var(--tier-bg))`. Tiers in `totalScoreTiers` carry
+`cssClass` and `medal` (the letter), no color.
 
-- an element styled by the tier: add `tier.cssClass` and read `var(--tier-bg)` /
-  `var(--tier-fg)` in its CSS (with a fallback when the element can be tier-less);
-- a tier name inside text: `tierBadgeHtml(tier)` (its `badgeName`; pass a second argument
-  for other text, e.g. the medal char; `tierBadgeHtml(null)` is the gray 未評分 pill).
+The treatment depends on the place (#173): **solid** for the list badge, stats and the
+杯測 ranking; **tint + colored text** for detail-page tags; **white + colored border** for an
+unselected filter chip (solid once selected). There is no glow anywhere (author 2026-11-28).
+The 8 adjustment rows carry the tier color on their dot only; the `− 數值 ＋` capsule has no
+border and a neutral number. To show a tier:
+
+- an element styled by the tier: add `tier.cssClass` and read `var(--tier-bg)` etc. in its
+  CSS (with a fallback when the element can be tier-less);
+- a tier inside text: `tierBadgeHtml(tier, text, { tint })` — default text is the
+  letter + 中文 name; `tierBadgeHtml(null)` is the gray 未評分 pill.
 
 Places that show a tier today (keep this list current):
 
@@ -103,10 +130,9 @@ Places that show a tier today (keep this list current):
 | Records list card | `renderRecordCard` | `.record-card-medal` |
 | Advanced filter (等級) | `openFilterDrawer` | `.filter-tier-row .filter-chip` |
 | Stats: score distribution | `statsDistMarkup` | `.stats-dist-medal`, `.stats-dist-bar` |
-| 沖煮 / 品鑑 form score bar / panel | `renderScoreBar` | `#scoreBar.score-bar` |
-| 沖煮 / 品鑑 detail page | `renderRecordDetail` | `.tier-badge` |
-| 杯測 form: tier picker, score chips, total | `renderTierMedals`, `renderScoreChips`, `refreshTotalDisplay` | `.tier-medal`, `.score-chip-row`, `#coeTotalTierBadge` |
-| 杯測 form / detail: 預估總分 | `updateEstimatedTotalDisplay`, `renderEstimatedTotalBlock` | `.evaluation-estimated-tier` |
+| 沖煮 / 品鑑 / 杯測 form score bar / panel | `renderScoreBar` | `#scoreBar.score-bar` |
+| 8 adjustment rows (form and detail) | `renderAdjustRow`, `renderDetailAdjustments` | `.adjust-item`, `.detail-adjust-row` |
+| 沖煮 / 品鑑 detail page | `renderRecordDetail` | `.tier-badge.is-tint` |
 | 杯測 form: collapsed cup score summary | `refreshSessionSummaries` | `#cup-score-summary` |
 | 杯測 detail: per-cup score, ranking | `renderSessionCupDetail`, `renderCupRanking` | `.session-cup-score`, `.cup-ranking-score` |
 | 杯測 reveal cards | `renderRevealCardHead` | `.reveal-cup-medal` |
@@ -117,6 +143,9 @@ included), if a palette background is copied outside `:root` (as hex or `rgb()`/
 `.t-*` class appears anywhere but its palette line (so no component colors one tier itself), or
 if one of the components above stops reading `--tier-bg`. jsdom computes no styles, so it
 checks the rules, not rendered colors: a new component still needs a line in that test.
+The rendered colors are checked end to end: `e2e/tiers.spec.js` and `e2e/session.spec.js`
+(Playwright, `npm run test:e2e`) compare computed styles on each of the places above with the
+palette written in #173.
 `tests/single-source.test.js` ties Bootstrap's danger variables (and `--bs-danger-rgb`'s
 numbers) to `--danger`.
 

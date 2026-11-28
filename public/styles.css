@@ -41,14 +41,16 @@
 
     --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
 
-    /* Medal flat palettes */
-    --t1-bg: #6b7280; --t1-fg: #ffffff;
-    --t2-bg: #78716c; --t2-fg: #ffffff;
-    --t3-bg: #a86b3c; --t3-fg: #ffffff;
-    --t4-bg: #94a3b8; --t4-fg: #111418;
-    --t5-bg: #c08c2a; --t5-fg: #111418;
-    --t6-bg: #3b7a8c; --t6-fg: #ffffff;
-    --t7-bg: #5d4ba6; --t7-fg: #ffffff;
+    /* 等級色盤：寶物稀有度（#173）。從色調「深沉」再調亮、調淡（作者 2026-11-28）：OKLCH
+       亮度 +0.08、彩度 ×0.75，色相不變，灰 → 綠 → 藍 → 紫 → 橘 → 紅；F 是淺灰配深字、不調。
+       tint = 同色相的淡色（淺底、未選取），彩度同樣 ×0.75。白字對比 ≥ 5.3，淡底上的色字 ≥ 4.5。 */
+    --t1-bg: #dcdcdf; --t1-fg: #374151; --t1-tint: #f0f0f2;
+    --t2-bg: #626a71; --t2-fg: #ffffff; --t2-tint: #e4edf5;
+    --t3-bg: #4c7454; --t3-fg: #ffffff; --t3-tint: #dbf3de;
+    --t4-bg: #476d8e; --t4-fg: #ffffff; --t4-tint: #d7effa;
+    --t5-bg: #6e608b; --t5-fg: #ffffff; --t5-tint: #eee6fa;
+    --t6-bg: #885e43; --t6-fg: #ffffff; --t6-tint: #fae4d3;
+    --t7-bg: #905752; --t7-fg: #ffffff; --t7-tint: #f9e1dd;
 
     /* Tabbar height — reserved at bottom of page so content isn't covered */
     --tabbar-height: 64px;
@@ -81,27 +83,24 @@
     --type-session-bg: #ebe9f4;
     --type-session-fg: #4c3d8f;
 
-    /* 調整分 5 階（#169）：−1 磚紅、0 灰、0.5–1 淺綠、1.5–2 深綠、2 以上紫 */
+    /* 調整分「未判斷」的空心灰；判斷過的顏色用等級（見 tier palette，#173） */
     --adj-none: #c4c8ce;
-    --adj-neg: #b4532a;
-    --adj-zero: #6b7280;
-    --adj-low: #4c9a5b;
-    --adj-high: #22663a;
-    --adj-top: #6a3fb0;
 }
 
 /* ───── Tier palette ─────────────────────────────────────────────────── */
-/* 等級（徽章）顏色的唯一對照表：JS 只給 tier.cssClass，元件一律讀 --tier-bg / --tier-fg，
-   不再各自對 t-* 上色。色盤本身是 :root 的 --t1-bg … --t7-bg。 */
-.t-trash      { --tier-bg: var(--t1-bg); --tier-fg: var(--t1-fg); }
-.t-commercial { --tier-bg: var(--t2-bg); --tier-fg: var(--t2-fg); }
-.t-common     { --tier-bg: var(--t3-bg); --tier-fg: var(--t3-fg); }
-.t-like       { --tier-bg: var(--t4-bg); --tier-fg: var(--t4-fg); }
-.t-recommend  { --tier-bg: var(--t5-bg); --tier-fg: var(--t5-fg); }
-.t-amazing    { --tier-bg: var(--t6-bg); --tier-fg: var(--t6-fg); }
-.t-godly      { --tier-bg: var(--t7-bg); --tier-fg: var(--t7-fg); }
+/* 等級（徽章）顏色的唯一對照表：JS 只給 tier.cssClass，元件一律讀 --tier-bg / --tier-fg /
+   --tier-tint，在白底或淡底上寫字讀 --tier-ink（F 的底色太淡，字改用它的深色前景）。
+   不再各自對 t-* 上色。色盤本身是 :root 的 --t1-* … --t7-*。 */
+.t-f  { --tier-bg: var(--t1-bg); --tier-fg: var(--t1-fg); --tier-tint: var(--t1-tint); --tier-ink: var(--t1-fg); }
+.t-d  { --tier-bg: var(--t2-bg); --tier-fg: var(--t2-fg); --tier-tint: var(--t2-tint); }
+.t-c  { --tier-bg: var(--t3-bg); --tier-fg: var(--t3-fg); --tier-tint: var(--t3-tint); }
+.t-b  { --tier-bg: var(--t4-bg); --tier-fg: var(--t4-fg); --tier-tint: var(--t4-tint); }
+.t-a  { --tier-bg: var(--t5-bg); --tier-fg: var(--t5-fg); --tier-tint: var(--t5-tint); }
+.t-s  { --tier-bg: var(--t6-bg); --tier-fg: var(--t6-fg); --tier-tint: var(--t6-tint); }
+.t-ss { --tier-bg: var(--t7-bg); --tier-fg: var(--t7-fg); --tier-tint: var(--t7-tint); }
 
-/* 文字裡的等級（詳情頁、杯測的杯）：徽章色的小膠囊。 */
+/* 依位置分配的處理（#173）：純色（列表獎牌、統計、排名）是預設；淡底＋色字給詳情頁標籤；
+   白底＋色框給未選取的篩選 chip。不用光暈（作者 2026-11-28）。 */
 .tier-badge {
     display: inline-block;
     padding: 0.1em 0.6em;
@@ -112,6 +111,11 @@
     line-height: 1.4;
     white-space: nowrap;
 }
+.tier-badge.is-tint {
+    background: var(--tier-tint, var(--bg-muted));
+    color: var(--tier-ink, var(--tier-bg, var(--text-secondary)));
+}
+.tier-badge-letter { font-weight: 900; margin-right: 0.3em; }
 
 /* ───── Base ───────────────────────────────────────────────────────────── */
 * { box-sizing: border-box; }
@@ -701,113 +705,10 @@ button.card-title {
     margin-bottom: 0;
 }
 
-/* ───── CoE Total Card — Flat medal style ──────────────────────────────── */
+/* ───── Score card (record detail) ─────────────────────────────────────── */
 .coe-card {
     background: var(--bg-card);
     border: 1px solid var(--border-strong);
-}
-
-.medal-row {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: center;
-    gap: 0.55rem 0.7rem;
-    margin-bottom: 1.5rem;
-}
-
-.medal-cell {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0.32rem;
-    min-width: 64px;
-}
-
-.tier-medal {
-    width: 64px;
-    height: 64px;
-    border-radius: 50%;
-    border: none;
-    padding: 0;
-    background-color: var(--bg-muted);
-    color: var(--text-dim);
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: background-color 0.15s ease, color 0.15s ease,
-                transform 0.15s ease, box-shadow 0.15s ease;
-}
-.tier-medal:hover { background-color: var(--bg-muted-hover); }
-.tier-medal:focus-visible {
-    outline: none;
-    box-shadow: 0 0 0 3px var(--accent-tint);
-}
-.tier-medal.selected {
-    background-color: var(--tier-bg, var(--accent));
-    color: var(--tier-fg, #fff);
-    transform: scale(1.08);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.16);
-}
-.tier-medal .medal-text {
-    font-size: 1.7rem;
-    font-weight: 800;
-    line-height: 1;
-    letter-spacing: -0.02em;
-    display: block;
-}
-
-.medal-cell .medal-range-label {
-    font-size: 0.74rem;
-    color: var(--text-muted);
-    font-weight: 500;
-    line-height: 1;
-    font-variant-numeric: tabular-nums;
-}
-.medal-cell.selected .medal-range-label {
-    color: var(--text-primary);
-    font-weight: 700;
-}
-
-
-.score-chip-row {
-    --tier-color: var(--tier-bg, var(--accent));
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: center;
-    gap: 0.4rem;
-    padding: 0.65rem 0.85rem;
-    background-color: var(--bg-page);
-    border: 1px dashed var(--border-strong);
-    border-radius: var(--radius-md);
-    margin-bottom: 1rem;
-}
-.score-chip {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 3rem;
-    min-height: 44px; /* 觸控目標下限（WCAG 2.5.5） */
-    padding: 0.4rem 0.85rem;
-    text-align: center;
-    border-radius: 999px;
-    border: 1.5px solid var(--border-strong);
-    background-color: var(--bg-elevated);
-    color: var(--text-primary);
-    cursor: pointer;
-    font-weight: 500;
-    user-select: none;
-    transition: all 0.12s ease;
-    font: inherit;
-    line-height: 1;
-}
-.score-chip:hover { border-color: var(--tier-color); color: var(--tier-color); }
-.score-chip:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--accent-tint); }
-.score-chip.selected {
-    background-color: var(--tier-color);
-    border-color: var(--tier-color);
-    color: var(--tier-fg, #fff);
-    box-shadow: var(--shadow-sm);
 }
 
 .coe-total-block {
@@ -829,12 +730,6 @@ button.card-title {
     letter-spacing: -0.02em;
 }
 .coe-total-of { font-size: 0.85rem; color: var(--text-dim); font-weight: 500; }
-.coe-total-tier-badge {
-    font-size: 1rem;
-    font-weight: 700;
-    padding-left: 0.5rem;
-    letter-spacing: 0.02em;
-}
 .coe-total-desc {
     font-size: 0.85rem;
     color: var(--text-secondary);
@@ -842,43 +737,7 @@ button.card-title {
     margin-top: 0.35rem;
 }
 
-/* ───── Accordion ──────────────────────────────────────────────────────── */
-.accordion { background: transparent; margin-bottom: 0; }
-.accordion-flush > .accordion-item {
-    background-color: transparent;
-    border: none;
-    border-bottom: 1px solid var(--border);
-    border-radius: 0;
-    margin-bottom: 0;
-}
-.accordion-flush > .accordion-item:last-of-type { border-bottom: none; }
-.accordion-flush > .accordion-item:first-of-type { border-top: 1px solid var(--border); }
-.accordion-flush > .accordion-item .accordion-button,
-.accordion-flush > .accordion-item .accordion-button:not(.collapsed) {
-    display: flex;
-    align-items: center;
-    width: 100%;
-    background-color: transparent;
-    color: var(--text-primary);
-    box-shadow: none;
-    padding: 0.7rem 0.4rem;
-    font-weight: 600;
-    gap: 0.55rem;
-    font-size: 0.94rem;
-}
-.accordion-flush > .accordion-item .accordion-button:focus {
-    box-shadow: 0 0 0 3px var(--accent-tint);
-    border-color: var(--accent);
-    z-index: 1;
-}
-.accordion-flush > .accordion-item .accordion-body {
-    background-color: transparent;
-    padding: 0.3rem 0.4rem 1rem;
-}
-.accordion-button::after {
-    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='%234b5563'%3e%3cpath fill-rule='evenodd' d='M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708z'/%3e%3c/svg%3e");
-    transition: transform 0.2s ease;
-}
+/* ───── Detail section icon ────────────────────────────────────────────── */
 
 .eval-icon {
     display: inline-flex;
@@ -891,76 +750,7 @@ button.card-title {
     font-size: 0.9rem;
     flex-shrink: 0;
 }
-.eval-label { flex: 1 1 auto; min-width: 0; }
-.eval-summary {
-    color: var(--text-muted);
-    font-size: 0.78rem;
-    padding-right: 0.45rem;
-    font-weight: 400;
-    text-align: right;
-    max-width: 55%;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
 
-/* ───── Reference slider ───────────────────────────────────────────────── */
-.ref-slider-group { display: flex; align-items: center; gap: 0.85rem; }
-.ref-slider-group .form-range { flex: 1; }
-.ref-slider-value {
-    min-width: 2.6rem;
-    text-align: right;
-    font-family: var(--font-mono);
-    font-weight: 600;
-    font-size: 1.05rem;
-    color: var(--text-primary);
-    font-variant-numeric: tabular-nums;
-}
-.form-range {
-    -webkit-appearance: none;
-    appearance: none;
-    width: 100%;
-    height: 6px;
-    padding: 0;
-    background: transparent;
-}
-.form-range:focus { outline: none; }
-.form-range::-webkit-slider-runnable-track {
-    height: 6px;
-    border-radius: 3px;
-    background:
-        linear-gradient(to right, var(--accent), var(--accent)) no-repeat,
-        var(--border);
-    background-size: var(--slider-fill, 25%) 100%;
-}
-.form-range::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    appearance: none;
-    margin-top: -8px;
-    width: 22px; height: 22px;
-    background: var(--accent);
-    border: 3px solid #ffffff;
-    border-radius: 50%;
-    box-shadow: 0 2px 6px rgba(17, 20, 24, 0.18);
-    cursor: pointer;
-    transition: transform 0.1s ease;
-}
-.form-range::-webkit-slider-thumb:hover { transform: scale(1.1); }
-.form-range:focus::-webkit-slider-thumb { box-shadow: 0 0 0 4px var(--accent-tint); }
-.form-range::-moz-range-track {
-    height: 6px; border-radius: 3px; background: var(--border);
-}
-.form-range::-moz-range-progress {
-    height: 6px; border-radius: 3px; background: var(--accent);
-}
-.form-range::-moz-range-thumb {
-    width: 22px; height: 22px;
-    background: var(--accent);
-    border: 3px solid #ffffff;
-    border-radius: 50%;
-    box-shadow: 0 2px 6px rgba(17, 20, 24, 0.18);
-    cursor: pointer;
-}
 
 /* ───── Flavor wheel ───────────────────────────────────────────────────── */
 .flavor-wheel {
@@ -1309,42 +1099,6 @@ button.card-title {
     box-shadow: 0 0 0 3px var(--accent-tint);
 }
 
-/* ───── Estimated total (sensory eval) ─────────────────────────────────── */
-.evaluation-estimated-total {
-    display: flex;
-    align-items: baseline;
-    gap: 0.4rem;
-    flex-wrap: wrap;
-    padding: 0.6rem 0.8rem;
-    margin-bottom: 0.6rem;
-    background: var(--bg-soft);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-md);
-}
-.evaluation-estimated-label {
-    font-size: 0.85rem;
-    color: var(--text-muted);
-    font-weight: 600;
-}
-.evaluation-estimated-value {
-    font-family: var(--font-mono);
-    font-size: 1.5rem;
-    font-weight: 700;
-    color: var(--text-primary);
-    font-variant-numeric: tabular-nums;
-    letter-spacing: -0.02em;
-}
-.evaluation-estimated-of { font-size: 0.78rem; color: var(--text-dim); }
-.evaluation-estimated-tier {
-    font-size: 0.92rem;
-    font-weight: 700;
-    padding-left: 0.4rem;
-}
-.evaluation-estimated-hint {
-    flex-basis: 100%;
-    font-size: 0.75rem;
-    color: var(--text-muted);
-}
 
 /* ───── Notes slot ─────────────────────────────────────────────────────── */
 .notes-slot .notes-toggle {
@@ -1604,7 +1358,12 @@ body.modal-open-custom { overflow: hidden; }
 }
 .filter-tier-row { flex-wrap: wrap; }
 /* 選取的徽章 chip 顯示對應獎牌色（沿用卡片獎牌的 tier tokens）。 */
-.filter-tier-row .filter-chip.selected { border-color: transparent; background: var(--tier-bg); color: var(--tier-fg); }
+.filter-tier-row .filter-chip {
+    border: 1.5px solid var(--tier-bg);
+    background: var(--bg-card);
+    color: var(--tier-ink, var(--tier-bg));
+}
+.filter-tier-row .filter-chip.selected { border-color: var(--tier-bg); background: var(--tier-bg); color: var(--tier-fg); }
 .filter-date-row {
     display: flex;
     align-items: center;
@@ -1760,12 +1519,6 @@ hr { border-color: var(--border); opacity: 0.7; }
     color: var(--text-primary);
 }
 .detail-eval-section-label { flex: 1; }
-.detail-eval-score {
-    font-family: var(--font-mono);
-    font-weight: 700;
-    color: var(--accent);
-    font-variant-numeric: tabular-nums;
-}
 .detail-eval-row {
     display: flex;
     gap: 0.55rem;
@@ -1949,13 +1702,7 @@ hr { border-color: var(--border); opacity: 0.7; }
     .filter-q-wrap,
     .filter-adv-btn { order: 1; }
     .card-body { padding: 0.95rem; }
-    .medal-row { gap: 0.45rem 0.55rem; margin-bottom: 1.25rem; }
-    .medal-cell { min-width: 58px; }
-    .tier-medal { width: 56px; height: 56px; }
-    .tier-medal .medal-text { font-size: 1.5rem; }
-    .medal-cell .medal-range-label { font-size: 0.68rem; }
     .coe-total-display { font-size: 1.85rem; }
-    .accordion-flush > .accordion-item .accordion-button { padding: 0.6rem 0.3rem; font-size: 0.9rem; }
     .eval-icon { width: 1.4rem; height: 1.4rem; font-size: 0.82rem; }
     .flavor-row.flavor-row-l2,
     .flavor-row.flavor-row-l3 { margin-left: 1rem; }
@@ -2046,6 +1793,8 @@ hr { border-color: var(--border); opacity: 0.7; }
     color: var(--text-muted);
     font-size: 0.8rem;
 }
+/* 平常沒有文字（暫存過才顯示時間）：空的時候不佔高度 */
+.session-autosave-status:empty { display: none; }
 
 /* ───── Account (個人) ────────────────────────────────────────────────── */
 .account-card { max-width: 22rem; margin: 2rem auto; }
@@ -2344,7 +2093,6 @@ hr { border-color: var(--border); opacity: 0.7; }
     color: var(--accent);
     background: var(--accent-tint);
 }
-.coe-clear-btn { padding: 0; font-size: 0.8rem; color: var(--text-muted); }
 .cup-ranking { display: flex; flex-direction: column; gap: 0.25rem; }
 .cup-ranking-row {
     display: grid;
@@ -2867,9 +2615,10 @@ a.brew-plan-ref .brew-plan-summary-name { color: var(--accent); flex: 1; }
 /* 手機：分數列黏在 8 項上方；電腦版（≥ 992px）左 8 項、右分數面板（含儲存鈕）。
    整塊不准有橫向捲動：名稱過長就截斷，每列固定一行高。 */
 .adjust-layout { margin-bottom: 1rem; }
+/* --sticky-offset：上方另有黏住的列時（杯測的階段列）由 JS 量高度寫進來，分數列黏在它下面。 */
 .score-panel {
     position: sticky;
-    top: calc(env(safe-area-inset-top, 0px) + 0.4rem);
+    top: calc(env(safe-area-inset-top, 0px) + var(--sticky-offset, 0px) + 0.4rem);
     z-index: 5;
     margin-bottom: 0.6rem;
 }
@@ -2939,16 +2688,30 @@ a.brew-plan-ref .brew-plan-summary-name { color: var(--accent); flex: 1; }
 
 .adjust-credit { font-size: 0.72rem; color: var(--text-dim); margin: 0.6rem 0 0; }
 
+/* 杯測的舊杯：評分唯讀，顯示保留的原分數與「重新評分」（#183） */
+.adjust-legacy {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 0.5rem 0.75rem;
+    margin-bottom: 0.6rem;
+    padding: 0.55rem 0.75rem;
+    border-radius: var(--radius-md);
+    background: var(--bg-soft);
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+}
+.adjust-legacy[hidden] { display: none; }
+
 .adjust-list { border-top: 1px solid var(--border); }
 .adjust-item {
     --adj-color: var(--adj-none);
     border-bottom: 1px solid var(--border);
 }
-.adjust-item[data-level="neg"],  .detail-adjust-row[data-level="neg"]  { --adj-color: var(--adj-neg); }
-.adjust-item[data-level="zero"], .detail-adjust-row[data-level="zero"] { --adj-color: var(--adj-zero); }
-.adjust-item[data-level="low"],  .detail-adjust-row[data-level="low"]  { --adj-color: var(--adj-low); }
-.adjust-item[data-level="high"], .detail-adjust-row[data-level="high"] { --adj-color: var(--adj-high); }
-.adjust-item[data-level="top"],  .detail-adjust-row[data-level="top"]  { --adj-color: var(--adj-top); }
+/* 判斷過的列掛 adjustmentTier 的等級 class：等級色只在圓點（作者 2026-11-28）。 */
+.adjust-item[class*=" t-"],
+.detail-adjust-row[class*=" t-"] { --adj-color: var(--tier-ink, var(--tier-bg)); }
 
 .adjust-row {
     display: flex;
@@ -2963,7 +2726,7 @@ a.brew-plan-ref .brew-plan-summary-name { color: var(--accent); flex: 1; }
     height: 10px;
     border-radius: 50%;
     border: 2px solid var(--adj-color);
-    background: var(--adj-color);
+    background: var(--tier-bg, var(--adj-color));
 }
 .adjust-item[data-level="none"] .adjust-dot { background: transparent; }
 .adjust-name {
@@ -2991,15 +2754,17 @@ a.brew-plan-ref .brew-plan-summary-name { color: var(--accent); flex: 1; }
 }
 .adjust-note-icon { font-size: 0.75rem; color: var(--text-muted); margin-left: 0.1rem; }
 
+/* − 數值 ＋：沒有外框，只留一層淡底讓按鍵範圍看得出來；數字維持中性色。 */
 .adjust-stepper {
     flex: 0 0 auto;
     display: inline-flex;
     align-items: center;
     height: 36px;
-    border: 1px solid var(--adj-color);
     border-radius: 999px;
-    color: var(--adj-color);
+    background: var(--bg-muted);
+    color: var(--text-primary);
 }
+.adjust-stepper .adjust-btn { color: var(--text-muted); }
 .adjust-item[data-level="none"] .adjust-stepper { color: var(--text-muted); }
 .adjust-btn,
 .adjust-value {
@@ -3060,7 +2825,7 @@ a.brew-plan-ref .brew-plan-summary-name { color: var(--accent); flex: 1; }
 .detail-adjust-value {
     font-family: var(--font-mono);
     font-weight: 700;
-    color: var(--adj-color);
+    color: var(--text-primary);
 }
 
 @media (min-width: 992px) {
@@ -3074,7 +2839,7 @@ a.brew-plan-ref .brew-plan-summary-name { color: var(--accent); flex: 1; }
     .score-panel {
         grid-row: 1;
         grid-column: 2;
-        top: 1rem;
+        top: calc(var(--sticky-offset, 0px) + 1rem);
         display: flex;
         flex-direction: column;
         gap: 0.75rem;

@@ -29,7 +29,7 @@ const flat = records => win.flattenSessionCups(records);
 describe('scoreDistribution', () => {
     it('lists all 7 tiers in order, including empty ones', () => {
         const d = win.scoreDistribution([]);
-        expect(d.map(x => x.tier.medal)).toEqual(['劣', '凡', '銅', '銀', '金', '鉑', '神']);
+        expect(d.map(x => x.tier.medal)).toEqual(['F', 'D', 'C', 'B', 'A', 'S', 'SS']);
         expect(d.every(x => x.count === 0)).toBe(true);
     });
 
@@ -40,21 +40,21 @@ describe('scoreDistribution', () => {
             session('s1', [{ coe_total: 84 }, { coe_total: 87 }, {}]),
         ]));
         const byMedal = Object.fromEntries(d.map(x => [x.tier.medal, x.count]));
-        expect(byMedal['銀']).toBe(2);
-        expect(byMedal['金']).toBe(1);
+        expect(byMedal.C).toBe(2);
+        expect(byMedal.B).toBe(1);
         expect(d.reduce((n, x) => n + x.count, 0)).toBe(3);
     });
 
     it('puts boundary scores in the right tier', () => {
         const d = win.scoreDistribution(flat([
-            cupping({ id: 'a', coe_total: 76.5 }),
-            cupping({ id: 'b', coe_total: 77 }),
-            cupping({ id: 'c', coe_total: 92 }),
+            cupping({ id: 'a', coe_total: 79.5 }),
+            cupping({ id: 'b', coe_total: 80 }),
+            cupping({ id: 'c', coe_total: 95 }),
         ]));
         const byMedal = Object.fromEntries(d.map(x => [x.tier.medal, x.count]));
-        expect(byMedal['劣']).toBe(1);
-        expect(byMedal['凡']).toBe(1);
-        expect(byMedal['神']).toBe(1);
+        expect(byMedal.F).toBe(1);
+        expect(byMedal.D).toBe(1);
+        expect(byMedal.SS).toBe(1);
     });
 });
 

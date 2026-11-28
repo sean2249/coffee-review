@@ -15,66 +15,50 @@
    ========================================================================== */
 
 // ─── Tier definitions ────────────────────────────────────────────────────────
+// 寶物稀有度（#173）：80 = D 普通（8 項調整分全 0），每 3 分一級；F 以下、SS 以上沒有邊界。
+// medal = 徽章中心的字母，badgeName = 中文名。顏色不在這裡：見 styles.css 的 tier palette。
 const totalScoreTiers = [
-    { id: 'trash',      medal: '劣', label: '≤76',   min: 74, max: 76.5,
-      badgeName: '平淡',   name: '風味平淡',
-      description: '平淡無亮點',
-      cssClass: 't-trash' },
+    { id: 'f',  medal: 'F',  badgeName: '破損', label: '< 80',  min: 74, description: '有明顯缺點' },
+    { id: 'd',  medal: 'D',  badgeName: '普通', label: '80-82', min: 80, description: '可接受的日常一杯' },
+    { id: 'c',  medal: 'C',  badgeName: '優良', label: '83-85', min: 83, description: '比日常好一點' },
+    { id: 'b',  medal: 'B',  badgeName: '稀有', label: '86-88', min: 86, description: '值得記住' },
+    { id: 'a',  medal: 'A',  badgeName: '史詩', label: '89-91', min: 89, description: '會想再喝' },
+    { id: 's',  medal: 'S',  badgeName: '傳說', label: '92-94', min: 92, description: '專程也要喝' },
+    { id: 'ss', medal: 'SS', badgeName: '神話', label: '≥ 95',  min: 95, description: '念念不忘' },
+].map(t => ({ ...t, name: `${t.medal} ${t.badgeName}`, cssClass: `t-${t.id}` }));
 
-    { id: 'commercial', medal: '凡', label: '77-79', min: 77, max: 79.5,
-      badgeName: '普羅',   name: '商業風味',
-      description: '普羅大眾的日常選擇，缺乏精品層次',
-      cssClass: 't-commercial' },
-
-    { id: 'common',     medal: '銅', label: '80-82', min: 80, max: 82.5,
-      badgeName: '銅牌',   name: '卓越銅獎',
-      description: '合格的精品咖啡，適合日常品飲',
-      cssClass: 't-common' },
-
-    { id: 'like',       medal: '銀', label: '83-85', min: 83, max: 85.5,
-      badgeName: '銀牌',   name: '優秀銀獎',
-      description: '平衡乾淨、值得反覆品飲的精品',
-      cssClass: 't-like' },
-
-    { id: 'recommend',  medal: '金', label: '86-88', min: 86, max: 88.5,
-      badgeName: '金牌',   name: '傑出金獎',
-      description: '風味飽滿、層次豐富的傑作',
-      cssClass: 't-recommend' },
-
-    { id: 'amazing',    medal: '鉑', label: '89-91', min: 89, max: 91.5,
-      badgeName: '鉑金',   name: '大師鉑金',
-      description: '結構完整、令人驚艷的大師之作',
-      cssClass: 't-amazing' },
-
-    { id: 'godly',      medal: '神', label: '≥92',   min: 92, max: 96,
-      badgeName: '典藏',   name: '稀世絕品',
-      description: '可遇不可求的競標級稀世絕品',
-      cssClass: 't-godly' },
-];
-
-// 分數由調整分算出（#169），最低 72、沒有上限：低於最低級歸最低級、高於最高級歸最高級；
-// 兩級之間的空隙（如 76.6，只有舊資料可能出現）歸到下面那一級。
+// 低於最低級歸最低級、高於最高級歸最高級；兩級之間的空隙（如 79.6，只有舊資料可能出現）
+// 歸到下面那一級。不是數字 → null。
 function tierFromScore(score) {
-    if (!Number.isFinite(score)) return totalScoreTiers[2];
+    if (!Number.isFinite(score)) return null;
     return [...totalScoreTiers].reverse().find(t => score >= t.min) || totalScoreTiers[0];
 }
-// 等級的顏色只在 styles.css（.t-* → --tier-bg / --tier-fg，見 tier palette）。這裡只給 class，
-// 不帶色碼：顯示等級的地方一律用 tierBadgeHtml，或在元素上掛 tier.cssClass。
-// tier 一定要是 totalScoreTiers 裡的一項（tierById / tierFromScore 的結果）；cssClass 也照樣 escape。
-// tier 為 null = 未評分：灰色膠囊。
-function tierBadgeHtml(tier, text = tier ? tier.badgeName : '未評分') {
-    return `<span class="tier-badge${tier ? ` ${escapeHtml(tier.cssClass)}` : ''}">${escapeHtml(text)}</span>`;
+
+// 一筆紀錄或一杯的等級：一律依 coe_total 歸級。舊資料存的 coe_tier_id 是改版前的等級
+// （例：84 存成銀牌 'like'），不拿來顯示。
+function scoreTier(r) {
+    return typeof r?.coe_total === 'number' ? tierFromScore(r.coe_total) : null;
 }
 
-function tierById(id) {
-    return totalScoreTiers.find(t => t.id === id) || totalScoreTiers[2];
+// 8 項調整分的顏色也用等級（#173）：−1 F、0 D、0.5 C、1 B、1.5 A、2 S、+2.5 起 SS。
+function adjustmentTier(value) {
+    if (typeof value !== 'number') return null;
+    const index = value < 0 ? 0 : Math.min(6, 1 + Math.round(value * 2));
+    return totalScoreTiers[index];
 }
-function scoresInTier(tier) {
-    const list = [];
-    for (let s = tier.min; s <= tier.max + 1e-9; s += 0.5) {
-        list.push(Math.round(s * 10) / 10);
-    }
-    return list;
+
+// 等級的顏色只在 styles.css（.t-* → --tier-bg / --tier-fg，見 tier palette）。這裡只給 class，
+// 不帶色碼：顯示等級的地方一律用 tierBadgeHtml，或在元素上掛 tier.cssClass。
+// tier 一定要是 totalScoreTiers 裡的一項（tierFromScore / scoreTier 的結果）；cssClass 也照樣 escape。
+// tier 為 null = 未評分：灰色膠囊。預設內容是字母＋中文（「C 優良」）；text 換成別的字。
+// tint：淡底＋色字（詳情頁標籤）。
+function tierBadgeHtml(tier, text = null, { tint = false } = {}) {
+    if (!tier) return `<span class="tier-badge">${escapeHtml(text ?? '未評分')}</span>`;
+    const cls = ['tier-badge', tier.cssClass, tint && 'is-tint']
+        .filter(Boolean).map(escapeHtml).join(' ');
+    const body = text != null ? escapeHtml(text)
+        : `<span class="tier-badge-letter">${escapeHtml(tier.medal)}</span>${escapeHtml(tier.badgeName)}`;
+    return `<span class="${cls}">${body}</span>`;
 }
 
 // ─── Evaluation field definitions ────────────────────────────────────────────
@@ -162,26 +146,17 @@ const defectsOptions = [
     '霉味', '土味', '化學味', '澀感', '雜味', '金屬味', '發酵過度',
 ];
 
+// 舊制的 8 項參考分（4–8）的 key，只用來判斷舊紀錄 / 舊杯評過沒有。
 const referenceFields = [
-    { key: 'flavor',     label: '風味 Flavor',      icon: 'bi-droplet-half',     hasFlavorWheel: true },
-    { key: 'acidity',    label: '酸質 Acidity',     icon: 'bi-lightning-charge' },
-    { key: 'sweetness',  label: '甜度 Sweetness',   icon: 'bi-heart' },
-    { key: 'mouthfeel',  label: '口感 Mouthfeel',   icon: 'bi-circle-half' },
-    { key: 'aftertaste', label: '尾韻 Aftertaste',  icon: 'bi-soundwave' },
-    { key: 'cleanness',  label: '乾淨度 Clean Cup', icon: 'bi-stars' },
-    { key: 'balance',    label: '平衡 Balance',     icon: 'bi-arrow-left-right' },
-    { key: 'overall',    label: '整體 Overall',     icon: 'bi-trophy' },
-];
-const observationFields = [
-    { key: 'aroma', label: '香氣 Aroma', icon: 'bi-wind', hasFlavorWheel: true },
-];
+    'flavor', 'acidity', 'sweetness', 'mouthfeel', 'aftertaste', 'cleanness', 'balance', 'overall',
+].map(key => ({ key }));
 
 // ─── 調整分（沖煮 / 品鑑的評分，#169）──────────────────────────────────────────
 // 計分參考 CFGC:2026.01（台灣咖啡研究室，CC BY-SA 4.0）。每項從「未判斷」(null) 出發，
 // 可選 −1、0、0.5、1 …（0 以上每格 0.5、沒有上限，沒有 −0.5）。分數 = 80 + Σ，
 // 8 項都判斷完才有。key 沿用舊參考分的 key（acidity → 酸 / 鹹、sweetness → 甜 / 苦、
 // cleanness → 清晰度），新舊紀錄靠 schema_version 區分（ADJUSTMENT_SCHEMA 以上是新制）。
-// 杯測場次不用這套，仍是 referenceFields + 總分挑選器。
+// 杯測每一杯也用這套（#183）。referenceFields 只剩換算舊紀錄 / 舊杯時用。
 // 順序照喝的感受：先聞 → 入口 → 口腔 → 吞下後 → 整體。
 const adjustmentFields = [
     { key: 'aroma',      label: '香氣',       hasFlavorWheel: true },
@@ -194,7 +169,7 @@ const adjustmentFields = [
     { key: 'balance',    label: '平衡 / 和諧' },
 ];
 const ADJUSTMENT_BASE = 80;
-const ADJUSTMENT_SCHEMA = { cupping: 4, tasting: 6 };
+const ADJUSTMENT_SCHEMA = { cupping: 4, tasting: 6, session_cup: 2 };
 
 // action：'plus' | 'minus' | 'zero'（點數值本身 = 普通 0）。
 function stepAdjustment(value, action) {
@@ -207,16 +182,6 @@ function stepAdjustment(value, action) {
 function formatAdjustment(value) {
     if (typeof value !== 'number') return '—';
     return value < 0 ? `−${Math.abs(value).toFixed(1)}` : value.toFixed(1);
-}
-
-// 5 階顏色：−1 磚紅、0 灰、0.5–1 淺綠、1.5–2 深綠、2 以上紫；未判斷 'none'。
-function adjustmentLevel(value) {
-    if (typeof value !== 'number') return 'none';
-    if (value < 0) return 'neg';
-    if (value === 0) return 'zero';
-    if (value <= 1) return 'low';
-    if (value <= 2) return 'high';
-    return 'top';
 }
 
 // values：{ key: number|null }。任何一項未判斷 → null（未評分）。
@@ -243,10 +208,16 @@ function isAdjustmentRecord(mode, r) {
 // 一筆沖煮 / 品鑑紀錄 8 項的調整分（顯示用；舊紀錄在這裡換算，資料庫不改寫）。
 // 舊紀錄的香氣沒有分數 → 0；「整體」不在 adjustmentFields 裡，自然不出現。
 // 舊紀錄一項參考分都沒有 = 從沒評過 → 8 項都是未判斷；只缺幾項 → 缺的當舊預設 5（= 0）。
+// 舊杯：以前的表單每次都存 8 項參考分（沒動就是預設 5）。沒有總分、參考分又全是預設 5 = 沒評過；
+// 沒有總分但動過參考分的照樣換算顯示（分數仍是未評分）。
 function recordAdjustments(mode, r) {
     const legacy = !isAdjustmentRecord(mode, r);
     const scoreOf = key => r?.evaluations?.[key]?.score;
-    const legacyRated = legacy && referenceFields.some(f => typeof scoreOf(f.key) === 'number');
+    // 「整體」不在 8 項裡，只動它不算評過（否則會顯示 8 個 0.0）。
+    const untouchedCup = mode === 'session_cup' && typeof r?.coe_total !== 'number'
+        && referenceFields.every(f => f.key === 'overall' || [undefined, null, 5].includes(scoreOf(f.key)));
+    const legacyRated = legacy && !untouchedCup
+        && referenceFields.some(f => typeof scoreOf(f.key) === 'number');
     const out = {};
     for (const f of adjustmentFields) {
         const score = scoreOf(f.key);
@@ -354,7 +325,6 @@ const ITEM_GROUPS = [
 // 扁平清單供 datalist 自動補全使用。
 const COMMON_ITEMS = ITEM_GROUPS.flatMap(g => g.items);
 
-const coeState = { coeTotal: 82, selectedTierId: 'common' };
 const wheelState = new Map();
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -1981,7 +1951,7 @@ function applyAdvancedFilters(rows) {
         // 杯測場次沒有自己的徽章：任一杯符合就算。
         const cups = r._type === 'session' ? (r.cups || []) : [r];
         if (kw && !searchHit(r, kw)) return false;
-        if (f.tiers.length && !cups.some(c => f.tiers.includes(c.coe_tier_id))) return false;
+        if (f.tiers.length && !cups.some(c => f.tiers.includes(scoreTier(c)?.id))) return false;
         if (f.dateFrom || f.dateTo) {
             const d = recordDateStr(r);
             if (!d) return false;
@@ -2158,7 +2128,7 @@ function openFilterDrawer() {
     const f = state.listFilter;
     const tierChips = totalScoreTiers.map(t => `
         <button type="button" class="filter-chip ${t.cssClass} ${f.tiers.includes(t.id) ? 'selected' : ''}"
-                data-tier-id="${t.id}">${t.medal} | ${escapeHtml(t.label)}</button>`).join('');
+                data-tier-id="${t.id}">${t.medal} ${escapeHtml(t.badgeName)} · ${escapeHtml(t.label)}</button>`).join('');
 
     const opener = document.activeElement;
     const backdrop = document.createElement('div');
@@ -2464,7 +2434,7 @@ function renderRecordCard(r, kw = '') {
     // 場次卡的獎牌 / 分數取最高分那杯；沒有任何杯評過分時顯示「—」。
     const best = type === 'session' ? bestSessionCup(r.cups) : null;
     const scoreSrc = type === 'session' ? (best || {}) : r;
-    const tier = scoreSrc.coe_tier_id ? tierById(scoreSrc.coe_tier_id) : null;
+    const tier = scoreTier(scoreSrc);
     const score = typeof scoreSrc.coe_total === 'number' ? scoreSrc.coe_total.toFixed(1) : '—';
     const shop = shopName(r.shop_id);
     const date = fmtDate(recordDateIso(r));
@@ -2599,8 +2569,7 @@ async function brewPlanStatus(r) {
 }
 
 function renderRecordDetail(mode, r, { planStatus = null } = {}) {
-    const tier = r.coe_tier_id ? tierById(r.coe_tier_id)
-        : (typeof r.coe_total === 'number' ? tierFromScore(r.coe_total) : null);
+    const tier = scoreTier(r);
     const score = typeof r.coe_total === 'number' ? r.coe_total.toFixed(1) : '—';
     const title = deriveTitle({ ...r, _type: mode });
     const shop = shopName(r.shop_id);
@@ -2640,7 +2609,7 @@ function renderRecordDetail(mode, r, { planStatus = null } = {}) {
                 <div class="coe-total-block">
                     <span class="coe-total-display detail-score-value">${score}</span>
                     <span class="coe-total-of">/ 100</span>
-                    ${tier ? tierBadgeHtml(tier) : ''}
+                    ${tier ? tierBadgeHtml(tier, null, { tint: true }) : ''}
                     ${tier ? `<span class="coe-total-desc">${escapeHtml(tier.description)}</span>` : ''}
                 </div>
             </div>
@@ -2673,7 +2642,7 @@ function renderDetailAdjustments(mode, r) {
         const v = values[f.key];
         return `
             <div class="detail-adjust-item">
-                <div class="detail-adjust-row" data-level="${adjustmentLevel(v)}">
+                <div class="detail-adjust-row${adjustmentTier(v) ? ` ${adjustmentTier(v).cssClass}` : ''}" data-level="${adjustmentTier(v) ? 'set' : 'none'}">
                     <span class="adjust-dot" aria-hidden="true"></span>
                     <span class="detail-adjust-label">${escapeHtml(f.label)}</span>
                     <span class="detail-adjust-value">${formatAdjustment(v)}</span>
@@ -2685,23 +2654,6 @@ function renderDetailAdjustments(mode, r) {
                 ${data.notes ? `<p class="detail-eval-notes">${escapeHtml(data.notes)}</p>` : ''}
             </div>`;
     }).join('')}</div>`;
-}
-
-// 預估總分（36 + 8 項）— 沖煮 / 品鑑詳細頁與杯測場次的每一杯共用。
-// 未評分（coe_total null，只有杯測場次會這樣）只給數字不給徽章：8 項沒動過時
-// 預設都是 5，掛上 [ 瑕疵 ] 會和標頭的「未評分」互相矛盾。
-function renderEstimatedTotalBlock(r) {
-    const estTotal = computeEstimatedTotalFromRecord(r);
-    if (estTotal == null) return '';
-    const estTier = typeof r.coe_total === 'number' ? tierFromScore(estTotal) : null;
-    return `
-        <div class="evaluation-estimated-total">
-            <span class="evaluation-estimated-label">預估總分</span>
-            <span class="evaluation-estimated-value">${estTotal.toFixed(1)}</span>
-            <span class="evaluation-estimated-of">/ 100</span>
-            ${estTier ? `<span class="evaluation-estimated-tier">${tierBadgeHtml(estTier)}</span>` : ''}
-            <span class="evaluation-estimated-hint">36 + 8 項分數加總</span>
-        </div>`;
 }
 
 // 豆子基本資訊列（沖煮詳細頁與杯測場次的每一杯共用）。
@@ -2878,55 +2830,6 @@ function renderChipDetailRows(spec, data) {
     return html;
 }
 
-function renderDetailObservations(r) {
-    if (!r.observation) return '';
-    return observationFields.map(f => {
-        const data = r.observation[f.key];
-        if (!data) return '';
-        const flavorChips = (data.flavors || [])
-            .map(decodeFlavorMeta).filter(Boolean)
-            .map(m => `<span class="detail-flavor-chip" style="--ft-color:${m.color}">${escapeHtml(m.name)}</span>`).join('');
-        const chipRows = renderChipDetailRows(observationOptions[f.key], data);
-        const hasContent = data.dryAroma || data.wetAroma || data.notes || flavorChips || chipRows;
-        if (!hasContent) return '';
-        return `
-            <div class="detail-eval-section">
-                <h4 class="detail-eval-section-title">
-                    <span class="eval-icon"><i class="bi ${f.icon}"></i></span>${escapeHtml(f.label)}
-                </h4>
-                ${data.dryAroma ? `<div class="detail-eval-row"><span class="detail-eval-key">乾香</span><span class="detail-eval-val">${escapeHtml(data.dryAroma)}</span></div>` : ''}
-                ${data.wetAroma ? `<div class="detail-eval-row"><span class="detail-eval-key">濕香</span><span class="detail-eval-val">${escapeHtml(data.wetAroma)}</span></div>` : ''}
-                ${chipRows}
-                ${flavorChips ? `<div class="detail-flavor-row">${flavorChips}</div>` : ''}
-                ${data.notes ? `<p class="detail-eval-notes">${escapeHtml(data.notes)}</p>` : ''}
-            </div>`;
-    }).join('');
-}
-
-function renderDetailReferences(r) {
-    if (!r.evaluations) return '';
-    return referenceFields.map(f => {
-        const data = r.evaluations[f.key];
-        if (!data) return '';
-        const score = typeof data.score === 'number' ? data.score.toFixed(1) : '—';
-        const chipRows = renderChipDetailRows(evaluationOptions[f.key], data);
-        const flavorChips = (data.flavors || [])
-            .map(decodeFlavorMeta).filter(Boolean)
-            .map(m => `<span class="detail-flavor-chip" style="--ft-color:${m.color}">${escapeHtml(m.name)}</span>`).join('');
-        return `
-            <div class="detail-eval-section">
-                <h4 class="detail-eval-section-title">
-                    <span class="eval-icon"><i class="bi ${f.icon}"></i></span>
-                    <span class="detail-eval-section-label">${escapeHtml(f.label)}</span>
-                    <span class="detail-eval-score">${score} / 8</span>
-                </h4>
-                ${chipRows}
-                ${flavorChips ? `<div class="detail-flavor-row">${flavorChips}</div>` : ''}
-                ${data.notes ? `<p class="detail-eval-notes">${escapeHtml(data.notes)}</p>` : ''}
-            </div>`;
-    }).join('');
-}
-
 // label：杯測叫「瑕疵與備註」；沖煮 / 品鑑叫「負面風味與備註」（「瑕疵」只用在杯測，#169）。
 function renderDetailDefectsNotes(r, label = '瑕疵與備註', icon = 'bi-exclamation-diamond') {
     const defectsTags = Array.isArray(r.defects_tags) ? r.defects_tags : [];
@@ -2941,18 +2844,6 @@ function renderDetailDefectsNotes(r, label = '瑕疵與備註', icon = 'bi-excla
             ${r.defects ? `<div class="detail-eval-row"><span class="detail-eval-key">補充</span><span class="detail-eval-val">${escapeHtml(r.defects)}</span></div>` : ''}
             ${r.notes ? `<p class="detail-eval-notes">${escapeHtml(r.notes)}</p>` : ''}
         </div>`;
-}
-
-function computeEstimatedTotalFromRecord(r) {
-    if (!r.evaluations) return null;
-    let sum = 0;
-    let any = false;
-    for (const f of referenceFields) {
-        const s = r.evaluations[f.key]?.score;
-        if (typeof s === 'number') { sum += s; any = true; }
-        else sum += 5;
-    }
-    return any ? 36 + sum : null;
 }
 
 function recordFlavorLeafIds(r) {
@@ -3939,106 +3830,47 @@ function openShopPicker({ currentId = '', allowEmpty = true, emptyLabel = '— �
     searchEl.focus();
 }
 
-// ─── CoE widget ──────────────────────────────────────────────────────────────
-function initCoeWidget() {
-    coeState.coeTotal = 82;
-    coeState.selectedTierId = 'common';
-    renderTierMedals();
-    renderScoreChips(tierById('common'));
-    refreshTotalDisplay();
-}
-
-function renderTierMedals() {
-    const row = document.getElementById('medalRow');
-    if (!row) return;
-    row.innerHTML = '';
-    totalScoreTiers.forEach(t => {
-        const selected = (t.id === coeState.selectedTierId);
-        const cell = document.createElement('div');
-        cell.className = 'medal-cell' + (selected ? ' selected' : '');
-
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = `tier-medal ${t.cssClass}` + (selected ? ' selected' : '');
-        btn.dataset.tierId = t.id;
-        btn.setAttribute('aria-pressed', selected);
-        btn.setAttribute('aria-label', `${t.name} ${t.label}`);
-        btn.innerHTML = `<span class="medal-text">${t.medal}</span>`;
-        btn.addEventListener('click', () => selectTier(t.id));
-
-        const lbl = document.createElement('span');
-        lbl.className = 'medal-range-label';
-        lbl.textContent = t.label;
-
-        cell.appendChild(btn);
-        cell.appendChild(lbl);
-        row.appendChild(cell);
-    });
-}
-
-function renderScoreChips(tier) {
-    const row = document.getElementById('scoreChipRow');
-    if (!row) return;
-    row.innerHTML = '';
-    row.className = `score-chip-row ${tier.cssClass}`;
-    scoresInTier(tier).forEach(s => {
-        const chip = document.createElement('button');
-        chip.type = 'button';
-        const sel = Math.abs(s - coeState.coeTotal) < 1e-6;
-        chip.className = 'score-chip' + (sel ? ' selected' : '');
-        chip.dataset.score = s;
-        chip.setAttribute('aria-pressed', sel);
-        chip.textContent = Number.isInteger(s) ? `${s}` : s.toFixed(1);
-        chip.addEventListener('click', () => selectScore(s));
-        row.appendChild(chip);
-    });
-}
-
-function selectTier(tierId, opts = {}) {
-    const tier = tierById(tierId);
-    coeState.selectedTierId = tierId;
-    // coeTotal null = 杯測場次裡「還沒點分數」的杯：點徽章只切換分數列，不直接給分。
-    if (coeState.coeTotal != null && !(coeState.coeTotal >= tier.min && coeState.coeTotal <= tier.max)) {
-        coeState.coeTotal = opts.scoreOverride != null ? opts.scoreOverride : tier.min;
-    }
-    renderTierMedals();
-    renderScoreChips(tier);
-    refreshTotalDisplay();
-}
-
-function selectScore(score) {
-    // 未評分的杯直接點預設（銅）列的分數：徽章跟著分數走，coe_tier_id 才不會存成 null。
-    if (coeState.selectedTierId == null) {
-        coeState.selectedTierId = tierFromScore(score).id;
-        renderTierMedals();
-    }
-    coeState.coeTotal = score;
-    renderScoreChips(tierById(coeState.selectedTierId));
-    refreshTotalDisplay();
-}
-
-function refreshTotalDisplay() {
-    const display = document.getElementById('coeTotalDisplay');
-    if (!display) return;
-    const badge = document.getElementById('coeTotalTierBadge');
-    if (coeState.coeTotal == null) {
-        // 杯測場次的未評分杯
-        display.textContent = '—';
-        badge.innerHTML = tierBadgeHtml(null);
-        document.getElementById('coeTotalDesc').textContent = '';
-        return;
-    }
-    const tier = tierById(coeState.selectedTierId);
-    display.textContent = coeState.coeTotal.toFixed(1);
-    badge.innerHTML = tierBadgeHtml(tier);
-    document.getElementById('coeTotalDesc').textContent = tier.description;
-}
-
 // ─── 調整分元件（沖煮 / 品鑑，#169） ─────────────────────────────────────────
 // #tpl-form 每次掛載呼叫一次 initAdjustmentWidget。8 項的值在 adjustState.values
 // （null = 未判斷），筆記與風味輪（只有香氣、風味）收在各列的展開區；最終備註
 // 在下面另一張卡。沖煮 / 品鑑不再記負面風味（舊紀錄的照樣顯示）。杯測場次不用這套。
-const adjustState = { values: {} };
+// legacyCup：杯測裡正在看的舊杯（改版前存的，不論當時有沒有評分）。評分唯讀、分數用它當時的
+// （沒評過就維持未評分），存檔時評分欄位原樣寫回；按「重新評分」才清掉、改用新制（#183）。
+const adjustState = { values: {}, legacyCup: null };
+
+// 剛在表單新增、還沒存過的杯沒有 schema_version，不算舊杯。
+function isLegacyCup(c) {
+    return typeof c?.schema_version === 'number' && c.schema_version < ADJUSTMENT_SCHEMA.session_cup;
+}
+
+// 舊杯的提示列：顯示保留的原分數，提供「重新評分」。
+function renderAdjustLegacy() {
+    const box = document.getElementById('adjustLegacy');
+    if (!box) return;
+    const legacy = adjustState.legacyCup;
+    box.hidden = !legacy;
+    if (legacy) {
+        document.getElementById('adjustLegacyText').textContent = typeof legacy.coe_total === 'number'
+            ? `舊制評分，保留原分數 ${legacy.coe_total.toFixed(1)}`
+            : '舊制的杯，當時沒有評分';
+    }
+}
+
+// 杯測舊杯的「重新評分」：8 項清成未判斷、筆記與標籤清空，這一杯改用新制。
+function resetAdjustments() {
+    adjustState.legacyCup = null;
+    adjustmentFields.forEach(f => {
+        adjustState.values[f.key] = null;
+        const notesEl = document.getElementById(`${f.key}_notes`);
+        if (notesEl) notesEl.value = '';
+        syncNotesSlot(`${f.key}_notes`, '');
+        if (f.hasFlavorWheel) applyFlavorSelections(`${f.key}_flavorList`, []);
+        Object.keys(adjustChipSpec(f.key) || {}).forEach(sub => writeChipGroup(`${f.key}_${sub}`, []));
+        renderAdjustRow(f.key);
+    });
+    renderAdjustLegacy();
+    renderScoreBar();
+}
 
 // 每一項展開後的描述標籤：沿用 #169 之前的選項（香氣用 observationOptions），只做記錄、不影響分數。
 function adjustChipSpec(key) {
@@ -4082,6 +3914,7 @@ function initAdjustmentWidget() {
     const list = document.getElementById('adjustList');
     if (!list) return;
     adjustState.values = Object.fromEntries(adjustmentFields.map(f => [f.key, null]));
+    adjustState.legacyCup = null; // 上一個表單（杯測的舊杯）留下的，不能帶進新表單
     list.innerHTML = adjustmentFields.map(adjustRowHtml).join('');
 
     adjustmentFields.forEach(f => {
@@ -4134,12 +3967,23 @@ function renderAdjustRow(key) {
     if (!item) return;
     const value = adjustState.values[key];
     const label = adjustmentFields.find(f => f.key === key).label;
-    item.dataset.level = adjustmentLevel(value);
+    // 顏色用等級（adjustmentTier）；未判斷沒有等級 class，圓點空心。
+    const tier = adjustmentTier(value);
+    item.classList.remove(...totalScoreTiers.map(t => t.cssClass));
+    if (tier) item.classList.add(tier.cssClass);
+    item.dataset.level = tier ? 'set' : 'none';
     const valueBtn = item.querySelector('.adjust-value');
     valueBtn.textContent = formatAdjustment(value);
     valueBtn.setAttribute('aria-label',
         `${label}：${value == null ? '未判斷' : formatAdjustment(value)}，點一下設為普通 0`);
-    item.querySelector('[data-adjust="minus"]').disabled = value === -1;
+    // 舊杯的評分唯讀：按鍵停用、展開區收起（筆記與標籤要按「重新評分」後才能改）。
+    const legacy = !!adjustState.legacyCup;
+    item.querySelectorAll('[data-adjust]').forEach(b => {
+        b.disabled = legacy || (b.dataset.adjust === 'minus' && value === -1);
+    });
+    const expand = item.querySelector('.adjust-expand');
+    expand.hidden = legacy;
+    if (legacy && expand.getAttribute('aria-expanded') === 'true') expand.click();
     updateAdjustSummary(key);
 }
 
@@ -4160,9 +4004,11 @@ function updateAdjustSummary(key) {
 function renderScoreBar() {
     const bar = document.getElementById('scoreBar');
     if (!bar) return;
-    const done = adjustmentFields.filter(f => typeof adjustState.values[f.key] === 'number').length;
-    const score = scoreFromAdjustments(adjustState.values);
     const total = adjustmentFields.length;
+    const legacy = adjustState.legacyCup;
+    const score = legacy ? (legacy.coe_total ?? null) : scoreFromAdjustments(adjustState.values);
+    const judged = adjustmentFields.filter(f => typeof adjustState.values[f.key] === 'number').length;
+    const done = legacy && score != null ? total : judged;
     if (score == null) {
         bar.className = 'score-bar is-unscored';
         bar.style.setProperty('--ring', String(done / total));
@@ -4206,12 +4052,13 @@ function buildAdjustmentPayload() {
 // 只有 applyRecordToForm 會用（目前沒有路由會編輯既有的沖煮 / 品鑑）。
 function applyAdjustmentsToForm(mode, r) {
     const values = recordAdjustments(mode, r);
+    const legacy = !isAdjustmentRecord(mode, r);
     adjustmentFields.forEach(f => {
         adjustState.values[f.key] = values[f.key];
-        const data = r.evaluations?.[f.key] || {};
+        const data = (legacy && f.key === 'aroma' ? r.observation?.aroma : r.evaluations?.[f.key]) || {};
         const notesEl = document.getElementById(`${f.key}_notes`);
         if (notesEl) notesEl.value = data.notes || '';
-        if (data.notes) expandNotesSlot(`${f.key}_notes`, { focus: false });
+        syncNotesSlot(`${f.key}_notes`, data.notes);
         if (f.hasFlavorWheel) {
             applyFlavorSelections(`${f.key}_flavorList`, Array.isArray(data.flavors) ? data.flavors : []);
         }
@@ -4221,7 +4068,7 @@ function applyAdjustmentsToForm(mode, r) {
     renderScoreBar();
 }
 
-// ─── Evaluation accordion ────────────────────────────────────────────────────
+// ─── Chip groups and notes slots ─────────────────────────────────────────────
 // 共用：渲染 button-style chip 群組（single / multi）
 // 兩種型別都用 role="group"：children 是 toggle button（aria-pressed），
 // 不符合 radiogroup 的 ARIA 規範（後者期望 role="radio" + aria-checked + 鍵盤導覽）。
@@ -4307,75 +4154,6 @@ function syncNotesSlot(textareaId, value) {
     else collapseNotesSlot(textareaId);
 }
 
-function wrapAccordionItem(key, label, icon, body) {
-    const iconHtml = icon
-        ? `<span class="eval-icon"><i class="bi ${icon}"></i></span>` : '';
-    return `<div class="accordion-item">
-        <h2 class="accordion-header" id="heading_${key}">
-            <button class="accordion-button collapsed" type="button"
-                    data-bs-toggle="collapse" data-bs-target="#collapse_${key}"
-                    aria-expanded="false" aria-controls="collapse_${key}">
-                ${iconHtml}<span class="eval-label">${label}</span>
-                <span id="${key}_summary" class="eval-summary"></span>
-            </button>
-        </h2>
-        <div id="collapse_${key}" class="accordion-collapse collapse"
-             aria-labelledby="heading_${key}">
-            <div class="accordion-body">${body}</div>
-        </div>
-    </div>`;
-}
-
-function generateReferenceItem(field) {
-    const key = field.key;
-    let body = `
-        <div class="mb-3">
-            <div class="ref-slider-group">
-                <input type="range" class="form-range" id="${key}_score"
-                       min="4" max="8" step="0.5" value="5" data-ref-score="${key}">
-                <span class="ref-slider-value" id="${key}_score_value">5.0</span>
-            </div>
-            <div class="small-hint">參考分 4-8（預設 5），不影響上方分數。</div>
-        </div>`;
-
-    const chipSpec = evaluationOptions[key];
-    if (chipSpec) {
-        Object.entries(chipSpec).forEach(([subKey, spec]) => {
-            body += chipGroupHtml(`${key}_${subKey}`, spec.label, spec.type, spec.options);
-        });
-    }
-
-    if (field.hasFlavorWheel) {
-        body += `<label class="form-label mt-3">風味（點選後展開細項）:</label>
-            <div id="${key}_flavorList" class="flavor-wheel"></div>`;
-    }
-
-    body += `<div class="mt-3">${notesSlotHtml(`${key}_notes`)}</div>`;
-    return wrapAccordionItem(key, field.label, field.icon, body);
-}
-
-function generateObservationItem(field) {
-    const key = field.key;
-    let body = `
-        <div class="small-hint mb-2">香氣為觀察項，不計分。</div>
-        <label class="form-label">乾香:</label>
-        <textarea id="${key}_dryAroma" class="form-control mb-2" rows="2"></textarea>
-        <label class="form-label">濕香:</label>
-        <textarea id="${key}_wetAroma" class="form-control mb-2" rows="2"></textarea>`;
-    const chipSpec = observationOptions[key];
-    if (chipSpec) {
-        Object.entries(chipSpec).forEach(([subKey, spec]) => {
-            body += chipGroupHtml(`${key}_${subKey}`, spec.label, spec.type, spec.options);
-        });
-    }
-    if (field.hasFlavorWheel) {
-        body += `<label class="form-label mt-2">風味（點選後展開細項）:</label>
-            <div id="${key}_flavorList" class="flavor-wheel"></div>`;
-    }
-    body += `<div class="mt-3">${notesSlotHtml(`${key}_notes`)}</div>`;
-    return wrapAccordionItem(key, field.label, field.icon, body);
-}
-
 // 只剩杯測在用（word = 「瑕疵」）；沖煮 / 品鑑已不記負面風味。
 function defectsBodyHtml(word) {
     return `
@@ -4396,174 +4174,6 @@ function defectsBodyHtml(word) {
         </div>`;
 }
 
-function generateDefectsItem() {
-    return wrapAccordionItem('defects', '瑕疵與備註', 'bi-exclamation-diamond', defectsBodyHtml('瑕疵'));
-}
-
-function initEvaluationAccordion() {
-    const accordion = document.getElementById('evaluationAccordion');
-    if (!accordion) return;
-    accordion.innerHTML = [
-        ...observationFields.map(generateObservationItem),
-        ...referenceFields.map(generateReferenceItem),
-        generateDefectsItem(),
-    ].join('');
-
-    observationFields.forEach(f => {
-        if (f.hasFlavorWheel) {
-            renderFlavorWheel(`${f.key}_flavorList`, () => updateObservationSummary(f.key));
-        }
-    });
-    referenceFields.forEach(f => {
-        if (f.hasFlavorWheel) {
-            renderFlavorWheel(`${f.key}_flavorList`, () => updateRefSummary(f.key));
-        }
-        setReferenceScore(f.key, 5);
-    });
-
-    updateEstimatedTotalDisplay();
-    updateDefectsSummary();
-
-    accordion.addEventListener('input', e => {
-        const key = e.target.dataset.refScore;
-        if (key) onRefScoreInput(key);
-    });
-    accordion.addEventListener('click', e => {
-        const btn = e.target.closest('.chip[data-chip-value]');
-        if (!btn) return;
-        const group = btn.closest('.chip-group');
-        if (!group) return;
-        const isMulti = group.dataset.chipType === 'multi';
-        if (isMulti) {
-            const next = btn.getAttribute('aria-pressed') === 'true' ? 'false' : 'true';
-            btn.setAttribute('aria-pressed', next);
-        } else {
-            group.querySelectorAll('.chip').forEach(b =>
-                b.setAttribute('aria-pressed', String(b === btn)));
-        }
-        const name = group.dataset.chipName;
-        if (name === 'defects_tags') {
-            updateDefectsSummary();
-            return;
-        }
-        const refKey = name.split('_')[0];
-        if (referenceFields.some(f => f.key === refKey)) updateRefSummary(refKey);
-        else if (observationFields.some(f => f.key === refKey)) updateObservationSummary(refKey);
-    });
-}
-
-function onRefScoreInput(key) {
-    const slider = document.getElementById(`${key}_score`);
-    const valueEl = document.getElementById(`${key}_score_value`);
-    const v = parseFloat(slider.value);
-    valueEl.textContent = v.toFixed(1);
-    const pct = ((v - 4) / 4) * 100;
-    slider.style.setProperty('--slider-fill', `${pct}%`);
-    updateRefSummary(key);
-    updateEstimatedTotalDisplay();
-}
-
-function calculateEstimatedTotal() {
-    return 36 + referenceFields.reduce((sum, f) => sum + getReferenceScore(f.key), 0);
-}
-
-function updateEstimatedTotalDisplay() {
-    const valueEl = document.getElementById('evalEstimatedValue');
-    if (!valueEl) return;
-    const v = calculateEstimatedTotal();
-    valueEl.textContent = v.toFixed(1);
-    const tier = tierFromScore(v);
-    const badge = document.getElementById('evalEstimatedTier');
-    if (badge) {
-        badge.innerHTML = tier ? tierBadgeHtml(tier) : '';
-    }
-}
-
-function updateDefectsSummary() {
-    const summaryEl = document.getElementById('defects_summary');
-    if (!summaryEl) return;
-    const tags = readChipGroup('defects_tags') || [];
-    const defects = document.getElementById('f-defects')?.value?.trim() || '';
-    const notes = document.getElementById('f-notes')?.value?.trim() || '';
-    const tagPreview = tags.length > 0
-        ? tags.slice(0, 3).join('、') + (tags.length > 3 ? `…(+${tags.length - 3})` : '')
-        : '';
-    const text = [tagPreview, defects, notes].filter(Boolean).join(' / ');
-    if (!text) {
-        summaryEl.textContent = '';
-        return;
-    }
-    summaryEl.textContent = text.length > 40 ? text.slice(0, 40) + '…' : text;
-}
-
-function setReferenceScore(key, value) {
-    const slider = document.getElementById(`${key}_score`);
-    if (!slider) return;
-    slider.value = value;
-    onRefScoreInput(key);
-}
-
-function getReferenceScore(key) {
-    const slider = document.getElementById(`${key}_score`);
-    return slider ? parseFloat(slider.value) : 5;
-}
-
-function updateRefSummary(key) {
-    const summaryEl = document.getElementById(`${key}_summary`);
-    if (!summaryEl) return;
-    const field = referenceFields.find(f => f.key === key);
-    if (!field) return;
-
-    const score = getReferenceScore(key);
-    const parts = [`${score.toFixed(1)} / 8`];
-
-    const chipSpec = evaluationOptions[key];
-    if (chipSpec) {
-        const chipValues = [];
-        Object.keys(chipSpec).forEach(subKey => {
-            const v = readChipGroup(`${key}_${subKey}`);
-            if (Array.isArray(v)) chipValues.push(...v);
-            else if (v) chipValues.push(v);
-        });
-        if (chipValues.length > 0) {
-            const preview = chipValues.slice(0, 3).join(', ')
-                + (chipValues.length > 3 ? `…(+${chipValues.length - 3})` : '');
-            parts.push(preview);
-        }
-    }
-    if (field.hasFlavorWheel) {
-        const selected = getSelectedFlavorNames(`${key}_flavorList`);
-        if (selected.length > 0) {
-            const preview = selected.slice(0, 2).join(', ') + (selected.length > 2 ? `…(+${selected.length - 2})` : '');
-            parts.push(preview);
-        }
-    }
-    summaryEl.textContent = parts.join(' | ');
-}
-
-function updateObservationSummary(key) {
-    const summaryEl = document.getElementById(`${key}_summary`);
-    if (!summaryEl) return;
-    const chipSpec = observationOptions[key];
-    const chipValues = [];
-    if (chipSpec) {
-        Object.keys(chipSpec).forEach(subKey => {
-            const v = readChipGroup(`${key}_${subKey}`);
-            if (Array.isArray(v)) chipValues.push(...v);
-            else if (v) chipValues.push(v);
-        });
-    }
-    const flavors = getSelectedFlavorNames(`${key}_flavorList`);
-    const all = [...chipValues, ...flavors];
-    summaryEl.textContent = all.length === 0
-        ? ''
-        : all.slice(0, 3).join(', ') + (all.length > 3 ? `…(+${all.length - 3})` : '');
-}
-
-function getSelectedFlavorNames(containerId) {
-    return Array.from(document.querySelectorAll(`#${containerId} .flavor-tag.selected`))
-        .map(t => t.dataset.flavorName || t.innerText);
-}
 function getSelectedFlavorIds(containerId) {
     return Array.from(document.querySelectorAll(`#${containerId} .flavor-tag.selected`))
         .map(t => t.dataset.flavorId);
@@ -5105,11 +4715,6 @@ function bindFormHandlers({ onSubmit = submitForm, onDelete = deleteCurrentRecor
         });
     }
 
-    const defectsEl = document.getElementById('f-defects');
-    const notesEl = document.getElementById('f-notes');
-    if (defectsEl) defectsEl.addEventListener('input', updateDefectsSummary);
-    if (notesEl) notesEl.addEventListener('input', updateDefectsSummary);
-
     // Scope notes-toggle delegation to the form so the listener is GC'd
     // when the form is replaced on navigation.
     form.addEventListener('click', e => {
@@ -5251,45 +4856,6 @@ async function openBrewPlanPicker() {
         document.getElementById('f-brew-plan-change')?.focus();
     }));
     backdrop.querySelector('.brew-plan-option')?.focus();
-}
-
-function buildEvaluationPayload() {
-    const payload = {
-        coe_total: coeState.coeTotal,
-        coe_tier_id: coeState.selectedTierId,
-        evaluations: {},
-        observation: {},
-    };
-    referenceFields.forEach(f => {
-        const entry = {
-            score: getReferenceScore(f.key),
-            notes: document.getElementById(`${f.key}_notes`)?.value || '',
-        };
-        const chipSpec = evaluationOptions[f.key];
-        if (chipSpec) {
-            Object.keys(chipSpec).forEach(subKey => {
-                entry[subKey] = readChipGroup(`${f.key}_${subKey}`);
-            });
-        }
-        if (f.hasFlavorWheel) entry.flavors = getSelectedFlavorIds(`${f.key}_flavorList`);
-        payload.evaluations[f.key] = entry;
-    });
-    observationFields.forEach(f => {
-        const entry = { notes: document.getElementById(`${f.key}_notes`)?.value || '' };
-        if (f.key === 'aroma') {
-            entry.dryAroma = document.getElementById(`${f.key}_dryAroma`)?.value || '';
-            entry.wetAroma = document.getElementById(`${f.key}_wetAroma`)?.value || '';
-        }
-        const chipSpec = observationOptions[f.key];
-        if (chipSpec) {
-            Object.keys(chipSpec).forEach(subKey => {
-                entry[subKey] = readChipGroup(`${f.key}_${subKey}`);
-            });
-        }
-        if (f.hasFlavorWheel) entry.flavors = getSelectedFlavorIds(`${f.key}_flavorList`);
-        payload.observation[f.key] = entry;
-    });
-    return payload;
 }
 
 function buildFormPayload(mode) {
@@ -5517,62 +5083,6 @@ function applyRecordToForm(mode, r) {
     applyAdjustmentsToForm(mode, r);
 }
 
-// 把 evaluations / observation / defects_tags 套進評分 accordion。缺的欄位一律重設成
-// 預設值（分數 5、筆記清空、chip 全不選、風味清空）：杯測場次切換分頁時同一組 DOM
-// 要換成另一杯的內容，不能留著上一杯的值。
-function applyEvaluationsToForm(r) {
-    referenceFields.forEach(f => {
-        const data = r.evaluations?.[f.key] || {};
-        setReferenceScore(f.key, typeof data.score === 'number' ? data.score : 5);
-        const notesEl = document.getElementById(`${f.key}_notes`);
-        if (notesEl) {
-            notesEl.value = data.notes || '';
-            syncNotesSlot(`${f.key}_notes`, data.notes);
-        }
-        const chipSpec = evaluationOptions[f.key];
-        if (chipSpec) {
-            Object.keys(chipSpec).forEach(subKey => {
-                writeChipGroup(`${f.key}_${subKey}`, data[subKey]);
-            });
-        }
-        if (f.hasFlavorWheel) {
-            applyFlavorSelections(`${f.key}_flavorList`, Array.isArray(data.flavors) ? data.flavors : []);
-        }
-        updateRefSummary(f.key);
-    });
-
-    observationFields.forEach(f => {
-        const data = r.observation?.[f.key] || {};
-        const notesEl = document.getElementById(`${f.key}_notes`);
-        if (notesEl) {
-            notesEl.value = data.notes || '';
-            syncNotesSlot(`${f.key}_notes`, data.notes);
-        }
-        if (f.key === 'aroma') {
-            const dry = document.getElementById(`${f.key}_dryAroma`);
-            const wet = document.getElementById(`${f.key}_wetAroma`);
-            if (dry) dry.value = data.dryAroma || '';
-            if (wet) wet.value = data.wetAroma || '';
-        }
-        const chipSpec = observationOptions[f.key];
-        if (chipSpec) {
-            Object.keys(chipSpec).forEach(subKey => {
-                writeChipGroup(`${f.key}_${subKey}`, data[subKey]);
-            });
-        }
-        if (f.hasFlavorWheel) {
-            applyFlavorSelections(`${f.key}_flavorList`, Array.isArray(data.flavors) ? data.flavors : []);
-        }
-        updateObservationSummary(f.key);
-    });
-
-    // Defects chip
-    writeChipGroup('defects_tags', Array.isArray(r.defects_tags) ? r.defects_tags : []);
-    updateDefectsSummary();
-
-    updateEstimatedTotalDisplay();
-}
-
 async function loadRecordIntoForm(mode, recordId) {
     try {
         const r = await api.getRecord(mode, recordId);
@@ -5590,8 +5100,8 @@ async function loadRecordIntoForm(mode, recordId) {
 
 // ─── View: 杯測場次 form ─────────────────────────────────────────────────────
 // 三個階段只往前走：setup（日期 + 杯數 + 編號）→ scoring（只評分）→ reveal（全部都能改）。
-// 一場多杯，但 DOM 裡同時只有「目前這一杯」的評分元件（#cup-editor：coeState 單例、accordion
-// 全域 id、initEvaluationAccordion 重複呼叫會疊 listener），其他杯存在 state.currentForm.cups。
+// 一場多杯，但 DOM 裡同時只有「目前這一杯」的評分元件（#cup-editor：adjustState 單例、
+// 全域 id、initAdjustmentWidget 重複呼叫會疊 listener），其他杯存在 state.currentForm.cups。
 // 杯的 code 由編號格子直接寫進 cups，不經過元件；其餘欄位在切換、存檔、暫存前一律先 syncActiveCup()。
 // 每杯只有 id + code + readCupFromForm() 的 key，絕不含 created_at / user_id / session_id / position。
 const SESSION_STAGES = {
@@ -5615,7 +5125,17 @@ function readCupFromForm() {
     const beanType = getBeanType('session');
     const isBlend = beanType === 'blend';
     const text = id => document.getElementById(id).value.trim() || null;
-    const ev = buildEvaluationPayload();
+    // 舊杯：評分欄位原樣寫回（唯讀，見 adjustState.legacyCup）；新杯：8 項調整分。
+    const legacy = adjustState.legacyCup;
+    const ev = legacy
+        ? {
+            coe_total: legacy.coe_total,
+            coe_tier_id: legacy.coe_tier_id ?? null,
+            evaluations: legacy.evaluations ?? {},
+            observation: legacy.observation ?? {},
+            schema_version: legacy.schema_version,
+        }
+        : { ...buildAdjustmentPayload(), schema_version: ADJUSTMENT_SCHEMA.session_cup };
     return {
         shop_id: document.getElementById('f-shop').value || null,
         bean_name: text('f-cup-bean'),
@@ -5628,10 +5148,7 @@ function readCupFromForm() {
         defects: document.getElementById('f-defects').value || null,
         defects_tags: readChipGroup('defects_tags') || [],
         notes: document.getElementById('f-notes').value || null,
-        schema_version: 1,
         ...ev,
-        // 只點了徽章、沒點分數 = 仍未評分，瀏覽過的等級不存。
-        coe_tier_id: ev.coe_total == null ? null : ev.coe_tier_id,
     };
 }
 
@@ -5658,16 +5175,12 @@ function writeCupToForm(c) {
     set('f-notes', c.notes);
     syncNotesSlot('f-notes', c.notes);
 
-    // coe_total null = 未評分
-    coeState.coeTotal = typeof c.coe_total === 'number' ? c.coe_total : null;
-    coeState.selectedTierId = c.coe_tier_id
-        || (coeState.coeTotal != null ? tierFromScore(coeState.coeTotal).id : null);
-    renderTierMedals();
-    renderScoreChips(tierById(coeState.selectedTierId));
-    refreshTotalDisplay();
-    updateCoeClearButton();
+    writeChipGroup('defects_tags', Array.isArray(c.defects_tags) ? c.defects_tags : []);
 
-    applyEvaluationsToForm(c);
+    // 8 項：沒判斷完 = 這一杯未評分。舊杯唯讀、顯示換算值（adjustState.legacyCup）。
+    adjustState.legacyCup = isLegacyCup(c) ? c : null;
+    applyAdjustmentsToForm('session_cup', c);
+    renderAdjustLegacy();
 }
 
 // 由後往前逐杯 write → sync：補齊 key 集合（批次 upsert 需要每杯 key 一致）並正規化
@@ -5686,20 +5199,6 @@ function normalizeCups() {
     if (keep !== 0) writeCupToForm(f.cups[keep]);
 }
 
-function updateCoeClearButton() {
-    const btn = document.getElementById('f-coe-clear');
-    if (btn) btn.hidden = coeState.coeTotal == null;
-}
-
-function clearCupScore() {
-    coeState.coeTotal = null;
-    coeState.selectedTierId = null;
-    renderTierMedals();
-    renderScoreChips(tierById(null));
-    refreshTotalDisplay();
-    updateCoeClearButton();
-}
-
 function switchCup(i) {
     const f = state.currentForm;
     if (i === f.activeIndex || !f.cups[i]) return;
@@ -5711,8 +5210,7 @@ function switchCup(i) {
 }
 
 function cupTier(c) {
-    if (c.coe_tier_id) return tierById(c.coe_tier_id);
-    return typeof c.coe_total === 'number' ? tierFromScore(c.coe_total) : null;
+    return scoreTier(c);
 }
 
 // ─── 杯數與編號格子（① 與 ③ 的場次卡共用） ───
@@ -6043,6 +5541,15 @@ function refreshSessionCups() {
 function bindSessionHandlers() {
     const form = document.querySelector('.session-form');
 
+    // 頂端的階段列本身是黏住的：分數列要黏在它下面，不然捲動時會被它蓋住（作者 2026-11-28）。
+    // 階段列的高度會變（杯號分頁、暫存時間），所以量實際高度寫進 --sticky-offset。
+    const stageBar = document.getElementById('session-stage-bar');
+    if (stageBar && 'ResizeObserver' in window) {
+        new ResizeObserver(() => {
+            form.style.setProperty('--sticky-offset', `${stageBar.offsetHeight}px`);
+        }).observe(stageBar);
+    }
+
     document.getElementById('f-code-style').addEventListener('change', e => onCodeStyleChange(e.target.value));
     document.getElementById('f-cup-count').addEventListener('change', async e => {
         const current = state.currentForm;
@@ -6072,25 +5579,34 @@ function bindSessionHandlers() {
             setCollapsed(name, !document.getElementById(`${name}-body`).hidden);
         });
     });
-    document.getElementById('f-coe-clear').addEventListener('click', clearCupScore);
+    document.getElementById('f-adjust-reset').addEventListener('click', resetAdjustments);
 
     // 任何輸入 / 點擊（分數、chip、風味輪…）後，同步目前這杯並更新分頁、杯卡與摘要。
     // 子元素上的 handler 先跑完才輪到這裡。
     const refresh = () => {
         syncActiveCup();
         refreshSessionCups();
-        updateCoeClearButton();
     };
     form.addEventListener('input', refresh);
     form.addEventListener('click', refresh);
 }
 
 function initSessionForm() {
-    initCoeWidget();
-    initEvaluationAccordion(); // 每次掛載只能呼叫一次（重複呼叫會疊 listener）
+    initAdjustmentWidget(); // 每次掛載只能呼叫一次（重複呼叫會疊 listener）
+    initCupDefects();
     renderProcessChips();
     bindFormHandlers({ onSubmit: submitSessionForm, onDelete: deleteCurrentSession });
     bindSessionHandlers();
+}
+
+// 杯測的瑕疵記錄（標籤、補充說明）與最終備註：和評分分開的一張卡。
+function initCupDefects() {
+    const box = document.getElementById('cupDefectsSection');
+    box.innerHTML = defectsBodyHtml('瑕疵');
+    box.addEventListener('click', e => {
+        const chip = e.target.closest('.chip[data-chip-value]');
+        if (chip) chip.setAttribute('aria-pressed', String(chip.getAttribute('aria-pressed') !== 'true'));
+    });
 }
 
 // 把場次（來自 api）套進表單。
@@ -6410,18 +5926,18 @@ function renderSessionDetail(s) {
 
 function renderSessionCupDetail(c) {
     const scored = typeof c.coe_total === 'number';
-    const tier = c.coe_tier_id ? tierById(c.coe_tier_id) : (scored ? tierFromScore(c.coe_total) : null);
+    const tier = scoreTier(c);
     const shop = shopName(c.shop_id);
     const shopLinkable = !!(c.shop_id && state.shops.find(x => x.id === c.shop_id));
     const rows = beanInfoRows(c);
     return `
-        <div class="card">
+        <div class="card session-cup">
             <div class="card-body">
                 <div class="session-cup-head">
                     <span class="cup-code-badge">${escapeHtml(c.code)}</span>
                     <span class="session-cup-title">${escapeHtml(c.bean_name || '(未填豆名)')}</span>
                     ${scored
-                        ? `<span class="session-cup-score">${c.coe_total.toFixed(1)}${tier ? ` ${tierBadgeHtml(tier)}` : ''}</span>`
+                        ? `<span class="session-cup-score">${c.coe_total.toFixed(1)}${tier ? ` ${tierBadgeHtml(tier, null, { tint: true })}` : ''}</span>`
                         : tierBadgeHtml(null)}
                 </div>
                 ${shop ? `<div class="detail-meta">${shopLinkable
@@ -6430,9 +5946,7 @@ function renderSessionCupDetail(c) {
                 ${rows.length ? `<dl class="detail-list">
                     ${rows.map(([k, v]) => `<dt>${escapeHtml(k)}</dt><dd>${escapeHtml(String(v))}</dd>`).join('')}
                 </dl>` : ''}
-                ${renderEstimatedTotalBlock(c)}
-                ${renderDetailObservations(c)}
-                ${renderDetailReferences(c)}
+                ${renderDetailAdjustments('session_cup', c)}
                 ${renderDetailDefectsNotes(c)}
             </div>
         </div>`;
