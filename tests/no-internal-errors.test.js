@@ -15,8 +15,12 @@ describe('不把內部錯誤訊息放上畫面', () => {
     it('app.js 沒有把 catch 到的 e.message / err.message 接進畫面文字', () => {
         const leaks = APP.split('\n')
             .map((line, i) => [i + 1, line])
+            // 整行註解不算；行尾註解拿掉再看。
+            .map(([n, line]) => [n, line.replace(/\s\/\/.*$/, '')])
             .filter(([, line]) => !/^\s*\/\//.test(line))
-            .filter(([, line]) => /\b(e|err|error)\.message\b(?!\s*===)|String\((e|err|error)\)/.test(line));
+            // 任何變數的 .message / ?.message（比較除外），以及 String(e)。
+            // app 自己的驗證訊息（problem / p）是寫給使用者看的，明列放行。
+            .filter(([, line]) => /\b(?!problem\b|p\b)\w+\??\.message\b(?!\s*[!=]==)|String\((e|err|error|ex)\)/.test(line));
         expect(leaks).toEqual([]);
     });
 

@@ -399,7 +399,8 @@ function showErrorToast(msg) {
 
 // 失敗只告訴使用者「哪個動作失敗、怎麼辦」；err.message 是程式或 Worker 的內部
 // 訊息（例：null is not an object…、UNIQUE constraint failed），一律不上畫面，只進 console。
-// 只有 app.js 自己寫給使用者看的 err.userMessage 會原樣顯示；429 換成「稍候再試」。
+// 只有 app.js 自己寫給使用者看的 err.userMessage 會原樣顯示。429 目前只有 /api/places/* 的
+// 每人限流會回，所以換成「稍候再試」；之後別的路徑也限流時要重看這句。
 function failureText(action, err) {
     if (err?.userMessage) return `${action}失敗：${err.userMessage}`;
     if (err?.status === 429) return `${action}太頻繁，請稍候再試`;
@@ -2641,7 +2642,9 @@ function renderRecordDetail(mode, r, { planStatus = null } = {}) {
             <div class="card-body">
                 <h3 class="card-title"><i class="bi bi-bookmark-star-fill"></i>評分</h3>
                 ${renderDetailAdjustments(mode, r)}
-                ${renderDetailDefectsNotes(r, r.defects || r.defects_tags?.length ? '負面風味與備註' : '備註')}
+                ${(r.defects || (Array.isArray(r.defects_tags) && r.defects_tags.length))
+                    ? renderDetailDefectsNotes(r, '負面風味與備註')
+                    : renderDetailDefectsNotes(r, '備註', 'bi-pencil')}
             </div>
         </div>`;
 }
@@ -2917,13 +2920,13 @@ function renderDetailReferences(r) {
 }
 
 // label：杯測叫「瑕疵與備註」；沖煮 / 品鑑叫「負面風味與備註」（「瑕疵」只用在杯測，#169）。
-function renderDetailDefectsNotes(r, label = '瑕疵與備註') {
+function renderDetailDefectsNotes(r, label = '瑕疵與備註', icon = 'bi-exclamation-diamond') {
     const defectsTags = Array.isArray(r.defects_tags) ? r.defects_tags : [];
     if (!r.defects && !r.notes && defectsTags.length === 0) return '';
     return `
         <div class="detail-eval-section">
             <h4 class="detail-eval-section-title">
-                <span class="eval-icon"><i class="bi ${label === '備註' ? 'bi-pencil' : 'bi-exclamation-diamond'}"></i></span>
+                <span class="eval-icon"><i class="bi ${icon}"></i></span>
                 <span class="detail-eval-section-label">${escapeHtml(label)}</span>
             </h4>
             ${renderChipRow(defectsTags)}
