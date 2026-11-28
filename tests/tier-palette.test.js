@@ -36,12 +36,12 @@ describe('等級顏色只有一個來源', () => {
         }
     });
 
-    // `\b` 讓 var(--t4-bg, …) 這種帶後備值的寫法也算一次。
-    it('--t1-bg … --t7-bg 只在對照表裡被引用一次（元件不自己對 t-* 上色）', () => {
-        for (let n = 1; n <= 7; n++) {
-            expect(CSS.match(new RegExp(`var\\(--t${n}-bg\\b`, 'g')) || [], `--t${n}-bg`).toHaveLength(1);
-            expect(CSS.match(new RegExp(`var\\(--t${n}-fg\\b`, 'g')) || [], `--t${n}-fg`).toHaveLength(1);
-        }
+    // 對照表那幾行（.t-* { … }）以外，沒有任何地方讀 --t1-* … --t7-*（含帶後備值的寫法）。
+    it('--t1-* … --t7-* 只在對照表裡被讀（元件不自己對 t-* 上色）', () => {
+        const paletteLine = /^\.t-[a-z]+\s*\{[^}]*\}$/gm;
+        expect(CSS.match(paletteLine) || []).toHaveLength(7);
+        const elsewhere = CSS.replace(paletteLine, '').match(/var\(--t\d-[a-z]+\b/g) || [];
+        expect(elsewhere).toEqual([]);
     });
 
     // 色碼或 rgb()/rgba() 都算抄（#181 抓到的類型色就是 rgba(192, 140, 42, …)）。
@@ -69,9 +69,9 @@ describe('等級顏色只有一個來源', () => {
 
     // jsdom 算不出樣式，所以直接看規則：每個顯示等級的元件都要讀 --tier-bg。
     it.each([
-        '.record-card-medal', '.tier-medal.selected', '.filter-tier-row .filter-chip.selected',
+        '.record-card-medal', '.filter-tier-row .filter-chip', '.filter-tier-row .filter-chip.selected',
         '.stats-dist-medal', '.stats-dist-bar', '.reveal-cup-medal:not(.is-empty)',
-        '.score-bar', '.score-ring-text', '.tier-badge', '.score-chip-row',
+        '.score-bar', '.score-ring-text', '.tier-badge', '.tier-glow',
     ])('%s 讀 --tier-bg', selector => {
         const esc = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         const rule = CSS.match(new RegExp(`(?:^|\\n|,\\s*)${esc}\\s*[,{][^}]*\\}`));
@@ -80,24 +80,49 @@ describe('等級顏色只有一個來源', () => {
 });
 
 describe('顯示等級的地方都掛 cssClass', () => {
-    it('詳情頁的等級是徽章色的 .tier-badge，沒有行內顏色', () => {
+    const detail = coe => {
         const el = doc.createElement('div');
         el.innerHTML = win.renderRecordDetail('cupping', {
-            id: 'r1', schema_version: 4, coe_total: 84, coe_tier_id: 'like', evaluations: {}, observation: {},
+            id: 'r1', schema_version: 4, coe_total: coe, coe_tier_id: 'like', evaluations: {}, observation: {},
         });
-        const badge = el.querySelector('.tier-badge');
-        expect(badge.classList.contains('t-like')).toBe(true);
-        expect(badge.textContent).toBe('銀牌');
+        return el;
+    };
+
+    it('詳情頁的等級：淡底＋色字的膠囊，字母＋中文，依分數歸級（不看舊的 coe_tier_id）', () => {
+        const el = detail(84);
+        const badge = el.querySelector('.coe-card .tier-badge');
+        expect([...badge.classList]).toEqual(expect.arrayContaining(['t-c', 'is-tint']));
+        expect(badge.querySelector('.tier-badge-letter').textContent).toBe('C');
+        expect(badge.textContent).toBe('C優良');
+        expect(badge.classList.contains('tier-glow')).toBe(false);
         expect(el.innerHTML).not.toMatch(/style="color:/);
     });
 
-    it('分數面板評完後掛等級的 cssClass，不用行內底色', () => {
+    it('A 以上在詳情頁有光暈', () => {
+        expect(detail(90).querySelector('.coe-card .tier-badge').classList.contains('tier-glow')).toBe(true);
+        expect(detail(95).querySelector('.coe-card .tier-badge').classList.contains('tier-glow')).toBe(true);
+    });
+
+    function scoreBarFor(flavor) {
         doc.body.insertAdjacentHTML('beforeend', '<div id="scoreBar"></div>');
         win.eval(`adjustmentFields.forEach(f => { adjustState.values[f.key] = 0; });
-            adjustState.values.flavor = 4; renderScoreBar();`);
+            adjustState.values.flavor = ${flavor}; renderScoreBar();`);
         const bar = doc.getElementById('scoreBar');
-        expect(bar.classList.contains('t-like')).toBe(true);
-        expect(bar.getAttribute('style') || '').not.toContain('--tier-color');
-        doc.getElementById('scoreBar').remove();
+        const out = { cls: [...bar.classList], style: bar.getAttribute('style') || '', ring: bar.querySelector('.score-ring-text').textContent };
+        bar.remove();
+        return out;
+    }
+
+    it('分數面板評完後掛等級的 cssClass，環裡是字母，不用行內底色', () => {
+        const bar = scoreBarFor(4); // 84 → C
+        expect(bar.cls).toContain('t-c');
+        expect(bar.cls).not.toContain('tier-glow');
+        expect(bar.ring).toBe('C');
+        expect(bar.style).not.toContain('--tier-color');
+    });
+
+    it('分數面板 A 以上加光暈', () => {
+        const bar = scoreBarFor(10); // 90 → A
+        expect(bar.cls).toEqual(expect.arrayContaining(['t-a', 'tier-glow']));
     });
 });

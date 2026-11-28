@@ -487,35 +487,29 @@
                             <span id="cup-score-summary"></span>
                         </button>
                         <div id="cup-score-body">
-                            <!-- 分數（這一杯）：沒點過分數 = 未評分 -->
-                            <div class="card coe-card">
-                                <div class="card-body">
-                                    <h3 class="card-title"><i class="bi bi-award-fill"></i>分數</h3>
-                                    <div id="medalRow" class="medal-row" role="group" aria-label="徽章等級"></div>
-                                    <div id="scoreChipRow" class="score-chip-row" role="group" aria-label="分數選擇"></div>
-                                    <div class="coe-total-block">
-                                        <span class="coe-total-display" id="coeTotalDisplay">—</span>
-                                        <span class="coe-total-of">/ 100</span>
-                                        <span class="coe-total-tier-badge" id="coeTotalTierBadge"><span class="tier-badge">未評分</span></span>
-                                        <span class="coe-total-desc" id="coeTotalDesc"></span>
-                                        <button type="button" class="btn btn-link btn-sm coe-clear-btn" id="f-coe-clear" hidden>
-                                            <i class="bi bi-x-circle me-1"></i>清除分數
-                                        </button>
+                            <!-- 8 項調整分（#183，和沖煮 / 品鑑同一套）：8 項沒判斷完 = 這一杯未評分。
+                                 舊杯（改版前評的）評分唯讀，按「重新評分」才改用新制。 -->
+                            <div class="adjust-layout">
+                                <aside class="score-panel">
+                                    <div class="score-bar" id="scoreBar" role="status" aria-live="polite"></div>
+                                </aside>
+                                <div class="card adjust-card">
+                                    <div class="card-body">
+                                        <h3 class="card-title"><i class="bi bi-bookmark-star-fill"></i>評分</h3>
+                                        <div class="adjust-legacy" id="adjustLegacy" hidden>
+                                            <span id="adjustLegacyText"></span>
+                                            <button type="button" class="btn btn-outline-secondary btn-sm" id="f-adjust-reset">重新評分</button>
+                                        </div>
+                                        <div class="adjust-list" id="adjustList"></div>
+                                        <p class="adjust-credit">計分方式參考 CFGC:2026.01（台灣咖啡研究室，CC BY-SA 4.0）</p>
                                     </div>
                                 </div>
                             </div>
 
                             <div class="card">
                                 <div class="card-body">
-                                    <h3 class="card-title"><i class="bi bi-bookmark-star-fill"></i>感官評估</h3>
-                                    <div class="evaluation-estimated-total">
-                                        <span class="evaluation-estimated-label">預估總分</span>
-                                        <span class="evaluation-estimated-value" id="evalEstimatedValue">76.0</span>
-                                        <span class="evaluation-estimated-of">/ 100</span>
-                                        <span class="evaluation-estimated-tier" id="evalEstimatedTier"></span>
-                                        <span class="evaluation-estimated-hint">參考用，依下方 8 項分數估算（36 + 加總）</span>
-                                    </div>
-                                    <div class="accordion accordion-flush" id="evaluationAccordion"></div>
+                                    <h3 class="card-title"><i class="bi bi-exclamation-diamond"></i>瑕疵與備註</h3>
+                                    <div id="cupDefectsSection"></div>
                                 </div>
                             </div>
                         </div>

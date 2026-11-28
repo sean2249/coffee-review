@@ -52,13 +52,13 @@ describe('advancedFilterCount', () => {
 
 describe('applyAdvancedFilters — tiers', () => {
     const rows = [
-        { id: 'a', _type: 'cupping', coe_tier_id: 'recommend', created_at: '2026-06-10T00:00:00Z' },
-        { id: 'b', _type: 'cupping', coe_tier_id: 'common', created_at: '2026-06-10T00:00:00Z' },
-        { id: 'c', _type: 'tasting', coe_tier_id: 'godly', visit_date: '2026-06-10', created_at: '2026-06-11T00:00:00Z' },
+        { id: 'a', _type: 'cupping', coe_total: 87, created_at: '2026-06-10T00:00:00Z' },
+        { id: 'b', _type: 'cupping', coe_total: 81, created_at: '2026-06-10T00:00:00Z' },
+        { id: 'c', _type: 'tasting', coe_total: 95, visit_date: '2026-06-10', created_at: '2026-06-11T00:00:00Z' },
     ];
 
     it('keeps only rows whose tier is in a multi-select', () => {
-        win.hydrateFilterFromQuery({ tier: 'recommend,godly' });
+        win.hydrateFilterFromQuery({ tier: 'b,ss' });
         expect(win.applyAdvancedFilters(rows).map(r => r.id)).toEqual(['a', 'c']);
     });
 
@@ -105,12 +105,12 @@ describe('杯測場次（session）', () => {
     const session = {
         id: 's1', _type: 'session', session_date: '2026-06-15', created_at: '2026-06-20T00:00:00Z',
         cups: [
-            { id: 'k1', code: 'A', shop_id: 'shop-a', coe_tier_id: 'common', coe_total: 82 },
-            { id: 'k2', code: 'B', shop_id: 'shop-b', coe_tier_id: 'godly', coe_total: 92 },
+            { id: 'k1', code: 'A', shop_id: 'shop-a', coe_total: 82 },
+            { id: 'k2', code: 'B', shop_id: 'shop-b', coe_total: 92 },
             { id: 'k3', code: 'C', shop_id: null, coe_tier_id: null, coe_total: null },
         ],
     };
-    const cupping = { id: 'c1', _type: 'cupping', shop_id: 'shop-a', coe_tier_id: 'recommend', created_at: '2026-06-02T00:00:00Z' };
+    const cupping = { id: 'c1', _type: 'cupping', shop_id: 'shop-a', coe_total: 87, created_at: '2026-06-02T00:00:00Z' };
 
     it('round-trips type=session through the hash', () => {
         win.hydrateFilterFromQuery({ type: 'session' });
@@ -119,9 +119,9 @@ describe('杯測場次（session）', () => {
     });
 
     it('matches a tier when any cup has it', () => {
-        win.hydrateFilterFromQuery({ tier: 'godly' });
+        win.hydrateFilterFromQuery({ tier: 's' });
         expect(win.applyAdvancedFilters([session, cupping]).map(r => r.id)).toEqual(['s1']);
-        win.hydrateFilterFromQuery({ tier: 'amazing' });
+        win.hydrateFilterFromQuery({ tier: 'a' });
         expect(win.applyAdvancedFilters([session, cupping])).toEqual([]);
     });
 

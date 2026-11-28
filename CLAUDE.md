@@ -115,7 +115,10 @@ PWA-installable. All UI text is Traditional Chinese — keep it that way when ed
   (`vitest.config.ts`): `app` runs the existing jsdom tests in `tests/` (environment is
   `node` — `tests/load-app.js` builds its own JSDOM and runs `public/app.js` as a classic
   script in a vm context), `worker` runs `test/worker/**` inside real workerd with a
-  miniflare-backed D1 via `@cloudflare/vitest-pool-workers`.
+  miniflare-backed D1 via `@cloudflare/vitest-pool-workers`. **End-to-end**: Playwright +
+  Chromium (`playwright.config.js`, specs in `e2e/`) against `scripts/e2e-server.mjs` — a
+  local `wrangler dev` on a fresh D1 (`.wrangler/e2e-state`) with a seeded fake shop; for what
+  only a real browser shows (computed colors, the full 杯測 flow).
   `package.json` sets `"type": "module"` package-wide, but the browser files
   (`public/app.js`, `public/sw.js`) are classic scripts — ESLint's per-file overrides set
   `sourceType: 'script'` to match.
@@ -141,6 +144,7 @@ migrations/        D1 schema (0001_init.sql). Add new files; never edit applied 
 schema/triggers.sql triggers — cannot live in migrations/, see Tech stack
 tests/             jsdom unit tests + load-app.js harness
 test/worker/       workerd tests (separate directory so the include globs cannot overlap)
+e2e/               Playwright specs + helpers (palette expected values come from #173)
 wrangler.jsonc     assets + D1 + rate limit + routes + Access vars
 .dev.vars.example  copy → .dev.vars (gitignored)
 .github/workflows  ci.yml + deploy.yml + issue-workflow callers (issue-status,
@@ -239,6 +243,7 @@ npm run dev:worktree             # in a worktree: .dev.vars + local D1 + its own
 npm run lint                     # lint:js + lint:css
 npm run typecheck                # tsc, Worker only
 npm test                         # vitest run — both projects (jsdom + workerd)
+npm run test:e2e                 # Playwright (first time: npx playwright install chromium)
 ```
 
 `wrangler dev` serves `public/` and `/api/*` on one origin, so there is no second dev
@@ -258,7 +263,7 @@ cache, bump `VERSION` at the top of `public/sw.js`.
 Issues move `status: raw` → (`status: needs-info`) → `status: approved`, or stop at `status: ready-for-human` / `status: wontfix`. `status: approved` goes on when the author agrees, in the issue or in a session.
 Triage, specs, tickets and implementation: the mattpocock-skills (`## Agent skills`). Shipping and articles: `issue-ship`, `article-request`, `post-write`.
 
-- Verify command: `npm run typecheck && npm run lint && npm test && npx wrangler deploy --dry-run --outdir .wrangler/dry-run`
+- Verify command: `npm run typecheck && npm run lint && npm test && npm run test:e2e && npx wrangler deploy --dry-run --outdir .wrangler/dry-run`
 - Preview URL: `none` (`workers_dev: false`, no preview environment; locally `npm run dev` → http://localhost:8787)
 - Article target: `sean2249/sean2249.github.io`
 
@@ -303,14 +308,16 @@ This repo is public: every issue, PR, comment, commit message and committed file
   upserts it when `formShopNoteIsDirty()`); payload assembly is `buildShopNotePayload` /
   `applyShopNoteToEditor`.
 - Adding evaluation fields? 沖煮 / 品鑑 use `adjustmentFields` (bump `ADJUSTMENT_SCHEMA`
-  if a key's meaning changes); 杯測 uses `referenceFields` / `observationFields`. Verify the
+  if a key's meaning changes) for 沖煮 / 品鑑 and every 杯測 cup; `referenceFields` is only for
+  converting old rows. Verify the
   detail page still renders old records (treat missing keys as 未判斷 / default).
 - Adding an endpoint? It must sit behind `requireAccess` + `withUser`, and any query on
   an owned table must carry `and user_id = ?`. Add the two-user isolation test.
 - Anything that changes app-shell URLs → bump `public/sw.js` VERSION.
 - After edits: `npm run lint`, `npm run typecheck` and `npm test` (CI runs all three and
-  fails the PR otherwise; the suite covers scoring, flavor wheel, filters, estimated
-  total, the pickers, and the whole Worker API against a real D1).
+  fails the PR otherwise; the suite covers scoring, flavor wheel, filters, the pickers, and
+  the whole Worker API against a real D1). Visual or flow changes: `npm run test:e2e` too
+  (CI runs it as its own job).
 
 ## Things to leave alone unless asked
 
@@ -331,7 +338,8 @@ This repo is public: every issue, PR, comment, commit message and committed file
   independent tables, so deleting a shop must never touch anyone's records.
 - 沖煮 / 品鑑 `coe_total` is **computed from the 8 adjustment scores** (80 + Σ) for new
   records and **kept as entered** for old ones — don't recompute old records from their
-  reference scores. 杯測 cups still enter `coe_total` directly.
+  reference scores. 杯測 cups are the same since #183; old cups stay read-only. Tiers come
+  from `coe_total` (`scoreTier`), never from a stored `coe_tier_id`.
 - UI strings are zh-TW; don't translate to English.
 - `purpose.md` and `口感.md` are background design notes, not living docs — don't rewrite
   them as part of unrelated changes.

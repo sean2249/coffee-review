@@ -82,14 +82,27 @@ const visible = el => {
     return true;
 };
 
+const row = key => $(`.adjust-item[data-adjust-key="${key}"]`);
+const adjValue = key => row(key).querySelector('.adjust-value').textContent.trim();
+const press = (key, action, times = 1) => {
+    for (let i = 0; i < times; i++) row(key).querySelector(`[data-adjust="${action}"]`).click();
+};
+const KEYS = ['aroma', 'flavor', 'aftertaste', 'acidity', 'sweetness', 'mouthfeel', 'balance', 'cleanness'];
+const judgeAll = () => KEYS.forEach(k => press(k, 'zero'));
+
 describe('② 評分：切換杯', () => {
     beforeEach(() => mount());
 
-    it('第 1 杯載入後各元件都帶到值', () => {
-        expect($('#coeTotalDisplay').textContent).toBe('87.0');
-        expect($('#flavor_score').value).toBe('7');
+    it('第 1 杯是舊杯：8 項照換算顯示、按鍵停用，分數列是當時的分數', () => {
+        expect(adjValue('flavor')).toBe('2.0');   // 舊 7 → +2
+        expect(adjValue('acidity')).toBe('1.5');  // 舊 6.5 → +1.5
+        expect(adjValue('aftertaste')).toBe('0.0'); // 缺的當舊預設 5
+        expect(adjValue('aroma')).toBe('0.0');
+        expect(row('flavor').querySelector('[data-adjust="plus"]').disabled).toBe(true);
+        expect($('#scoreBar').textContent).toContain('87.0');
+        expect(visible($('#adjustLegacy'))).toBe(true);
+        expect($('#adjustLegacy').textContent).toContain('87.0');
         expect($$('#flavor_flavorList .flavor-tag.selected').length).toBeGreaterThan(0);
-        expect($('#aroma_dryAroma').value).toBe('花香');
     });
 
     it('切到空白的杯：每個元件都重設，切回來內容不變', () => {
@@ -100,16 +113,15 @@ describe('② 評分：切換杯', () => {
         expect($('#f-origin').value).toBe('');
         expect($$('input[name="roast"]:checked')).toHaveLength(0);
         expect($$('.bean-type-chip-row .bean-type-chip.selected')).toHaveLength(0);
-        expect($('#coeTotalDisplay').textContent).toBe('—');
-        expect($('#coeTotalTierBadge').textContent).toBe('未評分');
-        expect($('#coeTotalTierBadge .tier-badge:not([class*=" t-"])')).not.toBeNull();
-        expect($$('.tier-medal.selected')).toHaveLength(0);
-        expect($$('#evaluationAccordion [aria-pressed="true"]')).toHaveLength(0);
+        expect(KEYS.map(adjValue)).toEqual(Array(8).fill('—'));
+        expect(row('flavor').querySelector('[data-adjust="plus"]').disabled).toBe(false);
+        expect($('#scoreBar').textContent).toContain('未評分 · 0/8');
+        expect(visible($('#adjustLegacy'))).toBe(false);
+        expect($$('#adjustList [aria-pressed="true"]')).toHaveLength(0);
         expect($$('.flavor-tag.selected')).toHaveLength(0);
-        expect($$('input[type="range"][data-ref-score]').every(r => r.value === '5')).toBe(true);
         expect($('#f-notes').value).toBe('');
         expect($('#f-defects').value).toBe('');
-        expect($('#aroma_dryAroma').value).toBe('');
+        expect($$('#cupDefectsSection [aria-pressed="true"]')).toHaveLength(0);
 
         clickTab(0);
         expect(JSON.stringify(win.readCupFromForm())).toBe(before);
@@ -135,20 +147,12 @@ describe('② 評分：切換杯', () => {
         expect($('#flavor_notes').value).toBe('檸檬皮');
     });
 
-    it('applyEvaluationsToForm({}) 把填過的評分全部清空', () => {
-        win.applyEvaluationsToForm({});
-        expect($$('#evaluationAccordion [aria-pressed="true"]')).toHaveLength(0);
-        expect($$('.flavor-tag.selected')).toHaveLength(0);
-        expect($('#flavor_score').value).toBe('5');
-        expect($('#flavor_notes').value).toBe('');
-    });
-
     it('頂端分頁只有編號（沒有分數），評過分的杯另外標示', () => {
         expect($$('#cup-tabbar .cup-tab').map(t => t.textContent.trim())).toEqual(['A', 'B']);
         expect($$('#cup-tabbar .cup-tab').map(t => t.classList.contains('is-scored'))).toEqual([true, false]);
     });
 
-    it('多次切換後 chip 點一次仍只切換一次（accordion listener 沒有疊加）', () => {
+    it('多次切換後 chip 點一次仍只切換一次（listener 沒有疊加）', () => {
         clickTab(1); clickTab(0); clickTab(1);
         const chip = $('.chip-group[data-chip-name="acidity_textures"] .chip[data-chip-value="活潑"]');
         chip.click();
@@ -167,7 +171,7 @@ describe('各階段只顯示該做的事', () => {
         expect(visible($('#f-session-title'))).toBe(false);
         expect(visible($('#f-session-notes'))).toBe(false);
         expect(visible($('#cup-tabbar'))).toBe(false);
-        expect(visible($('#coeTotalDisplay'))).toBe(false);
+        expect(visible($('#scoreBar'))).toBe(false);
         expect(visible($('#f-cup-bean'))).toBe(false);
         expect(visible($('#reveal-cup-cards'))).toBe(false);
         expect(visible($('#session-info-toggle'))).toBe(false);
@@ -177,8 +181,8 @@ describe('各階段只顯示該做的事', () => {
         await mount();
         expect($('#session-stage-name').textContent).toBe('② 評分');
         expect(visible($('#cup-tabbar'))).toBe(true);
-        expect(visible($('#coeTotalDisplay'))).toBe(true);
-        expect(visible($('#evaluationAccordion'))).toBe(true);
+        expect(visible($('#scoreBar'))).toBe(true);
+        expect(visible($('#adjustList'))).toBe(true);
         expect(visible($('#cup-score-toggle'))).toBe(false);
         expect(visible($('#f-session-date'))).toBe(false);
         expect(visible($('#f-cup-bean'))).toBe(false);
@@ -193,7 +197,7 @@ describe('各階段只顯示該做的事', () => {
         expect($('#session-info-summary').textContent).toBe('2026-09-20 · 2 杯');
         expect(visible($('#f-session-date'))).toBe(false);
         expect(visible($('#reveal-cup-cards'))).toBe(true);
-        expect(visible($('#coeTotalDisplay'))).toBe(false);
+        expect(visible($('#scoreBar'))).toBe(false);
 
         $('#session-info-toggle').click();
         expect(visible($('#f-session-date'))).toBe(true);
@@ -339,48 +343,64 @@ describe('① 杯數與編號格子', () => {
     });
 });
 
-describe('未評分與清除分數', () => {
+describe('8 項調整分（#183）', () => {
     beforeEach(() => mount());
 
-    it('空白的杯是未評分；只點徽章仍是未評分', () => {
+    it('新杯：沒判斷完是未評分；8 項判斷完 → 80 + Σ，等級跟著分數', () => {
         clickTab(1);
+        press('flavor', 'plus');
         expect(form().cups[1].coe_total).toBeNull();
         expect(form().cups[1].coe_tier_id).toBeNull();
-
-        $('.tier-medal[data-tier-id="recommend"]').click();
-        expect(form().cups[1].coe_total).toBeNull();
-        expect(form().cups[1].coe_tier_id).toBeNull();
-        expect($('#coeTotalDisplay').textContent).toBe('—');
-        // 分數列換成金獎的範圍，點下去才算評分
-        $('.score-chip[data-score="87"]').click();
-        expect(form().cups[1].coe_total).toBe(87);
-        expect(form().cups[1].coe_tier_id).toBe('recommend');
-    });
-
-    it('直接點預設（銅）列的分數：徽章跟著亮起，tier 不會存成 null', () => {
-        clickTab(1);
-        $('.score-chip[data-score="82"]').click();
-        expect(form().cups[1].coe_total).toBe(82);
-        expect(form().cups[1].coe_tier_id).toBe('common');
-        expect($('.tier-medal.selected').dataset.tierId).toBe('common');
-        expect($('#cup-tabbar .cup-tab.active').classList.contains('is-scored')).toBe(true);
-        expect($('#f-coe-clear').hidden).toBe(false);
-    });
-
-    it('清除分數：回到未評分', () => {
-        expect($('#f-coe-clear').hidden).toBe(false);
-        $('#f-coe-clear').click();
-        expect(form().cups[0].coe_total).toBeNull();
-        expect(form().cups[0].coe_tier_id).toBeNull();
-        expect($('#coeTotalDisplay').textContent).toBe('—');
-        expect($('#f-coe-clear').hidden).toBe(true);
+        expect(form().cups[1].schema_version).toBe(2);
         expect($('#cup-tabbar .cup-tab.active').classList.contains('is-scored')).toBe(false);
+
+        judgeAll();
+        press('flavor', 'plus', 3);  // 1.5
+        press('cleanness', 'minus'); // −1
+        expect(form().cups[1].coe_total).toBe(80.5);
+        expect(form().cups[1].coe_tier_id).toBe(win.tierFromScore(80.5).id);
+        expect(form().cups[1].evaluations.flavor.score).toBe(1.5);
+        expect($('#cup-tabbar .cup-tab.active').classList.contains('is-scored')).toBe(true);
+        expect($('#scoreBar').textContent).toContain('80.5');
     });
 
-    it('沖煮 / 品鑑表單（分數不會是 null）點徽章仍跳到該級距最低分', () => {
-        win.eval(`coeState.coeTotal = 82; coeState.selectedTierId = 'common';`);
-        win.selectTier('recommend');
-        expect(win.eval('coeState.coeTotal')).toBe(86);
+    it('沒有徽章挑選器與預估總分', () => {
+        expect($('#medalRow')).toBeNull();
+        expect($('#scoreChipRow')).toBeNull();
+        expect($('#evalEstimatedValue')).toBeNull();
+        expect(doc.body.textContent).not.toContain('預估總分');
+    });
+
+    it('舊杯：只改豆名與備註，評分欄位原樣寫回', () => {
+        typeInto($('#f-cup-bean'), '新的豆名');
+        typeInto($('#f-notes'), '改了備註');
+        const cup = form().cups[0];
+        expect(cup.bean_name).toBe('新的豆名');
+        expect(cup.notes).toBe('改了備註');
+        expect(cup.coe_total).toBe(87);
+        expect(cup.coe_tier_id).toBe(cupA.coe_tier_id);
+        expect(cup.evaluations).toEqual(cupA.evaluations);
+        expect(cup.observation).toEqual(cupA.observation);
+        expect(cup.schema_version).toBe(1);
+    });
+
+    it('舊杯：按「重新評分」→ 8 項清成未判斷、改用新制', () => {
+        $('#f-adjust-reset').click();
+        expect(KEYS.map(adjValue)).toEqual(Array(8).fill('—'));
+        expect(row('flavor').querySelector('[data-adjust="plus"]').disabled).toBe(false);
+        expect(visible($('#adjustLegacy'))).toBe(false);
+        expect($('#scoreBar').textContent).toContain('未評分 · 0/8');
+        const cup = form().cups[0];
+        expect(cup.coe_total).toBeNull();
+        expect(cup.schema_version).toBe(2);
+        expect(cup.bean_name).toBe('耶加');
+    });
+
+    it('舊杯沒有任何參考分：8 項是「—」但仍唯讀，分數列是當時的分數', async () => {
+        await mount([cupC, cupB]);
+        expect(KEYS.map(adjValue)).toEqual(Array(8).fill('—'));
+        expect(row('flavor').querySelector('[data-adjust="zero"]').disabled).toBe(true);
+        expect($('#scoreBar').textContent).toContain('84.0');
     });
 });
 
@@ -391,8 +411,8 @@ describe('③ 揭曉：杯卡', () => {
         expect(cardCodes()).toEqual(['A', 'C', 'B']);
         const heads = $$('#reveal-cup-cards .reveal-cup-head');
         expect(heads.map(h => h.querySelector('.reveal-cup-rank').textContent)).toEqual(['1', '2', '—']);
-        expect(heads[0].querySelector('.reveal-cup-medal').textContent).toBe('金 87.0');
-        expect(heads[0].querySelector('.reveal-cup-medal').classList.contains('t-recommend')).toBe(true);
+        expect(heads[0].querySelector('.reveal-cup-medal').textContent).toBe('B 87.0'); // 87 = B 稀有
+        expect(heads[0].querySelector('.reveal-cup-medal').classList.contains('t-b')).toBe(true);
         expect(heads[2].querySelector('.reveal-cup-medal').textContent).toBe('未評分');
         expect(heads[0].querySelector('.reveal-cup-bean').textContent).toBe('耶加');
         expect(heads[1].querySelector('.reveal-cup-bean').textContent).toBe('未填豆名');
@@ -405,9 +425,9 @@ describe('③ 揭曉：杯卡', () => {
         expect(form().cups[form().activeIndex].id).toBe('k3');
         expect(visible($('#f-cup-bean'))).toBe(true);
         expect(visible($('#cup-score-toggle'))).toBe(true);
-        expect(visible($('#coeTotalDisplay'))).toBe(false);
-        expect($('#cup-score-summary').textContent).toBe('評分 84.0 銀');
-        expect($('#cup-score-summary .tier-badge.t-like')).not.toBeNull();
+        expect(visible($('#scoreBar'))).toBe(false);
+        expect($('#cup-score-summary').textContent).toBe('評分 84.0 C');
+        expect($('#cup-score-summary .tier-badge.t-c')).not.toBeNull();
 
         openCard('C');
         expect($$('#reveal-cup-cards .reveal-cup.is-open')).toHaveLength(0);
@@ -424,12 +444,13 @@ describe('③ 揭曉：杯卡', () => {
     it('展開評分改分數：存進這杯、編輯中順序不跳，收起後才重新排序', () => {
         openCard('C');
         $('#cup-score-toggle').click();
-        expect(visible($('#coeTotalDisplay'))).toBe(true);
-        $('.tier-medal[data-tier-id="amazing"]').click();
-        $('.score-chip[data-score="90"]').click();
-        expect(form().cups[2].coe_total).toBe(90);
+        expect(visible($('#scoreBar'))).toBe(true);
+        $('#f-adjust-reset').click();
+        judgeAll();
+        press('flavor', 'plus', 16); // +8 → 88
+        expect(form().cups[2].coe_total).toBe(88);
         expect(cardCodes()).toEqual(['A', 'C', 'B']);
-        expect($('#reveal-cup-cards .reveal-cup.is-open .reveal-cup-medal').textContent).toContain('90.0');
+        expect($('#reveal-cup-cards .reveal-cup.is-open .reveal-cup-medal').textContent).toContain('88.0');
 
         openCard('C');
         expect(cardCodes()).toEqual(['C', 'A', 'B']);
@@ -478,7 +499,7 @@ describe('按鈕不會送出整場', () => {
         pickStyle('letter');
         win.setSessionStage('scoring');
         clickTab(1);
-        $('.score-chip[data-score="82"]').click();
+        press('flavor', 'plus');
         win.setSessionStage('reveal');
         $('#session-info-toggle').click();
         $$('#reveal-cup-cards .reveal-cup-head')[0].click();
@@ -619,10 +640,11 @@ describe('② 自動暫存', () => {
     };
     const status = () => $('#session-autosave-status');
     const toast = () => doc.getElementById('toastMsg');
-    // 在 B 杯（未評分）打 82 分：還沒切杯，所以還沒暫存。
+    // 在 B 杯（未評分）評成 82（8 項判斷完、風味 +2）：還沒切杯，所以還沒暫存。
     const scoreCupB = () => {
         clickTab(1);
-        $('.score-chip[data-score="82"]').click();
+        judgeAll();
+        press('flavor', 'plus', 4);
     };
     const hide = () => {
         Object.defineProperty(doc, 'visibilityState', { value: 'hidden', configurable: true });

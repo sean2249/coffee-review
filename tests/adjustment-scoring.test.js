@@ -79,15 +79,6 @@ describe('formatAdjustment', () => {
     });
 });
 
-describe('adjustmentLevel（5 階顏色）', () => {
-    it.each([
-        [null, 'none'], [-1, 'neg'], [0, 'zero'], [0.5, 'low'], [1, 'low'],
-        [1.5, 'high'], [2, 'high'], [2.5, 'top'], [6, 'top'],
-    ])('%s → %s', (v, level) => {
-        expect(win.adjustmentLevel(v)).toBe(level);
-    });
-});
-
 describe('scoreFromAdjustments', () => {
     const all = v => Object.fromEntries(KEYS.map(k => [k, v]));
 
