@@ -103,18 +103,17 @@ independently.
 palette** block right after it maps each `tier.cssClass` (`.t-f` … `.t-ss`) to `--tier-bg`,
 `--tier-fg`, `--tier-tint`, and for F (too pale to write with) `--tier-ink`; text on white or
 on the tint reads `var(--tier-ink, var(--tier-bg))`. Tiers in `totalScoreTiers` carry
-`cssClass`, `medal` (the letter) and `glow` (A and above), no color.
+`cssClass` and `medal` (the letter), no color.
 
 The treatment depends on the place (#173): **solid** for the list badge, stats and the
 杯測 ranking; **tint + colored text** for detail-page tags; **white + colored border** for an
-unselected filter chip (solid once selected); **glow** (`.tier-glow`, A and above only) on
-the detail page's tag and the 杯測 reveal card — not on the score bar (author 2026-11-28).
+unselected filter chip (solid once selected). There is no glow anywhere (author 2026-11-28).
 The 8 adjustment rows carry the tier color on their dot only; the `− 數值 ＋` capsule has no
 border and a neutral number. To show a tier:
 
 - an element styled by the tier: add `tier.cssClass` and read `var(--tier-bg)` etc. in its
   CSS (with a fallback when the element can be tier-less);
-- a tier inside text: `tierBadgeHtml(tier, text, { tint, glow })` — default text is the
+- a tier inside text: `tierBadgeHtml(tier, text, { tint })` — default text is the
   letter + 中文 name; `tierBadgeHtml(null)` is the gray 未評分 pill.
 
 Places that show a tier today (keep this list current):

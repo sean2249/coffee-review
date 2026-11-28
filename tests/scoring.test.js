@@ -22,8 +22,9 @@ describe('totalScoreTiers', () => {
         ]);
     });
 
-    it('A 以上有光暈', () => {
-        expect(tiers().filter(t => t.glow).map(t => t.medal)).toEqual(['A', 'S', 'SS']);
+    // 作者 2026-11-28：不用光暈，等級資料也不帶這個欄位。
+    it('沒有光暈欄位', () => {
+        expect(tiers().some(t => 'glow' in t)).toBe(false);
     });
 });
 

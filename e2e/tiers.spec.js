@@ -26,16 +26,14 @@ test('列表獎牌：字母與純色底，依分數歸級（含邊界）', async
     }
 });
 
-test('詳情頁：淡底＋色字的「字母 中文」標籤，A 以上加光暈', async ({ page }) => {
+test('詳情頁：淡底＋色字的「字母 中文」標籤，沒有光暈（A 以上也是）', async ({ page }) => {
     for (const [score, medal] of [[84, 'C'], [90, 'A'], [79.5, 'F']]) {
         await page.goto(`/#/cupping/${ids[score]}`);
         const tag = page.locator('.coe-card .tier-badge');
         await expect(tag).toHaveText(new RegExp(`^${medal}`));
         expect(await style(tag, 'backgroundColor'), `${score} tint`).toBe(rgb(PALETTE[medal].tint));
         expect(await style(tag, 'color'), `${score} ink`).toBe(rgb(PALETTE[medal].ink));
-        const glow = await style(tag, 'boxShadow');
-        if (medal === 'A') expect(glow).not.toBe('none');
-        else expect(glow).toBe('none');
+        expect(await style(tag, 'boxShadow'), `${score} glow`).toBe('none');
     }
 });
 

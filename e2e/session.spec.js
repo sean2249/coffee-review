@@ -50,7 +50,7 @@ test('建立場次 → 評兩杯、留一杯未評分 → 揭曉 → 排名與�
     await expect(heads.nth(2).locator('.reveal-cup-medal')).toHaveText('未評分');
     const top = heads.nth(0).locator('.reveal-cup-medal');
     expect(await style(top, 'backgroundColor')).toBe(rgb(PALETTE.A.bg));
-    expect(await style(top, 'boxShadow')).toContain(rgb(PALETTE.A.bg)); // A 以上：揭曉有光暈
+    expect(await style(top, 'boxShadow')).toBe('none'); // 不用光暈（作者 2026-11-28）
     const second = heads.nth(1).locator('.reveal-cup-medal');
     expect(await style(second, 'backgroundColor')).toBe(rgb(PALETTE.C.bg));
     expect(await style(second, 'boxShadow')).toBe('none');

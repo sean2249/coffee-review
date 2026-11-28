@@ -100,7 +100,7 @@
 .t-ss { --tier-bg: var(--t7-bg); --tier-fg: var(--t7-fg); --tier-tint: var(--t7-tint); }
 
 /* 依位置分配的處理（#173）：純色（列表獎牌、統計、排名）是預設；淡底＋色字給詳情頁標籤；
-   白底＋色框給未選取的篩選 chip；光暈只給 A 以上，在填寫分數列、詳情頁、杯測揭曉。 */
+   白底＋色框給未選取的篩選 chip。不用光暈（作者 2026-11-28）。 */
 .tier-badge {
     display: inline-block;
     padding: 0.1em 0.6em;
@@ -116,9 +116,6 @@
     color: var(--tier-ink, var(--tier-bg, var(--text-secondary)));
 }
 .tier-badge-letter { font-weight: 900; margin-right: 0.3em; }
-.tier-glow {
-    box-shadow: 0 0 0 3px var(--bg-card), 0 0 0 5px var(--tier-bg), 0 4px 14px var(--tier-bg);
-}
 
 /* ───── Base ───────────────────────────────────────────────────────────── */
 * { box-sizing: border-box; }

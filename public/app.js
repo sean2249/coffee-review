@@ -16,16 +16,15 @@
 
 // ─── Tier definitions ────────────────────────────────────────────────────────
 // 寶物稀有度（#173）：80 = D 普通（8 項調整分全 0），每 3 分一級；F 以下、SS 以上沒有邊界。
-// medal = 徽章中心的字母，badgeName = 中文名，glow = A 以上的光暈（只用在填寫分數列、
-// 詳情頁、杯測揭曉）。顏色不在這裡：見 styles.css 的 tier palette。
+// medal = 徽章中心的字母，badgeName = 中文名。顏色不在這裡：見 styles.css 的 tier palette。
 const totalScoreTiers = [
     { id: 'f',  medal: 'F',  badgeName: '破損', label: '< 80',  min: 74, description: '有明顯缺點' },
     { id: 'd',  medal: 'D',  badgeName: '普通', label: '80-82', min: 80, description: '可接受的日常一杯' },
     { id: 'c',  medal: 'C',  badgeName: '優良', label: '83-85', min: 83, description: '比日常好一點' },
     { id: 'b',  medal: 'B',  badgeName: '稀有', label: '86-88', min: 86, description: '值得記住' },
-    { id: 'a',  medal: 'A',  badgeName: '史詩', label: '89-91', min: 89, description: '會想再喝', glow: true },
-    { id: 's',  medal: 'S',  badgeName: '傳說', label: '92-94', min: 92, description: '專程也要喝', glow: true },
-    { id: 'ss', medal: 'SS', badgeName: '神話', label: '≥ 95',  min: 95, description: '念念不忘', glow: true },
+    { id: 'a',  medal: 'A',  badgeName: '史詩', label: '89-91', min: 89, description: '會想再喝' },
+    { id: 's',  medal: 'S',  badgeName: '傳說', label: '92-94', min: 92, description: '專程也要喝' },
+    { id: 'ss', medal: 'SS', badgeName: '神話', label: '≥ 95',  min: 95, description: '念念不忘' },
 ].map(t => ({ ...t, name: `${t.medal} ${t.badgeName}`, cssClass: `t-${t.id}` }));
 
 // 低於最低級歸最低級、高於最高級歸最高級；兩級之間的空隙（如 79.6，只有舊資料可能出現）
@@ -52,10 +51,10 @@ function adjustmentTier(value) {
 // 不帶色碼：顯示等級的地方一律用 tierBadgeHtml，或在元素上掛 tier.cssClass。
 // tier 一定要是 totalScoreTiers 裡的一項（tierFromScore / scoreTier 的結果）；cssClass 也照樣 escape。
 // tier 為 null = 未評分：灰色膠囊。預設內容是字母＋中文（「C 優良」）；text 換成別的字。
-// tint：淡底＋色字（詳情頁標籤）；glow：A 以上加光暈（詳情頁、杯測揭曉；分數列不加）。
-function tierBadgeHtml(tier, text = null, { tint = false, glow = false } = {}) {
+// tint：淡底＋色字（詳情頁標籤）。
+function tierBadgeHtml(tier, text = null, { tint = false } = {}) {
     if (!tier) return `<span class="tier-badge">${escapeHtml(text ?? '未評分')}</span>`;
-    const cls = ['tier-badge', tier.cssClass, tint && 'is-tint', glow && tier.glow && 'tier-glow']
+    const cls = ['tier-badge', tier.cssClass, tint && 'is-tint']
         .filter(Boolean).map(escapeHtml).join(' ');
     const body = text != null ? escapeHtml(text)
         : `<span class="tier-badge-letter">${escapeHtml(tier.medal)}</span>${escapeHtml(tier.badgeName)}`;
@@ -2610,7 +2609,7 @@ function renderRecordDetail(mode, r, { planStatus = null } = {}) {
                 <div class="coe-total-block">
                     <span class="coe-total-display detail-score-value">${score}</span>
                     <span class="coe-total-of">/ 100</span>
-                    ${tier ? tierBadgeHtml(tier, null, { tint: true, glow: true }) : ''}
+                    ${tier ? tierBadgeHtml(tier, null, { tint: true }) : ''}
                     ${tier ? `<span class="coe-total-desc">${escapeHtml(tier.description)}</span>` : ''}
                 </div>
             </div>
@@ -4015,7 +4014,6 @@ function renderScoreBar() {
         return;
     }
     const { tier, next, fraction, toNext } = tierProgress(score);
-    // 分數列不加光暈（作者 2026-11-28）；光暈只在詳情頁標籤與杯測揭曉。
     bar.className = `score-bar is-scored ${tier.cssClass}`;
     bar.style.setProperty('--ring', String(fraction));
     bar.innerHTML = `
@@ -5416,7 +5414,7 @@ function renderRevealCardHead(cup, rank) {
     const scored = typeof cup.coe_total === 'number';
     return `<span class="reveal-cup-rank">${rank ?? '—'}</span>
         <span><span class="cup-code-badge">${escapeHtml(cup.code || '—')}</span></span>
-        <span class="reveal-cup-medal ${scored ? `${tier.cssClass}${tier.glow ? ' tier-glow' : ''}` : 'is-empty'}">${scored ? `${tier.medal} ${formatCupScore(cup)}` : '未評分'}</span>
+        <span class="reveal-cup-medal ${scored ? tier.cssClass : 'is-empty'}">${scored ? `${tier.medal} ${formatCupScore(cup)}` : '未評分'}</span>
         <span class="reveal-cup-bean${cup.bean_name ? '' : ' is-placeholder'}">${escapeHtml(cup.bean_name || '未填豆名')}</span>
         <i class="bi bi-chevron-down reveal-cup-caret"></i>`;
 }

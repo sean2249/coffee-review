@@ -71,7 +71,7 @@ describe('等級顏色只有一個來源', () => {
     it.each([
         '.record-card-medal', '.filter-tier-row .filter-chip', '.filter-tier-row .filter-chip.selected',
         '.stats-dist-medal', '.stats-dist-bar', '.reveal-cup-medal:not(.is-empty)',
-        '.score-bar', '.score-ring-text', '.tier-badge', '.tier-glow',
+        '.score-bar', '.score-ring-text', '.tier-badge',
     ])('%s 讀 --tier-bg', selector => {
         const esc = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         const rule = CSS.match(new RegExp(`(?:^|\\n|,\\s*)${esc}\\s*[,{][^}]*\\}`));
@@ -98,9 +98,14 @@ describe('顯示等級的地方都掛 cssClass', () => {
         expect(el.innerHTML).not.toMatch(/style="color:/);
     });
 
-    it('A 以上在詳情頁有光暈', () => {
-        expect(detail(90).querySelector('.coe-card .tier-badge').classList.contains('tier-glow')).toBe(true);
-        expect(detail(95).querySelector('.coe-card .tier-badge').classList.contains('tier-glow')).toBe(true);
+    // 作者 2026-11-28：光暈全部拿掉，A 以上也一樣。
+    it('A 以上在詳情頁也沒有光暈', () => {
+        expect(detail(90).querySelector('.coe-card .tier-glow')).toBeNull();
+        expect(detail(95).querySelector('.coe-card .tier-glow')).toBeNull();
+    });
+
+    it('樣式裡沒有光暈', () => {
+        expect(CSS).not.toMatch(/tier-glow/);
     });
 
     function scoreBarFor(flavor) {
